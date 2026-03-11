@@ -224,6 +224,7 @@ defmodule LiveVueNext.Expr do
   defp access_value(nil, _key), do: nil
 
   defp access_value(list, "length") when is_list(list), do: length(list)
+  defp access_value(str, "length") when is_binary(str), do: String.length(str)
 
   defp access_value(map, key) when is_map(map) and is_binary(key) do
     case Map.get(map, key) do

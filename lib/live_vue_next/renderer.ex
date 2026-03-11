@@ -306,7 +306,6 @@ defmodule LiveVueNext.Renderer do
   defp inject_structural_markers(html, structural_ops, elem_to_tag) do
     Enum.reduce(structural_ops, {html, []}, fn op, {h, specs} ->
       parent_id = op.parent
-      tag_pos = Map.get(elem_to_tag, parent_id, parent_id)
 
       spec =
         case op.kind do
@@ -314,36 +313,115 @@ defmodule LiveVueNext.Renderer do
           :for_node -> {:for_node, op, Expr.assign_keys(op.source)}
         end
 
-      new_h = inject_content_into_nth_tag(h, tag_pos, @struct_marker)
+      new_h =
+        if parent_id == nil do
+          h <> @struct_marker
+        else
+          tag_pos = Map.get(elem_to_tag, parent_id, parent_id)
+          inject_content_into_nth_tag(h, tag_pos, @struct_marker)
+        end
+
       {new_h, specs ++ [spec]}
     end)
   end
 
+  # Injects content before the closing tag of the nth opening tag.
+  # For <div><span>x</span></div> with target 0 and content "M":
+  # → <div><span>x</span>M</div>
   defp inject_content_into_nth_tag(html, target_n, content) do
-    do_inject_content(html, target_n, content, 0, [])
-  end
+    tags = parse_tag_tree(html)
+    {_, tag_name, _, _} = Enum.at(tags, target_n)
 
-  defp do_inject_content("", _target, _content, _count, acc) do
-    acc |> Enum.reverse() |> IO.iodata_to_binary()
-  end
+    # Find the byte position of the target opening tag
+    open_byte_pos = find_nth_open_tag_byte_pos(html, target_n)
 
-  defp do_inject_content("</" <> rest, target, content, count, acc) do
-    {tag_body, remaining} = consume_tag_body(rest)
-    do_inject_content(remaining, target, content, count, ["</" <> tag_body <> ">" | acc])
-  end
+    # Skip past the opening tag's ">"
+    after_open = skip_past_gt(html, open_byte_pos)
 
-  defp do_inject_content("<" <> rest, target, content, count, acc) do
-    {tag_body, remaining} = consume_tag_body(rest)
+    # From there, find the matching closing tag (tracking nesting)
+    close_pos = find_matching_close(html, after_open, tag_name, 0)
 
-    if count == target do
-      (Enum.reverse(["<" <> tag_body <> ">" <> content | acc]) |> IO.iodata_to_binary()) <> remaining
+    if close_pos do
+      {before, rest} = String.split_at(html, close_pos)
+      before <> content <> rest
     else
-      do_inject_content(remaining, target, content, count + 1, ["<" <> tag_body <> ">" | acc])
+      # Self-closing or void — inject right after the opening tag
+      {before, rest} = String.split_at(html, after_open)
+      before <> content <> rest
     end
   end
 
-  defp do_inject_content(<<c::utf8, rest::binary>>, target, content, count, acc) do
-    do_inject_content(rest, target, content, count, [<<c::utf8>> | acc])
+  defp find_nth_open_tag_byte_pos(html, n) do
+    find_nth_open_tag_byte_pos(html, n, 0, 0)
+  end
+
+  defp find_nth_open_tag_byte_pos(<<"</", rest::binary>>, n, pos, count) do
+    {_, remaining} = consume_tag_body(rest)
+    skip = byte_size(rest) - byte_size(remaining) + 2
+    find_nth_open_tag_byte_pos(remaining, n, pos + skip, count)
+  end
+
+  defp find_nth_open_tag_byte_pos(<<"<", rest::binary>>, n, pos, count) do
+    if count == n do
+      pos
+    else
+      {tag_body, remaining} = consume_tag_body(rest)
+      skip = byte_size(tag_body) + 2
+      find_nth_open_tag_byte_pos(remaining, n, pos + skip, count + 1)
+    end
+  end
+
+  defp find_nth_open_tag_byte_pos(<<_::utf8, rest::binary>>, n, pos, count) do
+    find_nth_open_tag_byte_pos(rest, n, pos + 1, count)
+  end
+
+  defp find_nth_open_tag_byte_pos("", _n, pos, _count), do: pos
+
+  defp skip_past_gt(html, pos) do
+    case :binary.at(html, pos) do
+      ?> -> pos + 1
+      _ -> skip_past_gt(html, pos + 1)
+    end
+  rescue
+    _ -> pos
+  end
+
+  defp find_matching_close(html, pos, tag_name, depth) do
+    remaining = binary_part(html, pos, byte_size(html) - pos)
+    close_tag = "</#{tag_name}>"
+    open_prefix = "<#{tag_name}"
+
+    cond do
+      remaining == "" ->
+        nil
+
+      String.starts_with?(remaining, close_tag) ->
+        if depth == 0, do: pos, else: find_matching_close(html, pos + byte_size(close_tag), tag_name, depth - 1)
+
+      String.starts_with?(remaining, open_prefix) ->
+        next_char_pos = byte_size(open_prefix)
+        next_char = if next_char_pos < byte_size(remaining), do: :binary.at(remaining, next_char_pos), else: nil
+
+        if next_char in [?\s, ?>, ?/] do
+          {tag_body, _} = consume_tag_body(binary_part(remaining, 1, byte_size(remaining) - 1))
+          tag_end = pos + 1 + byte_size(tag_body) + 1
+
+          if String.ends_with?(tag_body, "/") or void_element?(tag_name) do
+            find_matching_close(html, tag_end, tag_name, depth)
+          else
+            find_matching_close(html, tag_end, tag_name, depth + 1)
+          end
+        else
+          find_matching_close(html, pos + 1, tag_name, depth)
+        end
+
+      :binary.at(remaining, 0) == ?< ->
+        {tag_body, _} = consume_tag_body(binary_part(remaining, 1, byte_size(remaining) - 1))
+        find_matching_close(html, pos + 1 + byte_size(tag_body) + 1, tag_name, depth)
+
+      true ->
+        find_matching_close(html, pos + 1, tag_name, depth)
+    end
   end
 
   defp inject_prop_markers(html, props_by_element, _elem_to_tag) when map_size(props_by_element) == 0 do
@@ -504,7 +582,7 @@ defmodule LiveVueNext.Renderer do
     else
       case op.negative do
         nil ->
-          nil
+          ""
 
         %{kind: :if_node} = nested_if ->
           eval_spec({:if_node, nested_if, Expr.assign_keys(nested_if.condition)}, assigns, templates, etm_map)
@@ -520,12 +598,12 @@ defmodule LiveVueNext.Renderer do
     value_name = op.value
     render_block = op.render
 
-    template_html = resolve_template(render_block.returns, templates, etm_map)
-    all_effects = List.flatten(render_block.effects)
-    text_effects = Enum.filter(all_effects, &(&1.kind == :set_text))
-
-    {static_parts, _} = unified_split(template_html, text_effects, [], [], [])
-    fingerprint = compute_fingerprint(static_parts, render_block)
+    # Render the block once to get the correct static parts
+    # (which include prop markers, structural markers, etc.)
+    dummy_assigns = build_item_assigns(assigns, value_name, %{})
+    prototype = block_to_rendered(render_block, templates, etm_map, dummy_assigns)
+    static_parts = prototype.static
+    fingerprint = prototype.fingerprint
 
     entries =
       Enum.map(items, fn item ->

@@ -199,6 +199,22 @@ defmodule LiveVueNextTest do
     end
   end
 
+  describe "v-for with dynamic attributes" do
+    test "dynamic attrs on v-for element" do
+      rendered =
+        LiveVueNext.render(
+          ~s[<div><a v-for="item in items" :href="item.url">{{ item.name }}</a></div>],
+          %{items: [%{url: "/a", name: "A"}, %{url: "/b", name: "B"}]}
+        )
+
+      html = render_to_html(rendered)
+      assert html =~ ~s[href="/a"]
+      assert html =~ ~s[href="/b"]
+      assert html =~ ">A</a>"
+      assert html =~ ">B</a>"
+    end
+  end
+
   describe "event bindings" do
     test "@click maps to phx-click" do
       rendered =
