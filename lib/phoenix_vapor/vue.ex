@@ -31,8 +31,8 @@ defmodule PhoenixVapor.Vue do
 
     source = File.read!(full_path)
     template = extract_template(source)
-    ir = Vize.vapor_ir!(template)
-    escaped_ir = Macro.escape(ir)
+    split = Vize.vapor_split!(template)
+    escaped_split = Macro.escape(split)
 
     {scope_id, scoped_css} = extract_scoped_css(source)
 
@@ -42,7 +42,7 @@ defmodule PhoenixVapor.Vue do
       def unquote(css_fn_name)(), do: unquote(scoped_css)
 
       def unquote(name)(var!(assigns)) do
-        rendered = PhoenixVapor.Renderer.to_rendered(unquote(escaped_ir), var!(assigns))
+        rendered = PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns))
 
         if unquote(scope_id) do
           PhoenixVapor.Renderer.inject_scope_id(rendered, unquote(scope_id))

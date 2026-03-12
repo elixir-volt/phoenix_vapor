@@ -65,8 +65,8 @@ defmodule PhoenixVapor.Reactive do
         nil -> nil
       end
 
-    ir = Vize.vapor_ir!(template_content)
-    escaped_ir = Macro.escape(ir)
+    split = Vize.vapor_split!(template_content)
+    escaped_split = Macro.escape(split)
 
     {refs, computeds, functions, function_bodies, props} =
       if script_content do
@@ -77,7 +77,7 @@ defmodule PhoenixVapor.Reactive do
 
     # Generate the module code
     mount_ast = gen_mount(refs, computeds, props)
-    render_ast = gen_render(escaped_ir, computeds)
+    render_ast = gen_render(escaped_split, computeds)
     event_asts = gen_events(functions, function_bodies, refs, computeds)
 
     quote do
@@ -141,12 +141,11 @@ defmodule PhoenixVapor.Reactive do
     end
   end
 
-  defp gen_render(escaped_ir, computeds) do
+  defp gen_render(escaped_split, computeds) do
     computed_exprs = Map.to_list(computeds)
 
     quote do
       def render(var!(assigns)) do
-        # Re-evaluate computeds before rendering
         var!(assigns) =
           unquote(Macro.escape(computed_exprs))
           |> Enum.reduce(var!(assigns), fn {name, expr}, acc ->
@@ -154,7 +153,7 @@ defmodule PhoenixVapor.Reactive do
             Map.put(acc, String.to_atom(name), value)
           end)
 
-        PhoenixVapor.Renderer.to_rendered(unquote(escaped_ir), var!(assigns), vapor_metadata: true)
+        PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns), vapor_metadata: true)
       end
     end
   end

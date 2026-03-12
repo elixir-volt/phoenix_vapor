@@ -978,7 +978,7 @@ defmodule PhoenixVaporTest do
 
   describe "vapor metadata" do
     test "injects data-vapor and data-vapor-statics when enabled" do
-      ir = Vize.vapor_ir!("<div>{{ msg }}</div>")
+      ir = Vize.vapor_split!("<div>{{ msg }}</div>")
       rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "hello"}, vapor_metadata: true)
       html = render_to_html(rendered)
 
@@ -988,7 +988,7 @@ defmodule PhoenixVaporTest do
     end
 
     test "statics JSON is properly escaped" do
-      ir = Vize.vapor_ir!("<div>{{ msg }}</div>")
+      ir = Vize.vapor_split!("<div>{{ msg }}</div>")
       rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "test"}, vapor_metadata: true)
 
       [first | _] = rendered.static
@@ -1010,7 +1010,7 @@ defmodule PhoenixVaporTest do
     end
 
     test "not injected by default" do
-      ir = Vize.vapor_ir!("<div>{{ msg }}</div>")
+      ir = Vize.vapor_split!("<div>{{ msg }}</div>")
       rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "hello"})
       html = render_to_html(rendered)
 

@@ -35,11 +35,11 @@ defmodule PhoenixVapor.Sigil do
   Requires `assigns` to be in scope (same as `~H`).
   """
   defmacro sigil_VUE({:<<>>, _meta, [template]}, _modifiers) do
-    ir = Vize.vapor_ir!(template)
+    split = Vize.vapor_split!(template)
 
     quote do
       PhoenixVapor.Renderer.to_rendered(
-        unquote(Macro.escape(ir)),
+        unquote(Macro.escape(split)),
         var!(assigns)
       )
     end

@@ -29,12 +29,12 @@ defmodule PhoenixVapor do
         )
       end
 
-  Or precompile the IR at compile time:
+  Or precompile the split at compile time:
 
-      @ir Vize.vapor_ir!("<div :class=\\"status\\"><h1>{{ title }}</h1></div>")
+      @split Vize.vapor_split!("<div :class=\\"status\\"><h1>{{ title }}</h1></div>")
 
       def dashboard(assigns) do
-        PhoenixVapor.render(@ir, assigns)
+        PhoenixVapor.render(@split, assigns)
       end
   """
 
@@ -50,15 +50,15 @@ defmodule PhoenixVapor do
   @doc """
   Render a Vue template as a `%Phoenix.LiveView.Rendered{}` struct.
 
-  Accepts either a template string (compiled on the fly via `Vize.vapor_ir!/1`)
-  or a pre-compiled IR map from `Vize.vapor_ir/1`.
+  Accepts either a template string (compiled on the fly) or a
+  pre-compiled split map from `Vize.vapor_split/1`.
   """
   @spec render(String.t() | map(), map()) :: Phoenix.LiveView.Rendered.t()
   def render(template, assigns) when is_binary(template) do
-    render(Vize.vapor_ir!(template), assigns)
+    render(Vize.vapor_split!(template), assigns)
   end
 
-  def render(%{block: _, templates: _} = ir, assigns) do
-    Renderer.to_rendered(ir, assigns)
+  def render(%{statics: _, slots: _} = split, assigns) do
+    Renderer.to_rendered(split, assigns)
   end
 end
