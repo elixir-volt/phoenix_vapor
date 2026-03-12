@@ -1,96 +1,218 @@
 # Architecture
 
-## Pipeline
+## Three rendering systems compared
 
-```
-                          compile time                              runtime
-                    ┌────────────────────────┐          ┌───────────────────────────┐
-                    │                        │          │                           │
-Vue template ──────→  Vize.vapor_split/1     ├────────→ │ Renderer.to_rendered/2    │
-                    │  (Rust NIF)            │          │ (Elixir)                  │
-                    │                        │          │                           │
-                    │  ┌──────────────────┐  │          │  ┌─────────────────────┐  │
-                    │  │ parse tag tree   │  │          │  │ for each slot:      │  │
-                    │  │ map element IDs  │  │          │  │   check __changed__ │  │
-                    │  │ inject markers   │  │          │  │   eval expression   │  │
-                    │  │ split on markers │  │          │  │   → string value    │  │
-                    │  │ encode slots     │  │          │  └─────────────────────┘  │
-                    │  └──────────────────┘  │          │             │             │
-                    │           │            │          │             ▼             │
-                    │           ▼            │          │  %Rendered{               │
-                    │  %{statics, slots}     │          │    static: [...],         │
-                    │  (embedded in BEAM     │          │    dynamic: fn,           │
-                    │   module bytecode)     │          │    fingerprint: int       │
-                    │                        │          │  }                        │
-                    └────────────────────────┘          └─────────────┬─────────────┘
-                                                                     │
-                                                       enters LiveView diff engine
-                                                       unchanged — same as ~H
+Phoenix Vapor sits at the intersection of two rendering architectures that independently arrived at the same patterns. This section compares them at the protocol and DOM operation level, then shows how Phoenix Vapor bridges them.
+
+### The template: a counter
+
+```html
+<div>
+  <p class="active">Count: 42</p>
+  <button>+</button>
+</div>
 ```
 
-## What goes over the wire
+### How Phoenix LiveView renders it
 
-### First render (join)
-
-Template: `<div><p :class="label">Count: {{ count }}</p></div>`
-
-Assigns: `%{count: 0, label: "active"}`
-
-The NIF splits the template into statics and slots:
+**Compile time** — the HEEx engine splits the template into static strings and dynamic holes:
 
 ```elixir
+# ~H"""
+# <div>
+#   <p class={@label}>Count: <%= @count %></p>
+#   <button phx-click="inc">+</button>
+# </div>
+# """
+
+%Rendered{
+  static: ["<div><p class=\"", "\">Count: ", "</p><button phx-click=\"inc\">+</button></div>"],
+  dynamic: fn changed? ->
+    [
+      if !changed? || changed?[:label], do: assigns.label,   # slot 0
+      if !changed? || changed?[:count], do: assigns.count    # slot 1
+    ]
+  end,
+  fingerprint: 28537016426557327042948424934498587137
+}
+```
+
+**Wire — first render (join reply):**
+
+```json
+{
+  "s": ["<div><p class=\"", "\">Count: ", "</p><button phx-click=\"inc\">+</button></div>"],
+  "0": "active",
+  "1": "42"
+}
+```
+
+Key `"s"` = statics (sent once, cached by fingerprint). `"0"`, `"1"` = dynamic slot values.
+
+**Wire — update (only count changed):**
+
+The server sees `__changed__: %{count: true}`. Slot 0 (label) returns `nil` → omitted. Only slot 1 is sent:
+
+```json
+{"1": "43"}
+```
+
+**Client processing (`rendered.js` → `dom_patch.js`):**
+
+```
+1. rendered.mergeDiff({"1": "43"})
+   └─ stores "43" at rendered["1"]
+
+2. rendered.toString()
+   └─ concatenates: static[0] + rendered[0] + static[1] + rendered[1] + static[2]
+   └─ result: "<div><p class=\"active\">Count: 43</p><button phx-click=\"inc\">+</button></div>"
+
+3. new DOMPatch(view, container, id, html, streams, null)
+   └─ wraps in container tag: "<div id=\"phx-Fxyz\"><div><p class=...>...</div></div>"
+
+4. morphdom(targetContainer, source, callbacks)
+   └─ parses source HTML into a DOM tree
+   └─ walks both old and new trees node by node
+   └─ for each node pair: compares tag, attributes, children
+   └─ applies minimal mutations: here just textContent of one text node
+   └─ runs ~30 callback hooks (onBeforeElUpdated, onNodeAdded, onNodeDiscarded, ...)
+   └─ handles focus preservation, form state, PHX_SKIP optimization, streams, etc.
+```
+
+For a single number change, morphdom still: allocates an HTML string, parses it into DOM, walks the entire tree, and compares every node.
+
+### How Vue Vapor renders it
+
+**Compile time** — the Vapor compiler produces JS code that creates a template once and sets up per-expression reactive effects:
+
+```js
+const t0 = _template("<div><p><button>+</button></p></div>")
+
+export function render(_ctx) {
+  const n0 = t0()                          // cloneNode(true) from cached template
+  const n1 = n0.firstChild                 // <p>
+  const n2 = n1.nextSibling               // <button>
+
+  // One effect per dynamic expression, tracked by Vue's reactivity system
+  renderEffect(() => setClass(n1, _ctx.label))
+  renderEffect(() => setText(n1, "Count: ", _ctx.count))
+  on(n2, "click", _ctx.inc)
+
+  return n0
+}
+```
+
+**Runtime — update (count changes from ref(42) to ref(43)):**
+
+```
+1. Vue's reactivity system detects that `count` ref changed
+2. Only the setText effect is dirty (setClass effect's deps didn't change)
+3. The scheduler runs: setText(n1, "Count: ", 43)
+   └─ n1.textContent = "Count: 43"    ← one DOM write
+```
+
+No wire protocol — everything happens client-side. No HTML string. No tree diff. The reactive dependency graph knows exactly which effects to re-run.
+
+### How Phoenix Vapor bridges them
+
+**Compile time** — Vize (Rust NIF) compiles the Vue template to a statics/slots split:
+
+```elixir
+Vize.vapor_split!(~s[<div><p :class="label">Count: {{ count }}</p><button @click="inc">+</button></div>])
+
 %{
-  statics: ["<div><p class=\"", "\">", "</p></div>"],
+  statics: ["<div><p class=\"", "\">", "</p><button phx-click=\"inc\">+</button></div>"],
   slots: [
-    %{kind: :set_prop, values: ["label"]},
-    %{kind: :set_text, values: [{:static_, "Count: "}, "count"]}
+    %{kind: :set_prop, values: ["label"]},              # slot 0 — attribute
+    %{kind: :set_text, values: [{:static_, "Count: "}, "count"]}  # slot 1 — text
   ]
 }
 ```
 
-The renderer evaluates slots against assigns and produces:
+`@click="inc"` becomes `phx-click="inc"` in statics. `:class="label"` becomes a `set_prop` slot.
+
+**Runtime** — `Renderer.to_rendered/2` evaluates slots against LiveView assigns:
 
 ```elixir
 %Rendered{
-  static: ["<div><p class=\"", "\">", "</p></div>"],
-  dynamic: fn _ -> ["active", "Count: 0"] end,
+  static: ["<div><p class=\"", "\">", "</p><button phx-click=\"inc\">+</button></div>"],
+  dynamic: fn changed? ->
+    [
+      if !changed? || slot_changed?(:label, changed?), do: "active",
+      if !changed? || slot_changed?(:count, changed?), do: "Count: 42"
+    ]
+  end,
   fingerprint: 94949380559044124300359658668089091771
 }
 ```
 
-LiveView's diff engine sends to the client:
+From here it's standard LiveView. Same `diff.ex`, same wire format, same `"s"`/`"0"`/`"1"` keys.
+
+**Wire — identical to LiveView:**
 
 ```json
-{
-  "s": ["<div><p class=\"", "\">", "</p></div>"],
-  "0": "active",
-  "1": "Count: 0"
-}
+{"1": "Count: 43"}
 ```
 
-The client concatenates statics + dynamics into HTML, inserts via `innerHTML`.
+**Client — with `patchLiveSocket` (Vapor DOM):**
 
-### Subsequent update (diff)
+```
+1. rendered.mergeDiff({"1": "Count: 43"})
+   └─ same as standard LiveView
 
-User clicks increment. Server re-renders with `%{count: 1, label: "active", __changed__: %{count: true}}`.
-
-The renderer checks each slot against `__changed__`:
-- Slot 0 (`label`) — depends on `:label`, not in `__changed__` → `nil` (skip)
-- Slot 1 (`Count: {{ count }}`) — depends on `:count`, in `__changed__` → `"Count: 1"`
-
-```json
-{"1": "Count: 1"}
+2. Instead of toString + morphdom:
+   └─ registry lookup: slot 1 → {type: "text", node: <TextNode>}
+   └─ node.textContent = "Count: 43"     ← one DOM write, like Vue Vapor
 ```
 
-8 bytes. Only the changed text, only the changed slot index.
+The registry is built once on first render by parsing the statics:
 
-Standard LiveView applies this by rebuilding the full HTML string and running morphdom. Vapor DOM applies it by writing `node.textContent = "Count: 1"` directly.
+```
+statics: ["<div><p class=\"", "\">", "</p>..."]
+                            ↑      ↑
+                          slot 0  slot 1
 
-### v-if
+slot 0: prefix ends inside class=" → type: "attr", key: "class", node: <p>
+slot 1: prefix ends with ">       → type: "text", node: <p>.childNodes[1]
+```
 
-Template: `<div><p v-if="show">{{ msg }}</p><p v-else>Hidden</p></div>`
+### Summary
 
-When `show` is `true`:
+|  | LiveView (HEEx) | Vue Vapor | Phoenix Vapor |
+|--|---|---|---|
+| **Template syntax** | `<%= @count %>` | `{{ count }}` | `{{ count }}` (Vue) |
+| **Compilation** | Elixir AST | JS codegen | Rust NIF → statics/slots |
+| **Server state** | `assigns` map | — (client only) | `assigns` map |
+| **Change tracking** | `__changed__` map | Reactive dep graph | `__changed__` map |
+| **Wire format** | `{"s": [...], "0": "val"}` | — (no wire) | Same as LiveView |
+| **Client: first render** | innerHTML + morphdom | template() + cloneNode | innerHTML + morphdom + build registry |
+| **Client: update** | toString → innerHTML → morphdom | setText(node, val) | registry[slot].node.textContent = val |
+| **Structural change** | New fingerprint → full re-render | Tear down + mount new block | New fingerprint → morphdom fallback |
+| **List reconciliation** | `%Comprehension{}` + keyed | createFor + LIS algorithm | `%Comprehension{}` + keyed |
+
+---
+
+## LiveView wire protocol reference
+
+The keys used in the JSON diff protocol, as defined in `constants.js` and `diff.ex`:
+
+| Key | Constant | Meaning |
+|-----|----------|---------|
+| `"s"` | `STATIC` | Statics array — the unchanging HTML fragments. Sent on first render or fingerprint change. Can be an integer referencing a shared template. |
+| `"0"`, `"1"`, ... | (integer keys) | Dynamic slot values. String = text/attribute value. Object = nested `%Rendered{}`. Integer = component CID. `null` = unchanged. |
+| `"r"` | `ROOT` | `1` if this rendered struct is a root element (has a single static HTML tag at the top). |
+| `"c"` | `COMPONENTS` | Map of component CID → component diff. Components are diffed separately and referenced by integer CID in the parent's dynamic slots. |
+| `"p"` | `TEMPLATES` | Shared template registry. Map of integer index → statics array. Multiple rendered structs with the same fingerprint share statics via integer reference in `"s"`. |
+| `"k"` | `KEYED` | Keyed comprehension entries. Map of index → entry diff. Entries can be: object (new/changed), integer (moved, no changes), `[old_idx, diff]` (moved with changes). |
+| `"kc"` | `KEYED_COUNT` | Total number of entries in the comprehension. |
+| `"stream"` | `STREAM` | Stream metadata: `[ref, inserts, deleteIds, reset]`. |
+| `"e"` | `EVENTS` | Server-pushed events. |
+| `"t"` | `TITLE` | Page title update. |
+| `"r"` | `REPLY` | Reply payload for `handle_event` return. |
+
+### Nested rendered struct (v-if)
+
+A dynamic slot containing an object is a nested `%Rendered{}`:
 
 ```json
 {
@@ -98,64 +220,250 @@ When `show` is `true`:
   "0": {
     "s": ["<p>", "</p>"],
     "0": "Hello",
-    "f": 119858224020869001705791094324100020391
+    "r": 1
   }
 }
 ```
 
-When `show` changes to `false`, the server sends a nested rendered with a **different fingerprint**:
+When the fingerprint changes (v-if branch switch), the new `"s"` is sent:
 
 ```json
 {
   "0": {
-    "s": ["<p>Hidden</p>"],
-    "f": 19949037608775884940587308270848430422
+    "s": ["<p>Hidden</p>"]
   }
 }
 ```
 
-The fingerprint change tells the client the template structure changed — it must replace the entire subtree, not patch individual values. This is the same mechanism LiveView uses for `if`/`case` in HEEx.
+The client sees new statics → discards the old subtree and renders fresh.
 
-### v-for
-
-Template: `<ul><li v-for="item in items">{{ item }}</li></ul>`
-
-Assigns: `%{items: ["Elixir", "Vue", "Vapor"]}`
+### Comprehension (v-for)
 
 ```json
 {
   "s": ["<ul>", "</ul>"],
   "0": {
     "s": ["<li>", "</li>"],
-    "d": [["Elixir"], ["Vue"], ["Vapor"]]
+    "k": {
+      "0": {"0": "Elixir"},
+      "1": {"0": "Vue"},
+      "2": {"0": "Vapor"},
+      "kc": 3
+    }
   }
 }
 ```
 
-The comprehension shares one `"s"` (statics) across all entries. Each entry in `"d"` is an array of its dynamic values. When an item changes, only that entry's array is re-sent. With `:key`, LiveView tracks identity across reorders.
+On update (item 1 changed, item 2 moved):
 
-## Vapor split: what the NIF does
+```json
+{
+  "0": {
+    "k": {
+      "1": {"0": "Vue 4"},
+      "2": 1,
+      "kc": 3
+    }
+  }
+}
+```
 
-The Rust NIF (`Vize.vapor_split/1`) takes a Vue template string and returns `%{statics, slots}` ready for `%Rendered{}`. All HTML manipulation happens in Rust:
+- `"1": {"0": "Vue 4"}` — entry at index 1 has new dynamics
+- `"2": 1` — entry at index 2 was previously at index 1 (moved, no content change)
+- `"kc": 3` — still 3 entries total
 
-**1. Compile** — runs the Vize Vapor compiler to produce IR (operations, effects, templates)
+### Component CID
 
-**2. Parse tag tree** — walks the template HTML tracking open/close tags, building a map from Vapor element IDs to tag byte positions
+Dynamic slot containing an integer = component CID reference:
 
-**3. Inject markers** — for each dynamic slot, inserts a null-byte marker (`\x00`) at the correct position in the HTML:
-- `:set_prop` → marker inside the attribute value: `class="\x00"`
-- `:set_text` → marker between tags: `<p>\x00</p>`
-- structural ops → marker before closing tag of parent
+```json
+{
+  "s": ["<div>", "</div>"],
+  "0": 1,
+  "c": {
+    "1": {
+      "s": ["<span>", "</span>"],
+      "0": "component content"
+    }
+  }
+}
+```
 
-**4. Split** — splits the marked HTML on `\x00` boundaries to produce the statics array
+Component diffs are in `"c"`, keyed by CID. Static sharing across components uses negative CID: `"s": -3` means "use statics from CID 3".
 
-**5. Encode slots** — each slot gets `kind` + expression metadata. Sub-blocks (v-if branches, v-for render block) are recursively split, returned as nested `%{statics, slots}` maps
+### Template sharing (`"p"` key)
 
-The result is a plain Elixir map that can be `Macro.escape`d into module bytecode — no NIF call at runtime.
+When multiple structures share the same statics (same fingerprint), the server sends statics once in `"p"` and references by integer:
+
+```json
+{
+  "p": {
+    "0": ["<li>", "</li>"]
+  },
+  "s": ["<ul>", "</ul>"],
+  "0": {
+    "s": 0,
+    "k": { "0": {"0": "a"}, "1": {"0": "b"}, "kc": 2 }
+  }
+}
+```
+
+`"s": 0` means "look up statics at `templates[0]`" → `["<li>", "</li>"]`.
+
+### Client processing pipeline
+
+```
+WebSocket message
+      │
+      ▼
+Rendered.extract(diff)
+├─ pulls out "e" (events), "t" (title), "r" (reply)
+└─ returns {diff, title, reply, events}
+      │
+      ▼
+rendered.mergeDiff(diff)
+├─ if diff has "s" → new fingerprint, replace entire subtree state
+├─ if diff has "k" → keyed comprehension merge:
+│   ├─ integer entry → moved without changes
+│   ├─ [old_idx, diff] → moved with changes
+│   └─ object entry → new or in-place update
+├─ otherwise → merge dynamic values by key
+└─ sets newRender flag on root elements
+      │
+      ▼
+rendered.toString(cids)
+├─ recursiveToString walks the rendered tree
+├─ concatenates: static[0] + dynamic[0] + static[1] + dynamic[1] + ...
+├─ integers in dynamic slots → recursiveCIDToString (component rendering)
+├─ objects in dynamic slots → recursive toOutputBuffer
+├─ comprehensions → comprehensionToBuffer (loops over keyed entries)
+├─ root elements get data-phx-id="m{N}" for skip optimization
+└─ if !newRender → data-phx-skip="true" (morphdom skips innerHTML)
+      │
+      ▼
+new DOMPatch(view, container, id, html, streams)
+      │
+      ▼
+morphdom(targetContainer, source, callbacks)
+├─ parses source HTML string into DOM tree
+├─ getNodeKey: uses element id or data-phx-id for matching
+├─ onBeforeElUpdated:
+│   ├─ data-phx-skip → return false (skip this subtree entirely)
+│   ├─ PHX_REF_LOCK → clone tree for pending form lock
+│   ├─ focused form input → mergeFocusedInput (preserve user input)
+│   ├─ phx-update="ignore" → merge attrs only
+│   └─ otherwise → allow morphdom to patch
+├─ onNodeAdded: handles streams, portals, nested views, runtime hooks
+├─ onNodeDiscarded: destroys child views, hooks
+└─ after morph: restore focus/selection, dispatch "phx:update"
+```
+
+---
+
+## Phoenix Vapor: how the bridge works
+
+### Compile-time pipeline
+
+```
+Vue template ─→ Vize.vapor_split/1 ─→ %{statics, slots}
+                    Rust NIF
+```
+
+The NIF performs 5 steps in Rust:
+
+1. **Compile** — Vize Vapor compiler produces IR (operations, effects, templates)
+2. **Parse tag tree** — walks HTML tracking open/close tags, maps Vapor element IDs to byte positions
+3. **Inject markers** — inserts `\x00` at split points: inside attribute values for `:attr`, between tags for `{{ text }}`, before closing tags for structural directives
+4. **Split** — splits on `\x00` boundaries → statics array
+5. **Encode slots** — each slot gets `kind` + expression metadata. Sub-blocks (v-if branches, v-for body) are recursively split
+
+Result is `Macro.escape`d into BEAM bytecode — no NIF at runtime.
+
+### Runtime evaluation
+
+```elixir
+Renderer.to_rendered(split, assigns)
+```
+
+For each slot in order:
+
+1. Check `__changed__` — if no referenced assigns changed, return `nil` (LiveView skips in diff)
+2. Evaluate expression via `Expr.eval`:
+   - `:set_text` → concatenate values, HTML-escape → string
+   - `:set_prop` → concatenate values, HTML-escape → string
+   - `:set_html` → evaluate, no escaping → string
+   - `:v_show` → evaluate condition → `""` or `"display: none"`
+   - `:v_model` → evaluate, HTML-escape → string
+   - `:if_node` → evaluate condition, recurse into positive or negative branch → nested `%Rendered{}`
+   - `:for_node` → evaluate source list, render each item → `%Comprehension{}`
+   - `:create_component` → look up in `__components__`, call with props → rendered output
+
+Output: standard `%Rendered{}` that `diff.ex` processes without modification.
+
+### Vapor DOM client
+
+With `patchLiveSocket(liveSocket)`, the client monkey-patches `View.prototype.update`:
+
+```
+diff arrives
+      │
+      ├─ has "c" (components) or "s" (new statics)?
+      │   yes → fall back to standard toString + morphdom
+      │
+      ├─ find [data-vapor-statics] element in view
+      │   not found → fall back
+      │
+      ├─ registry exists?
+      │   no → fall back
+      │
+      └─ for each changed slot in diff:
+          registry.get(slotIdx)
+          ├─ type: "text" → node.nodeValue = value
+          └─ type: "attr" → el.className / el.setAttribute / el.style.cssText = value
+```
+
+Registry is built once per element from `data-vapor-statics` (JSON-encoded statics array):
+
+```js
+analyzeStatics(["<div><p class=\"", "\">", "</p></div>"])
+// → [
+//   {type: "attr", nodePath: [0], key: "class"},
+//   {type: "text", parentPath: [0], textIndex: 0}
+// ]
+
+resolveRegistry(slots, rootElement)
+// → Map {
+//   0 → {type: "attr", node: <p>, key: "class"},
+//   1 → {type: "text", node: #text}
+// }
+```
+
+---
+
+## `.vue` SFC → LiveView
+
+`use PhoenixVapor.Reactive, file: "Counter.vue"` at macro expansion:
+
+```
+Counter.vue
+    │
+    ├─ <template> ──→ Vize.vapor_split/1 ──→ statics/slots (embedded in bytecode)
+    │
+    └─ <script setup> ──→ OXC.parse/2 ──→ AST
+                                │
+                                ├─ ref(0)            → mount assign {count: 0}
+                                ├─ computed(() => x) → re-evaluated in render
+                                ├─ function inc()    → handle_event("inc", ...)
+                                └─ defineProps([])   → URL params merged to assigns
+```
+
+Generated callbacks:
+
+- **`mount/3`** — initializes assigns from `ref()` initial values
+- **`render/1`** — evaluates computeds, then `Renderer.to_rendered(split, assigns)`
+- **`handle_event/3`** — one clause per function, executes body in QuickBEAM against current state, updates assigns, re-evaluates computeds
 
 ## Expression evaluation
-
-Expressions in slots (e.g. `"count"`, `"user.name"`, `"count > 0 ? 'yes' : 'no'"`) are evaluated at runtime by `PhoenixVapor.Expr`:
 
 ```
 expression string
@@ -164,7 +472,7 @@ expression string
   OXC.parse/2  (Rust NIF → ESTree AST)
       │
       ▼
-  eval_node/2  (pattern match on AST node types)
+  eval_node/2  (Elixir pattern match on AST node types)
       │
       ├─ Identifier "count"         → Map.get(assigns, :count)
       ├─ MemberExpression a.b       → nested map access
@@ -178,94 +486,6 @@ expression string
                                     (JS runtime in BEAM, optional)
 ```
 
-The OXC path handles ~90% of real-world template expressions without any JS runtime. QuickBEAM catches the rest.
-
-## Vapor DOM: morphdom bypass
-
-Standard LiveView update path:
-
-```
-WebSocket message
-      │
-      ▼
-rendered.mergeDiff(diff)     merge new values into rendered tree
-      │
-      ▼
-rendered.toString()          concatenate statics + dynamics → HTML string
-      │
-      ▼
-document.createElement()     parse HTML string into DOM tree
-      │
-      ▼
-morphdom(container, newDOM)  walk both trees, diff, patch
-```
-
-Vapor DOM update path:
-
-```
-WebSocket message
-      │
-      ▼
-rendered.mergeDiff(diff)     merge new values into rendered tree
-      │
-      ▼
-registry.get(slotIdx)        look up the DOM node for each changed slot
-      │
-      ▼
-node.textContent = value     one property write per changed slot
-node.className = value
-```
-
-### How the registry is built
-
-On first render, the client parses the statics array to classify each dynamic slot:
-
-```
-statics: ["<div><p class=\"", "\">", "</p></div>"]
-                           ↑      ↑
-                         slot 0  slot 1
-```
-
-- **Slot 0**: prefix ends inside `class="` → attribute slot, key `"class"`
-- **Slot 1**: prefix ends with `">` → text content slot
-
-The client walks the live DOM using element paths derived from statics to find the actual DOM nodes, then stores them in a `Map<slotIndex, {type, node, key}>`.
-
-This happens once per unique fingerprint. Subsequent diffs are just map lookups + property writes.
-
-### What uses Vapor DOM vs morphdom fallback
-
-| Scenario | Path |
-|---|---|
-| Text/attribute-only diff | ✅ Vapor DOM — direct write |
-| First render (join) | morphdom — builds initial DOM, then registers nodes |
-| Fingerprint change (v-if branch switch) | morphdom — structural change |
-| Components (`data-phx-component`) | morphdom — CID routing |
-| Streams (`phx-update="stream"`) | morphdom — append/prepend |
-
-## `.vue` SFC → LiveView
-
-`use PhoenixVapor.Reactive, file: "Counter.vue"` compiles at macro expansion time:
-
-```
-Counter.vue
-    │
-    ├─ <template> ──→ Vize.vapor_split/1 ──→ statics/slots (embedded in bytecode)
-    │
-    └─ <script setup> ──→ OXC.parse/2 ──→ AST
-                                │
-                                ├─ ref(0)           → mount assign {count: 0}
-                                ├─ computed(() => x) → re-evaluated in render
-                                ├─ function inc()   → handle_event("inc", ...)
-                                └─ defineProps([])   → URL params
-```
-
-Generated callbacks:
-
-- **`mount/3`** — initializes assigns from `ref()` initial values
-- **`render/1`** — evaluates computeds, then `Renderer.to_rendered(split, assigns)`
-- **`handle_event/3`** — one clause per function, executes body in QuickBEAM with current ref state as JS variables, updates assigns with new values, re-evaluates computeds
-
 ## Limitations
 
 - No `<slot />` mapping to LiveView inner content
@@ -273,7 +493,7 @@ Generated callbacks:
 - No watchers or lifecycle hooks (`onMounted`, `watch()`)
 - Without QuickBEAM, expressions with callbacks return nil
 - SFC `ref()` initial values must be literals; `computed()` must be single-expression arrow functions
-- Vapor DOM handles text/attribute diffs only — structural changes (v-if branch switch, v-for reorder) still go through morphdom
+- Vapor DOM handles text/attribute diffs only — structural changes fall back to morphdom
 
 ## Module inventory
 
