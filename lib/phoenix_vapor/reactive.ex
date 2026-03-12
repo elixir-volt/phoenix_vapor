@@ -114,7 +114,7 @@ defmodule PhoenixVapor.Reactive do
                 "null" -> nil
                 "[]" -> []
                 "{}" -> %{}
-                expr -> PhoenixVapor.JsEval.eval(expr, %{}) || 0
+                expr -> PhoenixVapor.Expr.eval(expr, %{}) || 0
               end
 
             Map.put(acc, name, value)
@@ -206,34 +206,17 @@ defmodule PhoenixVapor.Reactive do
     if Code.ensure_loaded?(QuickBEAM) do
       {:ok, rt} = QuickBEAM.start()
 
-      # Inject current state as variables
-      setup =
-        Enum.map(current_state, fn {k, v} ->
-          "var #{k} = #{Jason.encode!(v)};"
-        end)
-        |> Enum.join("\n")
-
-      # Wrap the body in a function to avoid scope issues,
-      # and return state via JSON
-      return_vars =
+      return_expr =
         current_state
         |> Map.keys()
         |> Enum.map(fn k -> "\"#{k}\": #{k}" end)
         |> Enum.join(", ")
 
-      code = """
-      #{setup}
-      #{body};
-      var __result__ = {#{return_vars}};
-      __result__
-      """
+      code = "#{body};\n({#{return_expr}})"
 
-      case QuickBEAM.eval(rt, code) do
-        {:ok, result} when is_map(result) ->
-          result
-
-        _ ->
-          current_state
+      case QuickBEAM.eval(rt, code, vars: current_state) do
+        {:ok, result} when is_map(result) -> result
+        _ -> current_state
       end
     else
       current_state

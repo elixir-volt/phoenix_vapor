@@ -26,7 +26,7 @@ defmodule PhoenixVapor.MixProject do
       {:phoenix_live_view, "~> 1.0"},
       {:vize, "~> 0.5.0"},
       {:oxc, "~> 0.5.0"},
-      {:quickbeam, "~> 0.3.0", optional: true}
+      {:quickbeam, path: "../quickbeam", optional: true}
     ]
   end
 end

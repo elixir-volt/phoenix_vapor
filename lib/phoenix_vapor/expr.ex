@@ -25,7 +25,7 @@ defmodule PhoenixVapor.Expr do
     case parse_and_eval(expr, assigns) do
       {:ok, value} -> value
       :error -> resolve_path(expr, assigns)
-      :fallback -> PhoenixVapor.JsEval.eval(expr, assigns)
+      :fallback -> quickbeam_eval(expr, assigns)
     end
   end
 
@@ -333,5 +333,31 @@ defmodule PhoenixVapor.Expr do
     end)
   rescue
     ArgumentError -> nil
+  end
+
+  defp quickbeam_eval(expr, assigns) do
+    if Code.ensure_loaded?(QuickBEAM) do
+      vars =
+        assigns
+        |> Enum.filter(fn {k, _} -> is_atom(k) and k not in [:__changed__, :__components__] end)
+        |> Map.new(fn {k, v} -> {Atom.to_string(k), v} end)
+
+      case QuickBEAM.eval(quickbeam_runtime(), expr, vars: vars) do
+        {:ok, result} -> result
+        _ -> nil
+      end
+    end
+  end
+
+  defp quickbeam_runtime do
+    case Process.get(:phoenix_vapor_quickbeam_rt) do
+      nil ->
+        {:ok, rt} = QuickBEAM.start()
+        Process.put(:phoenix_vapor_quickbeam_rt, rt)
+        rt
+
+      rt ->
+        rt
+    end
   end
 end
