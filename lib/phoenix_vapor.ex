@@ -3,7 +3,8 @@ defmodule PhoenixVapor do
   Vue templates as native LiveView rendered structs.
 
   Compiles Vue template syntax to `%Phoenix.LiveView.Rendered{}` via
-  Vize's Vapor IR — no JavaScript runtime needed for template-only components.
+  Vize's Vapor IR. Simple expressions evaluate in pure Elixir via OXC AST;
+  complex JS expressions fall back to QuickBEAM when available.
 
   ## Sigil Usage
 

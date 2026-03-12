@@ -2,9 +2,9 @@ defmodule PhoenixVapor.Sigil do
   @moduledoc """
   Provides the `~VUE` sigil for embedding Vue templates in LiveView components.
 
-  The Vue template is compiled to Vapor IR at compile time via `Vize.vapor_ir!/1`.
-  At runtime, the IR is transformed into a `%Phoenix.LiveView.Rendered{}` struct
-  that participates in LiveView's diff engine with per-assign change tracking.
+  The Vue template is compiled to a statics/slots split at compile time via
+  `Vize.vapor_split!/1`. At runtime, slots are evaluated against assigns to
+  produce a `%Phoenix.LiveView.Rendered{}` struct with per-assign change tracking.
 
   ## Usage
 
