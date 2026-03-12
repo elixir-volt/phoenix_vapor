@@ -1,5 +1,6 @@
 defmodule PhoenixVaporDemoWeb.VaporTestLive do
   use PhoenixVaporDemoWeb, :live_view
+  use PhoenixVapor
 
   @impl true
   def mount(_params, _session, socket) do
@@ -8,8 +9,10 @@ defmodule PhoenixVaporDemoWeb.VaporTestLive do
 
   @impl true
   def render(assigns) do
-    ir = Vize.vapor_ir!(~s[<div><p :class="label">Count: {{ count }}</p><button @click="increment">+</button></div>])
-    PhoenixVapor.Renderer.to_rendered(ir, assigns, vapor_metadata: true)
+    split =
+      Vize.vapor_split!(~s[<div><p :class="label">Count: {{ count }}</p><button @click="increment">+</button></div>])
+
+    PhoenixVapor.Renderer.to_rendered(split, assigns, vapor_metadata: true)
   end
 
   @impl true

@@ -23,6 +23,7 @@ defmodule PhoenixVaporDemoWeb.Router do
     live "/showcase", ShowcaseLive
     live "/reactive", ReactiveCounterLive
     live "/vapor-test", VaporTestLive
+    live "/compare", CompareLive
   end
 
   # Other scopes may use custom stacks.

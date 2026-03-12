@@ -60,7 +60,7 @@ defmodule PhoenixVaporDemo.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:phoenix_vapor, path: "../.."},
-      {:quickbeam, "~> 0.3.0"}
+      {:quickbeam, path: "../../../quickbeam", override: true}
     ]
   end
 
