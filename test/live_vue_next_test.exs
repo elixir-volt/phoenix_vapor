@@ -916,6 +916,66 @@ defmodule LiveVueNextTest do
     end
   end
 
+  describe "Reactive macro" do
+    defmodule ReactiveCounter do
+      use Phoenix.LiveView
+      use LiveVueNext.Reactive, file: "fixtures/Counter.vue"
+    end
+
+    test "generates mount with initial state" do
+      {:ok, socket} =
+        ReactiveCounter.mount(%{}, %{}, %Phoenix.LiveView.Socket{
+          assigns: %{__changed__: %{}, flash: %{}, live_action: nil},
+          private: %{assign_new: {%{}, []}}
+        })
+
+      assert socket.assigns.count == 0
+      assert socket.assigns.doubled == 0
+    end
+
+    test "generates render function" do
+      assigns = %{count: 5, doubled: 10}
+      rendered = ReactiveCounter.render(assigns)
+      assert %Phoenix.LiveView.Rendered{} = rendered
+      html = render_to_html(rendered)
+      assert html =~ "5"
+      assert html =~ "10"
+    end
+
+    test "generates handle_event for increment" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{count: 3, doubled: 6, __changed__: %{}, flash: %{}, live_action: nil},
+        private: %{assign_new: {%{}, []}}
+      }
+
+      {:noreply, socket} = ReactiveCounter.handle_event("increment", %{}, socket)
+      assert socket.assigns.count == 4
+      assert socket.assigns.doubled == 8
+    end
+
+    test "generates handle_event for decrement" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{count: 3, doubled: 6, __changed__: %{}, flash: %{}, live_action: nil},
+        private: %{assign_new: {%{}, []}}
+      }
+
+      {:noreply, socket} = ReactiveCounter.handle_event("decrement", %{}, socket)
+      assert socket.assigns.count == 2
+      assert socket.assigns.doubled == 4
+    end
+
+    test "generates handle_event for reset" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{count: 99, doubled: 198, __changed__: %{}, flash: %{}, live_action: nil},
+        private: %{assign_new: {%{}, []}}
+      }
+
+      {:noreply, socket} = ReactiveCounter.handle_event("reset", %{}, socket)
+      assert socket.assigns.count == 0
+      assert socket.assigns.doubled == 0
+    end
+  end
+
   describe "rendered struct shape" do
     test "produces valid %Rendered{} with correct field types" do
       rendered = LiveVueNext.render("<div>{{ msg }}</div>", %{msg: "Hi"})

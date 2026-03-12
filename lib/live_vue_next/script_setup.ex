@@ -28,8 +28,8 @@ defmodule LiveVueNext.ScriptSetup do
   def parse(script_source) do
     case OXC.parse(script_source, "setup.js") do
       {:ok, ast} ->
-        refs = extract_refs(ast)
-        computeds = extract_computeds(ast)
+        refs = extract_refs(ast, script_source)
+        computeds = extract_computeds(ast, script_source)
         functions = extract_functions(ast)
         props = extract_props(ast)
         {refs, computeds, functions, props}
@@ -71,7 +71,7 @@ defmodule LiveVueNext.ScriptSetup do
     end)
   end
 
-  defp extract_refs(ast) do
+  defp extract_refs(ast, source) do
     OXC.collect(ast, fn
       %{type: "VariableDeclaration", declarations: decls} ->
         refs =
@@ -79,7 +79,7 @@ defmodule LiveVueNext.ScriptSetup do
               init != nil,
               %{type: "CallExpression", callee: %{name: "ref"}, arguments: args} <- [init],
               [arg | _] <- [args] do
-            {name, source_text(arg)}
+            {name, slice_source(source, arg)}
           end
 
         case refs do
@@ -94,7 +94,7 @@ defmodule LiveVueNext.ScriptSetup do
     |> Map.new()
   end
 
-  defp extract_computeds(ast) do
+  defp extract_computeds(ast, source) do
     OXC.collect(ast, fn
       %{type: "VariableDeclaration", declarations: decls} ->
         computeds =
@@ -102,13 +102,11 @@ defmodule LiveVueNext.ScriptSetup do
               init != nil,
               %{type: "CallExpression", callee: %{name: "computed"}, arguments: args} <- [init],
               [%{type: "ArrowFunctionExpression", body: body} | _] <- [args] do
-            expr =
-              case body do
-                %{type: "BlockStatement"} -> nil
-                expr_node -> source_text(expr_node)
-              end
-
-            if expr, do: {name, expr}
+            case body do
+              %{type: "BlockStatement"} -> nil
+              %{start: _, end: _} = expr_node -> {name, slice_source(source, expr_node)}
+              _ -> nil
+            end
           end
 
         case Enum.filter(computeds, & &1) do
@@ -152,26 +150,9 @@ defmodule LiveVueNext.ScriptSetup do
     |> List.flatten()
   end
 
-  defp source_text(%{start: s, end: e} = node) do
-    case Map.get(node_map(), {s, e}) do
-      nil -> inspect_node_value(node)
-      text -> text
-    end
+  defp slice_source(source, %{start: s, end: e}) do
+    binary_part(source, s, e - s)
   end
 
-  defp source_text(_), do: "null"
-
-  defp inspect_node_value(%{type: "Literal", value: v}) when is_number(v), do: to_string(v)
-  defp inspect_node_value(%{type: "Literal", value: v}) when is_binary(v), do: inspect(v)
-  defp inspect_node_value(%{type: "Literal", raw: raw}), do: raw
-  defp inspect_node_value(%{type: "ArrayExpression"}), do: "[]"
-  defp inspect_node_value(%{type: "ObjectExpression"}), do: "{}"
-  defp inspect_node_value(%{type: "Identifier", name: n}), do: n
-  defp inspect_node_value(%{type: "BinaryExpression", left: l, operator: op, right: r}),
-    do: "#{inspect_node_value(l)} #{op} #{inspect_node_value(r)}"
-  defp inspect_node_value(%{type: "MemberExpression", object: obj, property: prop}),
-    do: "#{inspect_node_value(obj)}.#{inspect_node_value(prop)}"
-  defp inspect_node_value(_), do: "null"
-
-  defp node_map, do: %{}
+  defp slice_source(_source, _node), do: "null"
 end

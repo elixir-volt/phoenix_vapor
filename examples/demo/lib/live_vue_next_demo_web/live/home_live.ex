@@ -8,7 +8,8 @@ defmodule LiveVueNextDemoWeb.HomeLive do
        demos: [
          %{path: "/counter", title: "Counter", desc: "Simple counter with phx-click events"},
          %{path: "/todo", title: "Todo List", desc: "v-for, conditional rendering, dynamic attrs"},
-         %{path: "/showcase", title: "Feature Showcase", desc: "All features in one page"}
+         %{path: "/showcase", title: "Feature Showcase", desc: "All features in one page"},
+         %{path: "/reactive", title: "Reactive Counter", desc: ".vue SFC with <script setup> — zero Elixir code"}
        ]
      )}
   end

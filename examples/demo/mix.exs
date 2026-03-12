@@ -59,7 +59,9 @@ defmodule LiveVueNextDemo.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
-      {:live_vue_next, path: "../.."}
+      {:live_vue_next, path: "../.."},
+      {:quickbeam, path: "../../../quickbeam"},
+      {:oxc, path: "../../../oxc_ex", override: true}
     ]
   end
 
