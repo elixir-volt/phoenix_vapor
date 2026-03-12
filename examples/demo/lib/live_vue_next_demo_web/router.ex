@@ -22,6 +22,7 @@ defmodule LiveVueNextDemoWeb.Router do
     live "/todo", TodoLive
     live "/showcase", ShowcaseLive
     live "/reactive", ReactiveCounterLive
+    live "/vapor-test", VaporTestLive
   end
 
   # Other scopes may use custom stacks.

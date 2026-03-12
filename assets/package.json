@@ -1,0 +1,10 @@
+{
+  "name": "live_vue_next",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./vapor_patch": "./vapor_patch.js"
+  }
+}

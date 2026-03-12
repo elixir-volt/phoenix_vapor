@@ -976,6 +976,48 @@ defmodule LiveVueNextTest do
     end
   end
 
+  describe "vapor metadata" do
+    test "injects data-vapor and data-vapor-statics when enabled" do
+      ir = Vize.vapor_ir!("<div>{{ msg }}</div>")
+      rendered = LiveVueNext.Renderer.to_rendered(ir, %{msg: "hello"}, vapor_metadata: true)
+      html = render_to_html(rendered)
+
+      assert html =~ "data-vapor"
+      assert html =~ "data-vapor-statics="
+      assert html =~ "hello"
+    end
+
+    test "statics JSON is properly escaped" do
+      ir = Vize.vapor_ir!("<div>{{ msg }}</div>")
+      rendered = LiveVueNext.Renderer.to_rendered(ir, %{msg: "test"}, vapor_metadata: true)
+
+      [first | _] = rendered.static
+      assert first =~ "data-vapor-statics="
+
+      # Extract and unescape the statics JSON
+      [_, json] = Regex.run(~r/data-vapor-statics="([^"]*)"/, first)
+
+      unescaped =
+        json
+        |> String.replace("&amp;", "&")
+        |> String.replace("&lt;", "<")
+        |> String.replace("&gt;", ">")
+        |> String.replace("&quot;", "\"")
+
+      decoded = Jason.decode!(unescaped)
+      assert is_list(decoded)
+      assert length(decoded) == 2
+    end
+
+    test "not injected by default" do
+      ir = Vize.vapor_ir!("<div>{{ msg }}</div>")
+      rendered = LiveVueNext.Renderer.to_rendered(ir, %{msg: "hello"})
+      html = render_to_html(rendered)
+
+      refute html =~ "data-vapor"
+    end
+  end
+
   describe "rendered struct shape" do
     test "produces valid %Rendered{} with correct field types" do
       rendered = LiveVueNext.render("<div>{{ msg }}</div>", %{msg: "Hi"})

@@ -157,7 +157,7 @@ defmodule LiveVueNext.Reactive do
             Map.put(acc, String.to_atom(name), value)
           end)
 
-        LiveVueNext.Renderer.to_rendered(unquote(escaped_ir), var!(assigns))
+        LiveVueNext.Renderer.to_rendered(unquote(escaped_ir), var!(assigns), vapor_metadata: true)
       end
     end
   end

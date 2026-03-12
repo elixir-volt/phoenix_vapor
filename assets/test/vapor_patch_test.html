@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>VaporPatch Tests</title>
+  <style>
+    body { font-family: monospace; margin: 20px; }
+    .pass { color: green; }
+    .fail { color: red; }
+    .test-group { margin: 10px 0; padding-left: 20px; }
+    h2 { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>VaporPatch Unit Tests</h1>
+  <div id="results"></div>
+
+  <!-- Test fixtures (hidden) -->
+  <div id="fixtures" style="display: none;"></div>
+
+  <script type="module">
+    import { analyzeStatics, resolveRegistry, applyDiff } from "../vapor_patch.js"
+
+    const results = document.getElementById("results")
+    let passed = 0, failed = 0
+
+    function assert(condition, message) {
+      if (condition) {
+        passed++
+        results.innerHTML += `<div class="pass">✓ ${message}</div>`
+      } else {
+        failed++
+        results.innerHTML += `<div class="fail">✗ ${message}</div>`
+      }
+    }
+
+    function assertEq(actual, expected, message) {
+      const pass = JSON.stringify(actual) === JSON.stringify(expected)
+      if (pass) {
+        passed++
+        results.innerHTML += `<div class="pass">✓ ${message}</div>`
+      } else {
+        failed++
+        results.innerHTML += `<div class="fail">✗ ${message}<br>&nbsp;&nbsp;expected: ${JSON.stringify(expected)}<br>&nbsp;&nbsp;actual: ${JSON.stringify(actual)}</div>`
+      }
+    }
+
+    function createEl(html) {
+      const div = document.createElement("div")
+      div.innerHTML = html
+      return div.firstElementChild || div
+    }
+
+    // === Test: analyzeStatics ===
+
+    results.innerHTML += "<h2>analyzeStatics</h2>"
+
+    {
+      const slots = analyzeStatics(["<div>", "</div>"])
+      assertEq(slots.length, 1, "single text slot detected")
+      assertEq(slots[0].type, "text", "classified as text")
+    }
+
+    {
+      const slots = analyzeStatics(["<div class=\"", "\">hello</div>"])
+      assertEq(slots.length, 1, "single attr slot detected")
+      assertEq(slots[0].type, "attr", "classified as attr")
+      assertEq(slots[0].key, "class", "attribute key is 'class'")
+    }
+
+    {
+      const slots = analyzeStatics(["<div class=\"", "\">", "</div>"])
+      assertEq(slots.length, 2, "two slots: attr + text")
+      assertEq(slots[0].type, "attr", "first is attr")
+      assertEq(slots[0].key, "class", "attr key is class")
+      assertEq(slots[1].type, "text", "second is text")
+    }
+
+    {
+      const slots = analyzeStatics(["<p>Count: ", "</p>"])
+      assertEq(slots.length, 1, "text slot after static text prefix")
+      assertEq(slots[0].type, "text", "classified as text")
+    }
+
+    {
+      const slots = analyzeStatics([
+        "<div><p>", "</p><p>", "</p></div>"
+      ])
+      assertEq(slots.length, 2, "two text slots in sibling elements")
+      assertEq(slots[0].type, "text", "first is text")
+      assertEq(slots[1].type, "text", "second is text")
+    }
+
+    // === Test: resolveRegistry ===
+
+    results.innerHTML += "<h2>resolveRegistry</h2>"
+
+    {
+      // <div>hello</div> with "hello" as dynamic slot 0
+      const statics = ["<div>", "</div>"]
+      const slots = analyzeStatics(statics)
+      const el = createEl("<div>hello</div>")
+      const registry = resolveRegistry(slots, el)
+
+      assert(registry.has(0), "slot 0 registered")
+      assertEq(registry.get(0).type, "text", "slot 0 is text")
+      assertEq(registry.get(0).node.nodeValue, "hello", "text node found with correct value")
+    }
+
+    {
+      // <div class="active">text</div> with "active" and "text" as slots
+      const statics = ['<div class="', '">', "</div>"]
+      const slots = analyzeStatics(statics)
+      const el = createEl('<div class="active">text</div>')
+      const registry = resolveRegistry(slots, el)
+
+      assert(registry.has(0), "attr slot 0 registered")
+      assertEq(registry.get(0).type, "attr", "slot 0 is attr")
+      assertEq(registry.get(0).key, "class", "attr key is class")
+      assertEq(registry.get(0).node.tagName, "DIV", "node is the div")
+
+      assert(registry.has(1), "text slot 1 registered")
+      assertEq(registry.get(1).type, "text", "slot 1 is text")
+      assertEq(registry.get(1).node.nodeValue, "text", "text node value correct")
+    }
+
+    {
+      // <div><p>Count: <span>0</span></p><p>Doubled: <span>0</span></p></div>
+      // Slots: span text in first p, span text in second p
+      const statics = [
+        "<div><p>Count: <span>", "</span></p><p>Doubled: <span>", "</span></p></div>"
+      ]
+      const slots = analyzeStatics(statics)
+      const el = createEl('<div><p>Count: <span>42</span></p><p>Doubled: <span>84</span></p></div>')
+      const registry = resolveRegistry(slots, el)
+
+      assert(registry.has(0), "nested text slot 0 registered")
+      assert(registry.has(1), "nested text slot 1 registered")
+      if (registry.has(0)) {
+        assertEq(registry.get(0).node.nodeValue, "42", "first span text is 42")
+      }
+      if (registry.has(1)) {
+        assertEq(registry.get(1).node.nodeValue, "84", "second span text is 84")
+      }
+    }
+
+    // === Test: applyDiff ===
+
+    results.innerHTML += "<h2>applyDiff</h2>"
+
+    {
+      const statics = ["<div>", "</div>"]
+      const slots = analyzeStatics(statics)
+      const el = createEl("<div>hello</div>")
+      const registry = resolveRegistry(slots, el)
+
+      applyDiff(registry, { "0": "world" })
+      assertEq(el.textContent, "world", "text updated from 'hello' to 'world'")
+    }
+
+    {
+      const statics = ['<div class="', '">text</div>']
+      const slots = analyzeStatics(statics)
+      const el = createEl('<div class="old">text</div>')
+      const registry = resolveRegistry(slots, el)
+
+      applyDiff(registry, { "0": "new-class" })
+      assertEq(el.className, "new-class", "class attribute updated")
+    }
+
+    {
+      const statics = ['<div class="', '">', "</div>"]
+      const slots = analyzeStatics(statics)
+      const el = createEl('<div class="active">hello</div>')
+      const registry = resolveRegistry(slots, el)
+
+      applyDiff(registry, { "0": "inactive", "1": "goodbye" })
+      assertEq(el.className, "inactive", "class updated in multi-slot")
+      assertEq(el.textContent, "goodbye", "text updated in multi-slot")
+    }
+
+    {
+      // Skip null values (unchanged in LiveView protocol)
+      const statics = ['<div class="', '">', "</div>"]
+      const slots = analyzeStatics(statics)
+      const el = createEl('<div class="active">hello</div>')
+      const registry = resolveRegistry(slots, el)
+
+      applyDiff(registry, { "0": null, "1": "updated" })
+      assertEq(el.className, "active", "null slot skipped (unchanged)")
+      assertEq(el.textContent, "updated", "non-null slot applied")
+    }
+
+    // === Summary ===
+
+    results.innerHTML += `<h2>Summary</h2>`
+    results.innerHTML += `<div class="${failed ? 'fail' : 'pass'}">${passed} passed, ${failed} failed</div>`
+
+    // Set title for automation
+    document.title = failed ? `FAIL: ${failed} failures` : `PASS: ${passed} tests`
+  </script>
+</body>
+</html>

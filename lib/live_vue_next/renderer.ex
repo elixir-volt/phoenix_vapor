@@ -21,14 +21,16 @@ defmodule LiveVueNext.Renderer do
     end
   end
 
-  def to_rendered(%{block: block, templates: templates} = ir, assigns) do
+  def to_rendered(ir, assigns, opts \\ [])
+
+  def to_rendered(%{block: block, templates: templates} = ir, assigns, opts) do
     etm = ir[:element_template_map] || []
     etm_map = Map.new(etm)
-    block_to_rendered(block, templates, etm_map, assigns)
+    block_to_rendered(block, templates, etm_map, assigns, opts)
   end
 
   @doc false
-  def block_to_rendered(block, templates, etm_map, assigns) do
+  def block_to_rendered(block, templates, etm_map, assigns, opts \\ []) do
     %{operations: operations, effects: effects, returns: returns} = block
 
     template_html = resolve_template(returns, templates, etm_map)
@@ -86,6 +88,13 @@ defmodule LiveVueNext.Renderer do
       end)
     end
 
+    static =
+      if Keyword.get(opts, :vapor_metadata, false) do
+        inject_vapor_metadata(static)
+      else
+        static
+      end
+
     %Phoenix.LiveView.Rendered{
       static: static,
       dynamic: dynamic,
@@ -93,6 +102,20 @@ defmodule LiveVueNext.Renderer do
       root: true
     }
   end
+
+  defp inject_vapor_metadata([first | rest] = static) do
+    # Only inject if the first static starts with a tag
+    if String.starts_with?(String.trim_leading(first), "<") do
+      statics_json = Jason.encode!(static)
+      attr = ~s( data-vapor data-vapor-statics="#{Phoenix.HTML.Engine.html_escape(statics_json)}")
+      injected = Regex.replace(~r/<([a-zA-Z][a-zA-Z0-9-]*)/, first, "<\\1#{attr}", global: false)
+      [injected | rest]
+    else
+      static
+    end
+  end
+
+  defp inject_vapor_metadata(static), do: static
 
   # Inject event handlers as static phx-* attributes into the template HTML.
   # @click="handler" → phx-click="handler"
