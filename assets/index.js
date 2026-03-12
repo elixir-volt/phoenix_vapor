@@ -1,5 +1,5 @@
 /**
- * LiveVueNext — Vapor-style direct DOM patching for Phoenix LiveView.
+ * PhoenixVapor — Vapor-style direct DOM patching for Phoenix LiveView.
  *
  * Bypasses morphdom entirely for Vapor-managed elements. Instead of:
  *   diff → mergeDiff → toString() → innerHTML → morphdom tree walk
@@ -9,7 +9,7 @@
  *
  * ## Usage
  *
- *   import { patchLiveSocket } from "live_vue_next"
+ *   import { patchLiveSocket } from "phoenix_vapor"
  *
  *   let liveSocket = new LiveSocket("/live", Socket, { ... })
  *   patchLiveSocket(liveSocket)
@@ -179,7 +179,7 @@ function buildRegistry(el) {
     const registry = resolveRegistry(slots, el)
     vaporElements.set(el, { statics, slots, registry })
   } catch (e) {
-    console.warn("[LiveVueNext] Registry build failed:", e)
+    console.warn("[PhoenixVapor] Registry build failed:", e)
   }
 }
 

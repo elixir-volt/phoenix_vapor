@@ -22,10 +22,10 @@ import "phoenix_html"
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
-import {hooks as colocatedHooks} from "phoenix-colocated/live_vue_next_demo"
+import {hooks as colocatedHooks} from "phoenix-colocated/phoenix_vapor_demo"
 import topbar from "../vendor/topbar"
 
-import {patchLiveSocket} from "../live_vue_next/index.js"
+import {patchLiveSocket} from "../phoenix_vapor/index.js"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {

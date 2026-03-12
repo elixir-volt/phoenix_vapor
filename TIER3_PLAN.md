@@ -179,7 +179,7 @@ Where `"m"` (metadata) maps slot index to operation type:
 
 **Server changes:**
 
-In `LiveVueNext.Renderer`, we already know the operation type for each dynamic
+In `PhoenixVapor.Renderer`, we already know the operation type for each dynamic
 slot (it comes from the Vapor IR: `set_text`, `set_prop`, etc.). We can add this
 as metadata to `%Rendered{}`. LiveView's diff engine (`diff.ex`) would need a
 small extension to forward this metadata in the wire format.
@@ -257,15 +257,15 @@ most edge cases live. But Vapor's implementation is battle-tested.
 |------|-------|--------|
 | `diff.ex` | 3B | Forward `%Rendered{}` metadata field in diff output. |
 | `engine.ex` | 3B | Accept metadata in `%Rendered{}` struct. |
-| **OR:** live_vue_next only | 3B | Encode metadata in a way the existing diff engine passes through (e.g., wrap dynamics). |
+| **OR:** phoenix_vapor only | 3B | Encode metadata in a way the existing diff engine passes through (e.g., wrap dynamics). |
 
-### live_vue_next
+### phoenix_vapor
 
 | File | Phase | Change |
 |------|-------|--------|
 | `renderer.ex` | 3B | Emit operation metadata alongside dynamics. |
 | **New:** `assets/vapor_patch.js` | 3A | Client-side Vapor patch engine. |
-| **New:** `assets/live_vue_next.js` | 3A | Hook that installs VaporPatch into LiveSocket. |
+| **New:** `assets/phoenix_vapor.js` | 3A | Hook that installs VaporPatch into LiveSocket. |
 
 ---
 
@@ -279,7 +279,7 @@ Use `dom` callbacks + `phx-hook` to intercept the rendering pipeline:
 
 ```js
 // In app.js
-import { VaporHook } from "live_vue_next"
+import { VaporHook } from "phoenix_vapor"
 
 let liveSocket = new LiveSocket("/live", Socket, {
   hooks: { VaporHook },
@@ -337,7 +337,7 @@ the full integration.
 Phase 3A: Client-only, no fork                     ~2 days
 ├── VaporPatch class (registry + applier)           ~200 lines JS
 ├── Registry builder (parse statics → node map)     ~100 lines JS
-├── LiveVueNext hook (installs VaporPatch)           ~50 lines JS
+├── PhoenixVapor hook (installs VaporPatch)           ~50 lines JS
 ├── Focus/selection preservation                     ~30 lines JS
 ├── Fallback to morphdom for structural changes      built-in
 └── Tests: counter, todo list, showcase              existing demo app

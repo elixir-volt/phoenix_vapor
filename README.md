@@ -1,4 +1,4 @@
-# LiveVueNext
+# PhoenixVapor
 
 Vue templates as native Phoenix LiveView rendered structs.
 
@@ -15,7 +15,7 @@ runtime needed for template-only components.
 
 1. **Vize** compiles the Vue template to Vapor intermediate representation (IR)
    as native Elixir maps — entirely in Rust, no JS execution
-2. **LiveVueNext** walks the IR and produces `%Rendered{}` structs with proper
+2. **PhoenixVapor** walks the IR and produces `%Rendered{}` structs with proper
    `static`/`dynamic`/`fingerprint` fields
 3. The `%Rendered{}` struct participates in LiveView's diff engine — same
    WebSocket, same protocol, same client
@@ -28,7 +28,7 @@ first-class LiveView rendered output with per-assign change tracking.
 ### Sigil
 
 ```elixir
-import LiveVueNext.Sigil
+import PhoenixVapor.Sigil
 
 def render(assigns) do
   ~VUE"""
@@ -54,14 +54,14 @@ IR-to-Rendered transformation runs — a fast Elixir data walk.
 
 # Render against assigns (at runtime)
 def render(assigns) do
-  LiveVueNext.render(@ir, assigns)
+  PhoenixVapor.render(@ir, assigns)
 end
 ```
 
 ### Runtime (for dynamic templates)
 
 ```elixir
-LiveVueNext.render("<div>{{ msg }}</div>", %{msg: "Hello"})
+PhoenixVapor.render("<div>{{ msg }}</div>", %{msg: "Hello"})
 ```
 
 ## Supported Vue features
@@ -86,7 +86,7 @@ LiveVueNext.render("<div>{{ msg }}</div>", %{msg: "Hello"})
 ```elixir
 def deps do
   [
-    {:live_vue_next, "~> 0.1.0"},
+    {:phoenix_vapor, "~> 0.1.0"},
   ]
 end
 ```

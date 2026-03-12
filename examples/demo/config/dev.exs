@@ -6,7 +6,7 @@ import Config
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
-config :live_vue_next_demo, LiveVueNextDemoWeb.Endpoint,
+config :phoenix_vapor_demo, PhoenixVaporDemoWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {127, 0, 0, 1}],
@@ -15,8 +15,8 @@ config :live_vue_next_demo, LiveVueNextDemoWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "d/TdWfeJxIryPLXfHCauumxABoDLfiOSXMJ8a4veOehW8gI8tC8yNKcDyhTyDxDi",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:live_vue_next_demo, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:live_vue_next_demo, ~w(--watch)]}
+    esbuild: {Esbuild, :install_and_run, [:phoenix_vapor_demo, ~w(--sourcemap=inline --watch)]},
+    tailwind: {Tailwind, :install_and_run, [:phoenix_vapor_demo, ~w(--watch)]}
   ]
 
 # ## SSL Support
@@ -43,20 +43,20 @@ config :live_vue_next_demo, LiveVueNextDemoWeb.Endpoint,
 # different ports.
 
 # Reload browser tabs when matching files change.
-config :live_vue_next_demo, LiveVueNextDemoWeb.Endpoint,
+config :phoenix_vapor_demo, PhoenixVaporDemoWeb.Endpoint,
   live_reload: [
     web_console_logger: true,
     patterns: [
       # Static assets, except user uploads
       ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$",
       # Router, Controllers, LiveViews and LiveComponents
-      ~r"lib/live_vue_next_demo_web/router\.ex$",
-      ~r"lib/live_vue_next_demo_web/(controllers|live|components)/.*\.(ex|heex)$"
+      ~r"lib/phoenix_vapor_demo_web/router\.ex$",
+      ~r"lib/phoenix_vapor_demo_web/(controllers|live|components)/.*\.(ex|heex)$"
     ]
   ]
 
 # Enable dev routes for dashboard and mailbox
-config :live_vue_next_demo, dev_routes: true
+config :phoenix_vapor_demo, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"

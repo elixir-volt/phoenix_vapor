@@ -1,4 +1,4 @@
-# LiveVueNextDemo
+# PhoenixVaporDemo
 
 To start your Phoenix server:
 

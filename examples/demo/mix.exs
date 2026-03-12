@@ -1,9 +1,9 @@
-defmodule LiveVueNextDemo.MixProject do
+defmodule PhoenixVaporDemo.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :live_vue_next_demo,
+      app: :phoenix_vapor_demo,
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -20,7 +20,7 @@ defmodule LiveVueNextDemo.MixProject do
   # Type `mix help compile.app` for more information.
   def application do
     [
-      mod: {LiveVueNextDemo.Application, []},
+      mod: {PhoenixVaporDemo.Application, []},
       extra_applications: [:logger, :runtime_tools]
     ]
   end
@@ -59,10 +59,8 @@ defmodule LiveVueNextDemo.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
-      {:live_vue_next, path: "../.."},
-      {:quickbeam, path: "../../../quickbeam"},
-      {:oxc, path: "../../../oxc_ex", override: true},
-      {:rustler, ">= 0.0.0", optional: true}
+      {:phoenix_vapor, path: "../.."},
+      {:quickbeam, "~> 0.3.0"}
     ]
   end
 
@@ -76,10 +74,10 @@ defmodule LiveVueNextDemo.MixProject do
     [
       setup: ["deps.get", "assets.setup", "assets.build"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind live_vue_next_demo", "esbuild live_vue_next_demo"],
+      "assets.build": ["compile", "tailwind phoenix_vapor_demo", "esbuild phoenix_vapor_demo"],
       "assets.deploy": [
-        "tailwind live_vue_next_demo --minify",
-        "esbuild live_vue_next_demo --minify",
+        "tailwind phoenix_vapor_demo --minify",
+        "esbuild phoenix_vapor_demo --minify",
         "phx.digest"
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]

@@ -1,9 +1,9 @@
-defmodule LiveVueNext.MixProject do
+defmodule PhoenixVapor.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :live_vue_next,
+      app: :phoenix_vapor,
       version: "0.1.0",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
@@ -24,9 +24,9 @@ defmodule LiveVueNext.MixProject do
   defp deps do
     [
       {:phoenix_live_view, "~> 1.0"},
-      {:vize, path: "../vize_ex"},
-      {:oxc, path: "../oxc_ex", override: true},
-      {:quickbeam, path: "../quickbeam", optional: true}
+      {:vize, "~> 0.5.0"},
+      {:oxc, "~> 0.5.0"},
+      {:quickbeam, "~> 0.3.0", optional: true}
     ]
   end
 end
