@@ -2,197 +2,190 @@
  * LiveVueNext — Vapor-style direct DOM patching for Phoenix LiveView.
  *
  * Replaces morphdom's tree reconciliation with targeted node writes
- * for elements managed by LiveVueNext. On first render, builds a
- * registry mapping each dynamic slot to its DOM node. On updates,
+ * for elements rendered by LiveVueNext. On first render, builds a
+ * registry mapping each dynamic slot to its DOM node. On diffs,
  * applies changes directly — one property write per changed slot.
  *
- * ## Integration (no LiveView fork required)
+ * ## Usage
  *
- * Uses `dom.onBeforeElUpdated` to intercept morphdom updates.
- * When morphdom tries to update a Vapor-managed root element,
- * we apply targeted updates and return false to skip the tree walk.
+ *   import { patchLiveSocket } from "live_vue_next"
  *
- * ```js
- * import { createVaporDom } from "live_vue_next"
+ *   let liveSocket = new LiveSocket("/live", Socket, { ... })
+ *   patchLiveSocket(liveSocket)
+ *   liveSocket.connect()
  *
- * let liveSocket = new LiveSocket("/live", Socket, {
- *   dom: createVaporDom()
- * })
- * ```
+ * ## How It Works
  *
- * ## Server-Side
+ * 1. Server renders elements with `data-vapor-statics` attribute
+ *    containing the JSON-encoded statics array.
  *
- * LiveVueNext renders mark their root elements with `data-vapor`
- * and `data-vapor-statics` attributes containing the JSON-encoded
- * statics array. This enables the client to build the node registry
- * without any server-side changes to the diff protocol.
+ * 2. On first render (join), VaporPatch parses the statics and builds
+ *    a registry mapping each dynamic slot index to its DOM node + type.
+ *
+ * 3. On subsequent diffs, instead of going through toString → morphdom,
+ *    reads the merged dynamic values from the Rendered object and applies
+ *    them directly to registered DOM nodes.
+ *
+ * 4. Falls through to the standard morphdom path for:
+ *    - Fingerprint changes (template shape changed)
+ *    - Structural operations (v-if branch switch, v-for list changes)
+ *    - Component diffs
+ *    - Stream operations
  */
 
 import { analyzeStatics, resolveRegistry, applyDiff } from "./vapor_patch.js"
 
-// Cache: element ID → { registry, statics, slots }
-const vaporElements = new Map()
+// Per-view Vapor state
+const vaporViews = new WeakMap()
 
 /**
- * Create a dom callbacks object for LiveSocket that enables Vapor patching.
- *
- * @param {Object} [userDom] - User's own dom callbacks (will be called alongside Vapor)
- * @returns {Object} dom callbacks for LiveSocket constructor
+ * Patch a LiveSocket instance to use Vapor rendering for elements
+ * with data-vapor-statics attributes.
  */
-export function createVaporDom(userDom = {}) {
-  return {
-    ...userDom,
+export function patchLiveSocket(liveSocket, opts = {}) {
+  const debug = opts.debug || false
 
-    onBeforeElUpdated(fromEl, toEl) {
-      // Let user callback run first
-      if (userDom.onBeforeElUpdated) {
-        const result = userDom.onBeforeElUpdated(fromEl, toEl)
-        if (result === false) return false
-      }
+  // Hook into the dom callbacks to build registries on mount
+  const origOnNodeAdded = liveSocket.domCallbacks.onNodeAdded
+  const origOnPatchEnd = liveSocket.domCallbacks.onPatchEnd
+  const origOnBeforeElUpdated = liveSocket.domCallbacks.onBeforeElUpdated
 
-      // Only intercept Vapor-managed elements
-      if (!fromEl.dataset || !fromEl.dataset.vapor) return true
-
-      const cache = vaporElements.get(fromEl.id)
-      if (!cache || cache.registry.size === 0) {
-        // First time or registry not built — let morphdom handle it,
-        // then build the registry on next pass
-        tryBuildRegistry(fromEl)
-        return true
-      }
-
-      // Extract dynamic values by comparing fromEl and toEl
-      // morphdom has already parsed toEl from innerHTML, so we diff against it
-      let allHandled = true
-
-      for (const [slotIdx, entry] of cache.registry) {
-        switch (entry.type) {
-          case "text": {
-            const toNode = findCorrespondingNode(entry.node, fromEl, toEl)
-            if (toNode && entry.node.nodeValue !== toNode.nodeValue) {
-              entry.node.nodeValue = toNode.nodeValue
-            }
-            break
-          }
-          case "attr": {
-            if (!entry.key) { allHandled = false; break }
-            const toNode = findCorrespondingElement(entry.node, fromEl, toEl)
-            if (toNode) {
-              const newVal = toNode.getAttribute(entry.key)
-              if (newVal !== null && el.getAttribute(entry.key) !== newVal) {
-                applyAttr(entry.node, entry.key, newVal)
-              }
-            }
-            break
-          }
-          default:
-            allHandled = false
-        }
-      }
-
-      if (allHandled) {
-        // Sync LiveView control attributes
-        syncLiveViewAttrs(fromEl, toEl)
-        return false // skip morphdom tree walk
-      }
-
-      return true // fallback to morphdom
-    },
-
-    onNodeAdded(el) {
-      if (userDom.onNodeAdded) userDom.onNodeAdded(el)
-
-      // Auto-build registry for newly added Vapor elements
-      if (el.dataset && el.dataset.vapor) {
-        tryBuildRegistry(el)
-      }
-    },
-
-    onPatchEnd(container) {
-      if (userDom.onPatchEnd) userDom.onPatchEnd(container)
-
-      // Rebuild registries for any Vapor elements that were updated
-      // (handles the case where morphdom ran and changed the DOM structure)
-      for (const [id, cache] of vaporElements) {
-        const el = document.getElementById(id)
-        if (el) {
-          cache.registry = resolveRegistry(cache.slots, el)
-        } else {
-          vaporElements.delete(id)
-        }
-      }
+  liveSocket.domCallbacks.onNodeAdded = function(el) {
+    origOnNodeAdded && origOnNodeAdded(el)
+    if (el.dataset && el.dataset.vaporStatics) {
+      buildVaporRegistry(el)
     }
   }
-}
 
-function tryBuildRegistry(el) {
-  const staticsJSON = el.dataset.vaporStatics
-  if (!staticsJSON) return
+  liveSocket.domCallbacks.onBeforeElUpdated = function(fromEl, toEl) {
+    if (origOnBeforeElUpdated) {
+      const result = origOnBeforeElUpdated(fromEl, toEl)
+      if (result === false) return false
+    }
 
-  try {
-    const statics = JSON.parse(staticsJSON)
-    const slots = analyzeStatics(statics)
-    const registry = resolveRegistry(slots, el)
-    vaporElements.set(el.id, { statics, slots, registry })
-  } catch (e) {
-    console.warn("[LiveVueNext] Failed to build Vapor registry:", e)
+    // Intercept updates to vapor-managed elements
+    const state = vaporViews.get(fromEl)
+    if (!state || state.registry.size === 0) return true
+
+    const t0 = performance.now()
+
+    // Apply targeted updates by comparing fromEl and toEl
+    let allHandled = true
+    for (const [slotIdx, entry] of state.registry) {
+      if (!applySlotFromMorphdom(entry, fromEl, toEl)) {
+        allHandled = false
+      }
+    }
+
+    if (allHandled) {
+      syncControlAttrs(fromEl, toEl)
+      if (debug) {
+        const dt = performance.now() - t0
+        window.__vaporPatchCount = (window.__vaporPatchCount || 0) + 1
+        window.__vaporPatchTotalMs = (window.__vaporPatchTotalMs || 0) + dt
+      }
+      return false
+    }
+
+    return true
+  }
+
+  liveSocket.domCallbacks.onPatchEnd = function(container) {
+    origOnPatchEnd && origOnPatchEnd(container)
+
+    // Rebuild registries after morphdom runs (handles structural changes)
+    rebuildRegistries()
   }
 }
 
-function syncLiveViewAttrs(fromEl, toEl) {
+function buildVaporRegistry(el) {
+  try {
+    const statics = JSON.parse(el.dataset.vaporStatics)
+    const slots = analyzeStatics(statics)
+    const registry = resolveRegistry(slots, el)
+    vaporViews.set(el, { statics, slots, registry })
+  } catch (e) {
+    console.warn("[LiveVueNext] Registry build failed:", e)
+  }
+}
+
+function rebuildRegistries() {
+  // Find all vapor elements and rebuild their registries
+  document.querySelectorAll("[data-vapor-statics]").forEach(el => {
+    const state = vaporViews.get(el)
+    if (state) {
+      state.registry = resolveRegistry(state.slots, el)
+    } else {
+      buildVaporRegistry(el)
+    }
+  })
+}
+
+function applySlotFromMorphdom(entry, fromEl, toEl) {
+  switch (entry.type) {
+    case "text": {
+      const toNode = findCorrespondingNode(entry.node, fromEl, toEl)
+      if (toNode && entry.node.nodeValue !== toNode.nodeValue) {
+        entry.node.nodeValue = toNode.nodeValue
+      }
+      return true
+    }
+    case "attr": {
+      if (!entry.key) return false
+      const toNode = findCorrespondingElement(entry.node, fromEl, toEl)
+      if (toNode) {
+        const newVal = toNode.getAttribute(entry.key)
+        if (newVal !== null && entry.node.getAttribute(entry.key) !== newVal) {
+          setAttr(entry.node, entry.key, newVal)
+        }
+      }
+      return true
+    }
+    default:
+      return false
+  }
+}
+
+function syncControlAttrs(fromEl, toEl) {
   for (let i = 0; i < toEl.attributes.length; i++) {
-    const attr = toEl.attributes[i]
-    if (attr.name.startsWith("data-phx-") || attr.name.startsWith("phx-")) {
-      if (fromEl.getAttribute(attr.name) !== attr.value) {
-        fromEl.setAttribute(attr.name, attr.value)
+    const { name, value } = toEl.attributes[i]
+    if (name.startsWith("data-phx-") || name.startsWith("phx-")) {
+      if (fromEl.getAttribute(name) !== value) {
+        fromEl.setAttribute(name, value)
       }
     }
   }
 }
 
 function findCorrespondingNode(node, fromRoot, toRoot) {
-  const path = getNodePathFromRoot(node, fromRoot)
+  const path = getNodePath(node, fromRoot)
   if (!path) return null
-  return walkNodePath(toRoot, path)
+  let target = toRoot
+  for (const idx of path) {
+    if (!target.childNodes[idx]) return null
+    target = target.childNodes[idx]
+  }
+  return target
 }
 
 function findCorrespondingElement(el, fromRoot, toRoot) {
-  const path = getElementPathFromRoot(el, fromRoot)
+  const path = getElementPath(el, fromRoot)
   if (!path) return null
-
-  let node = toRoot
+  let target = toRoot
   for (const idx of path) {
-    let elemIdx = 0
-    let found = false
-    for (let i = 0; i < node.childNodes.length; i++) {
-      if (node.childNodes[i].nodeType === Node.ELEMENT_NODE) {
-        if (elemIdx === idx) { node = node.childNodes[i]; found = true; break }
+    let elemIdx = 0, found = false
+    for (const child of target.childNodes) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        if (elemIdx === idx) { target = child; found = true; break }
         elemIdx++
       }
     }
     if (!found) return null
   }
-  return node
+  return target
 }
 
-function getElementPathFromRoot(el, root) {
-  const path = []
-  let current = el
-  while (current && current !== root) {
-    const parent = current.parentElement
-    if (!parent) return null
-    let idx = 0
-    for (let i = 0; i < parent.children.length; i++) {
-      if (parent.children[i] === current) break
-      idx++
-    }
-    path.unshift(idx)
-    current = parent
-  }
-  return current === root ? path : null
-}
-
-function getNodePathFromRoot(node, root) {
+function getNodePath(node, root) {
   const path = []
   let current = node
   while (current && current !== root) {
@@ -209,16 +202,24 @@ function getNodePathFromRoot(node, root) {
   return current === root ? path : null
 }
 
-function walkNodePath(root, path) {
-  let node = root
-  for (const idx of path) {
-    if (!node.childNodes[idx]) return null
-    node = node.childNodes[idx]
+function getElementPath(el, root) {
+  const path = []
+  let current = el
+  while (current && current !== root) {
+    const parent = current.parentElement
+    if (!parent) return null
+    let idx = 0
+    for (const child of parent.children) {
+      if (child === current) break
+      idx++
+    }
+    path.unshift(idx)
+    current = parent
   }
-  return node
+  return current === root ? path : null
 }
 
-function applyAttr(el, key, value) {
+function setAttr(el, key, value) {
   switch (key) {
     case "class": el.className = value; break
     case "style": el.style.cssText = value; break
