@@ -7,6 +7,20 @@ defmodule LiveVueNext.Renderer do
   @struct_marker "{{__STRUCT__}}"
 
   @spec to_rendered(map(), map()) :: Phoenix.LiveView.Rendered.t()
+
+  @doc false
+  def inject_scope_id(%Phoenix.LiveView.Rendered{static: static} = rendered, scope_id) do
+    case static do
+      [first | rest] ->
+        # Inject scope attribute into the first opening tag
+        injected = Regex.replace(~r/<([a-zA-Z][a-zA-Z0-9]*)/, first, "<\\1 #{scope_id}", global: false)
+        %{rendered | static: [injected | rest]}
+
+      _ ->
+        rendered
+    end
+  end
+
   def to_rendered(%{block: block, templates: templates} = ir, assigns) do
     etm = ir[:element_template_map] || []
     etm_map = Map.new(etm)
@@ -26,7 +40,7 @@ defmodule LiveVueNext.Renderer do
 
     structural_ops =
       Enum.filter(operations, fn
-        %{kind: kind} when kind in [:if_node, :for_node] -> true
+        %{kind: kind} when kind in [:if_node, :for_node, :create_component] -> true
         _ -> false
       end)
 
@@ -311,6 +325,7 @@ defmodule LiveVueNext.Renderer do
         case op.kind do
           :if_node -> {:if_node, op, Expr.assign_keys(op.condition)}
           :for_node -> {:for_node, op, Expr.assign_keys(op.source)}
+          :create_component -> {:create_component, op, component_assign_keys(op)}
         end
 
       new_h =
@@ -597,6 +612,7 @@ defmodule LiveVueNext.Renderer do
     items = Expr.eval(op.source, assigns) || []
     value_name = op.value
     render_block = op.render
+    key_prop = op[:key_prop]
 
     # Render the block once to get the correct static parts
     # (which include prop markers, structural markers, etc.)
@@ -609,26 +625,62 @@ defmodule LiveVueNext.Renderer do
       Enum.map(items, fn item ->
         item_assigns = build_item_assigns(assigns, value_name, item)
 
+        key =
+          if key_prop do
+            Expr.eval(key_prop, item_assigns) |> to_string()
+          end
+
         render_fn = fn _vars_changed, _track_changes? ->
           rendered = block_to_rendered(render_block, templates, etm_map, item_assigns)
           rendered.dynamic.(false)
         end
 
-        {nil, %{}, render_fn}
+        {key, %{}, render_fn}
       end)
 
     %Phoenix.LiveView.Comprehension{
       static: static_parts,
-      has_key?: false,
+      has_key?: key_prop != nil,
       entries: entries,
       fingerprint: fingerprint
     }
+  end
+
+  defp eval_spec({:create_component, op, _keys}, assigns, _templates, _etm_map) do
+    tag = op.tag
+    props = op[:props] || []
+
+    # Build assigns for the component from its props
+    comp_assigns =
+      Enum.reduce(props, %{}, fn prop, acc ->
+        key_name = extract_key(prop.key)
+        value = Expr.eval_values(prop.values, assigns)
+        Map.put(acc, String.to_atom(key_name), value)
+      end)
+
+    # Look up the component as a function in assigns or skip
+    case Map.get(assigns, :__components__, %{}) |> Map.get(tag) do
+      nil ->
+        case Map.get(assigns, :__components__, %{}) |> Map.get(String.to_atom(tag)) do
+          nil -> ""
+          component_fn -> component_fn.(comp_assigns)
+        end
+
+      component_fn ->
+        component_fn.(comp_assigns)
+    end
   end
 
   defp build_item_assigns(assigns, value_name, item) do
     assigns
     |> Map.put(value_name, item)
     |> Map.put(String.to_atom(value_name), item)
+  end
+
+  defp component_assign_keys(op) do
+    (op[:props] || [])
+    |> Enum.flat_map(fn prop -> Expr.values_assign_keys(prop.values) end)
+    |> Enum.uniq()
   end
 
   defp compute_fingerprint(static, block) do

@@ -417,6 +417,118 @@ defmodule LiveVueNextTest do
     end
   end
 
+  describe "keyed v-for" do
+    test ":key sets has_key? and entry keys" do
+      rendered =
+        LiveVueNext.render(
+          ~s[<ul><li v-for="item in items" :key="item.id">{{ item.name }}</li></ul>],
+          %{items: [%{id: "a", name: "Alice"}, %{id: "b", name: "Bob"}]}
+        )
+
+      dynamic = rendered.dynamic.(false)
+      comp = hd(dynamic)
+      assert %Phoenix.LiveView.Comprehension{} = comp
+      assert comp.has_key? == true
+      keys = Enum.map(comp.entries, fn {key, _, _} -> key end)
+      assert keys == ["a", "b"]
+    end
+
+    test "unkeyed v-for has nil keys" do
+      rendered =
+        LiveVueNext.render(
+          ~s[<ul><li v-for="item in items">{{ item }}</li></ul>],
+          %{items: ["x", "y"]}
+        )
+
+      dynamic = rendered.dynamic.(false)
+      comp = hd(dynamic)
+      assert comp.has_key? == false
+      keys = Enum.map(comp.entries, fn {key, _, _} -> key end)
+      assert keys == [nil, nil]
+    end
+  end
+
+  describe "component composition" do
+    test "renders component via __components__ map" do
+      card_fn = fn props ->
+        LiveVueNext.render(
+          ~s[<div class="card"><h2>{{ title }}</h2></div>],
+          props
+        )
+      end
+
+      assigns = %{
+        msg: "Hello",
+        __components__: %{"MyCard" => card_fn}
+      }
+
+      rendered =
+        LiveVueNext.render(
+          ~s[<div><MyCard :title="msg" /></div>],
+          assigns
+        )
+
+      html = render_to_html(rendered)
+      assert html =~ ~s[class="card"]
+      assert html =~ "<h2>Hello</h2>"
+    end
+
+    test "component with static props" do
+      badge_fn = fn props ->
+        LiveVueNext.render(
+          ~s[<span class="badge">{{ label }}</span>],
+          props
+        )
+      end
+
+      assigns = %{
+        __components__: %{"Badge" => badge_fn}
+      }
+
+      rendered =
+        LiveVueNext.render(
+          ~s[<div><Badge label="New" /></div>],
+          assigns
+        )
+
+      html = render_to_html(rendered)
+      assert html =~ "<span"
+      assert html =~ "New"
+    end
+
+    test "unknown component renders empty" do
+      rendered =
+        LiveVueNext.render(
+          ~s[<div><Unknown title="x" /></div>],
+          %{}
+        )
+
+      html = render_to_html(rendered)
+      assert html == "<div></div>"
+    end
+  end
+
+  describe "scoped CSS" do
+    defmodule ScopedComponents do
+      require LiveVueNext.Vue
+      LiveVueNext.Vue.component(:scoped, "fixtures/Scoped.vue")
+    end
+
+    test "injects scope attribute into root element" do
+      rendered = ScopedComponents.scoped(%{title: "Test"})
+      html = render_to_html(rendered)
+      assert html =~ "data-v-"
+      assert html =~ "<h2>Test</h2>"
+    end
+
+    test "generates scoped CSS" do
+      css = ScopedComponents.__vue_css_scoped__()
+      assert css =~ "data-v-"
+      assert css =~ ".card"
+      assert css =~ "background: white"
+    end
+  end
+
   describe "static content" do
     test "purely static template" do
       rendered = LiveVueNext.render("<div><p>Hello World</p></div>", %{})
