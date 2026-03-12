@@ -31,11 +31,12 @@ defmodule PhoenixVapor.ScriptSetup do
         refs = extract_refs(ast, script_source)
         computeds = extract_computeds(ast, script_source)
         functions = extract_functions(ast)
+        function_bodies = extract_function_bodies(ast, script_source)
         props = extract_props(ast)
-        {refs, computeds, functions, props}
+        {refs, computeds, functions, function_bodies, props}
 
       _ ->
-        {%{}, %{}, %{}, []}
+        {%{}, %{}, %{}, %{}, []}
     end
   end
 
@@ -148,6 +149,18 @@ defmodule PhoenixVapor.ScriptSetup do
         :skip
     end)
     |> List.flatten()
+  end
+
+  defp extract_function_bodies(ast, source) do
+    OXC.collect(ast, fn
+      %{type: "FunctionDeclaration", id: %{name: name}, body: %{start: s, end: e}} ->
+        body = binary_part(source, s + 1, e - s - 2) |> String.trim()
+        {:keep, {name, body}}
+
+      _ ->
+        :skip
+    end)
+    |> Map.new()
   end
 
   defp slice_source(source, %{start: s, end: e}) do

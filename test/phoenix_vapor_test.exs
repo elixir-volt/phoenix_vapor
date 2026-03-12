@@ -865,7 +865,7 @@ defmodule PhoenixVaporTest do
 
   describe "script setup parsing" do
     test "extracts refs with initial values" do
-      {refs, _, _, _} =
+      {refs, _, _, _, _} =
         PhoenixVapor.ScriptSetup.parse("""
         import { ref } from "vue"
         const count = ref(0)
@@ -876,7 +876,7 @@ defmodule PhoenixVaporTest do
     end
 
     test "extracts computed expressions" do
-      {_, computeds, _, _} =
+      {_, computeds, _, _, _} =
         PhoenixVapor.ScriptSetup.parse("""
         import { ref, computed } from "vue"
         const count = ref(0)
@@ -887,7 +887,7 @@ defmodule PhoenixVaporTest do
     end
 
     test "extracts function names" do
-      {_, _, functions, _} =
+      {_, _, functions, _, _} =
         PhoenixVapor.ScriptSetup.parse("""
         function increment() { count.value++ }
         function reset() { count.value = 0 }
@@ -898,7 +898,7 @@ defmodule PhoenixVaporTest do
     end
 
     test "extracts defineProps" do
-      {_, _, _, props} =
+      {_, _, _, _, props} =
         PhoenixVapor.ScriptSetup.parse("""
         defineProps(["title", "count"])
         """)

@@ -68,15 +68,12 @@ defmodule PhoenixVapor.Reactive do
     ir = Vize.vapor_ir!(template_content)
     escaped_ir = Macro.escape(ir)
 
-    {refs, computeds, functions, props} =
+    {refs, computeds, functions, function_bodies, props} =
       if script_content do
         PhoenixVapor.ScriptSetup.parse(script_content)
       else
-        {%{}, %{}, [], []}
+        {%{}, %{}, [], %{}, []}
       end
-
-    # Build event handler function bodies from the original script
-    function_bodies = extract_function_bodies(script_content || "", functions)
 
     # Generate the module code
     mount_ast = gen_mount(refs, computeds, props)
@@ -223,34 +220,4 @@ defmodule PhoenixVapor.Reactive do
     end
   end
 
-  @doc false
-  def extract_function_bodies(script, function_names) do
-    Enum.reduce(function_names, %{}, fn name, acc ->
-      pattern = ~r/function\s+#{Regex.escape(name)}\s*\([^)]*\)\s*\{/
-      case Regex.run(pattern, script, return: :index) do
-        [{start_pos, match_len}] ->
-          after_brace = start_pos + match_len
-          body = extract_brace_body(script, after_brace)
-          Map.put(acc, name, body)
-
-        _ ->
-          acc
-      end
-    end)
-  end
-
-  defp extract_brace_body(source, start_pos) do
-    source
-    |> String.slice(start_pos..-1//1)
-    |> scan_braces(0, [])
-    |> IO.iodata_to_binary()
-    |> String.trim()
-  end
-
-  defp scan_braces("", _depth, acc), do: Enum.reverse(acc)
-  defp scan_braces("}" <> _rest, 0, acc), do: Enum.reverse(acc)
-  defp scan_braces("}" <> rest, depth, acc), do: scan_braces(rest, depth - 1, ["}" | acc])
-  defp scan_braces("{" <> rest, depth, acc), do: scan_braces(rest, depth + 1, ["{" | acc])
-  defp scan_braces(<<c::utf8, rest::binary>>, depth, acc),
-    do: scan_braces(rest, depth, [<<c::utf8>> | acc])
 end
