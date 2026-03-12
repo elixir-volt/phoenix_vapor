@@ -24,10 +24,9 @@ defmodule PhoenixVapor.MixProject do
   defp deps do
     [
       {:phoenix_live_view, "~> 1.0"},
-      {:vize, path: "../vize_ex"},
+      {:vize, "~> 0.6.0"},
       {:oxc, "~> 0.5.0"},
-      {:quickbeam, path: "../quickbeam", optional: true},
-      {:rustler, ">= 0.0.0", optional: true}
+      {:quickbeam, path: "../quickbeam", optional: true}
     ]
   end
 end
