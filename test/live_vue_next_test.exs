@@ -821,6 +821,101 @@ defmodule LiveVueNextTest do
     end
   end
 
+  describe "QuickBEAM expression fallback" do
+    test "arrow function in filter" do
+      rendered =
+        LiveVueNext.render(
+          "<span>{{ items.filter(x => x > 3).length }}</span>",
+          %{items: [1, 2, 3, 4, 5]}
+        )
+
+      assert render_to_html(rendered) == "<span>2</span>"
+    end
+
+    test "arrow function in map + join" do
+      rendered =
+        LiveVueNext.render(
+          "<span>{{ items.map(x => x * 2).join(\", \") }}</span>",
+          %{items: [1, 2, 3]}
+        )
+
+      assert render_to_html(rendered) == "<span>2, 4, 6</span>"
+    end
+
+    test "complex chain with objects" do
+      rendered =
+        LiveVueNext.render(
+          "<span>{{ users.filter(u => u.active).length }}</span>",
+          %{users: [%{active: true}, %{active: false}, %{active: true}]}
+        )
+
+      assert render_to_html(rendered) == "<span>2</span>"
+    end
+
+    test "simple expressions still use pure Elixir" do
+      rendered =
+        LiveVueNext.render(
+          ~s[<span>{{ count + 1 }}</span>],
+          %{count: 41}
+        )
+
+      assert render_to_html(rendered) == "<span>42</span>"
+    end
+  end
+
+  describe "script setup parsing" do
+    test "extracts refs with initial values" do
+      {refs, _, _, _} =
+        LiveVueNext.ScriptSetup.parse("""
+        import { ref } from "vue"
+        const count = ref(0)
+        const name = ref("hello")
+        """)
+
+      assert refs == %{"count" => "0", "name" => "\"hello\""}
+    end
+
+    test "extracts computed expressions" do
+      {_, computeds, _, _} =
+        LiveVueNext.ScriptSetup.parse("""
+        import { ref, computed } from "vue"
+        const count = ref(0)
+        const doubled = computed(() => count.value * 2)
+        """)
+
+      assert computeds["doubled"] == "count.value * 2"
+    end
+
+    test "extracts function names" do
+      {_, _, functions, _} =
+        LiveVueNext.ScriptSetup.parse("""
+        function increment() { count.value++ }
+        function reset() { count.value = 0 }
+        """)
+
+      assert "increment" in functions
+      assert "reset" in functions
+    end
+
+    test "extracts defineProps" do
+      {_, _, _, props} =
+        LiveVueNext.ScriptSetup.parse("""
+        defineProps(["title", "count"])
+        """)
+
+      assert props == ["title", "count"]
+    end
+
+    test "evaluates initial state via QuickBEAM" do
+      refs = %{"count" => "0", "items" => "[]", "name" => "\"world\""}
+      state = LiveVueNext.ScriptSetup.eval_initial_state(refs)
+
+      assert state.count == 0
+      assert state.items == []
+      assert state.name == "world"
+    end
+  end
+
   describe "rendered struct shape" do
     test "produces valid %Rendered{} with correct field types" do
       rendered = LiveVueNext.render("<div>{{ msg }}</div>", %{msg: "Hi"})

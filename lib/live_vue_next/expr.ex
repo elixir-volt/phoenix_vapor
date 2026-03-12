@@ -25,6 +25,7 @@ defmodule LiveVueNext.Expr do
     case parse_and_eval(expr, assigns) do
       {:ok, value} -> value
       :error -> resolve_path(expr, assigns)
+      :fallback -> LiveVueNext.JsEval.eval(expr, assigns)
     end
   end
 
@@ -76,7 +77,11 @@ defmodule LiveVueNext.Expr do
   defp parse_and_eval(expr, assigns) do
     case OXC.parse(expr, "e.js") do
       {:ok, %{body: [%{type: "ExpressionStatement", expression: node}]}} ->
-        {:ok, eval_node(node, assigns)}
+        try do
+          {:ok, eval_node(node, assigns)}
+        catch
+          :unsupported_node -> :fallback
+        end
 
       _ ->
         :error
@@ -194,6 +199,16 @@ defmodule LiveVueNext.Expr do
   end
 
   defp eval_node(%{type: "CallExpression", callee: callee, arguments: args}, assigns) do
+    has_fn_args =
+      Enum.any?(args || [], fn
+        %{type: t} when t in ["ArrowFunctionExpression", "FunctionExpression"] -> true
+        _ -> false
+      end)
+
+    if has_fn_args do
+      throw(:unsupported_node)
+    end
+
     case callee do
       %{type: "MemberExpression", object: obj, property: %{name: method}} ->
         receiver = eval_node(obj, assigns)
@@ -203,6 +218,13 @@ defmodule LiveVueNext.Expr do
       _ ->
         nil
     end
+  end
+
+  defp eval_node(%{type: type}, _assigns)
+       when type in ["ArrowFunctionExpression", "FunctionExpression", "SequenceExpression",
+                      "AssignmentExpression", "UpdateExpression", "NewExpression",
+                      "TaggedTemplateExpression", "YieldExpression", "AwaitExpression"] do
+    throw(:unsupported_node)
   end
 
   defp eval_node(_, _assigns), do: nil

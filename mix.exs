@@ -25,7 +25,8 @@ defmodule LiveVueNext.MixProject do
     [
       {:phoenix_live_view, "~> 1.0"},
       {:vize, path: "../vize_ex"},
-      {:oxc, path: "../oxc_ex"}
+      {:oxc, path: "../oxc_ex", override: true},
+      {:quickbeam, path: "../quickbeam", optional: true}
     ]
   end
 end
