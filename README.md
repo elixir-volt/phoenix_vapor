@@ -3,7 +3,7 @@
 Vue templates as native Phoenix LiveView rendered structs.
 
 Compiles Vue template syntax to `%Phoenix.LiveView.Rendered{}` via
-[Vize](https://github.com/nicolo-ribaudo/vize)'s Vapor IR — no JavaScript
+[Vize](https://github.com/elixir-volt/vize_ex)'s Vapor IR — no JavaScript
 runtime needed for template-only components.
 
 ## How it works
