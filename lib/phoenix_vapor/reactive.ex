@@ -6,11 +6,16 @@ defmodule PhoenixVapor.Reactive do
   fully functional LiveView with auto-generated mount, render, and
   event handlers.
 
+  A persistent `PhoenixVapor.Runtime` (QuickBEAM + Vue reactivity) is
+  started per LiveView process. `ref()` values become reactive state,
+  `computed()` auto-update when deps change, and functions execute in
+  the persistent JS context — state survives across events.
+
   ## Usage
 
       defmodule MyAppWeb.CounterLive do
         use MyAppWeb, :live_view
-        use PhoenixVapor.Reactive, file: "lib/my_app_web/live/Counter.vue"
+        use PhoenixVapor.Reactive, file: "Counter.vue"
       end
 
   Given `Counter.vue`:
@@ -18,31 +23,22 @@ defmodule PhoenixVapor.Reactive do
       <script setup>
       import { ref, computed } from "vue"
 
-      defineProps(["title"])
-
       const count = ref(0)
       const doubled = computed(() => count * 2)
 
-      function increment() {
-        count++
-      }
+      function increment() { count++ }
       </script>
 
       <template>
-        <div>
-          <h1>{{ title }}</h1>
-          <p>{{ count }} (doubled: {{ doubled }})</p>
-          <button @click="increment">+</button>
-        </div>
+        <p>{{ count }} × 2 = {{ doubled }}</p>
+        <button @click="increment">+</button>
       </template>
 
   This generates:
 
-  - `mount/3` — initializes assigns from `ref()` values
-  - `render/1` — renders the template via `~VUE` / Vapor IR
-  - `handle_event/3` — one clause per function in `<script setup>`,
-    evaluates the function body in QuickBEAM against current assigns,
-    then updates assigns with the new state
+  - `mount/3` — starts a `Runtime` with refs, computeds, and functions
+  - `render/1` — reads state from runtime, renders via Vapor split
+  - `handle_event/3` — calls the function in the runtime, assigns new state
   """
 
   defmacro __using__(opts) do
@@ -75,10 +71,9 @@ defmodule PhoenixVapor.Reactive do
         {%{}, %{}, [], %{}, []}
       end
 
-    # Generate the module code
-    mount_ast = gen_mount(refs, computeds, props)
-    render_ast = gen_render(escaped_split, computeds)
-    event_asts = gen_events(functions, function_bodies, refs, computeds)
+    mount_ast = gen_mount(refs, computeds, functions, function_bodies, props)
+    render_ast = gen_render(escaped_split)
+    event_asts = gen_events(functions)
 
     quote do
       import PhoenixVapor.Sigil
@@ -89,134 +84,73 @@ defmodule PhoenixVapor.Reactive do
     end
   end
 
-  defp gen_mount(refs, computeds, _props) do
-    ref_pairs =
-      Enum.map(refs, fn {name, init_expr} ->
-        {String.to_atom(name), init_expr}
-      end)
-
-    computed_exprs = Map.to_list(computeds)
+  defp gen_mount(refs, computeds, functions, function_bodies, _props) do
+    escaped_refs = Macro.escape(refs)
+    escaped_computeds = Macro.escape(computeds)
+    escaped_functions = Macro.escape(functions)
+    escaped_function_bodies = Macro.escape(function_bodies)
 
     quote do
       def mount(params, _session, socket) do
-        initial =
-          unquote(Macro.escape(ref_pairs))
-          |> Enum.reduce(%{}, fn {name, init_expr}, acc ->
-            value =
-              case init_expr do
-                "0" -> 0
-                "\"" <> _ -> init_expr |> Code.eval_string() |> elem(0)
-                "true" -> true
-                "false" -> false
-                "null" -> nil
-                "[]" -> []
-                "{}" -> %{}
-                expr -> PhoenixVapor.Expr.eval(expr, %{}) || 0
-              end
+        {:ok, runtime} =
+          PhoenixVapor.Runtime.start_link(
+            refs: unquote(escaped_refs),
+            computeds: unquote(escaped_computeds),
+            functions: unquote(escaped_functions),
+            function_bodies: unquote(escaped_function_bodies)
+          )
 
-            Map.put(acc, name, value)
-          end)
+        {:ok, state} = PhoenixVapor.Runtime.get_state(runtime)
+        assigns = PhoenixVapor.Reactive.state_to_assigns(state)
 
-        socket = Phoenix.Component.assign(socket, initial)
-
-        # Merge URL params as assigns
         param_assigns =
-          params
-          |> Enum.reduce(%{}, fn {k, v}, acc ->
+          Enum.reduce(params, %{}, fn {k, v}, acc ->
             Map.put(acc, String.to_atom(k), v)
           end)
 
-        socket = Phoenix.Component.assign(socket, param_assigns)
+        socket =
+          socket
+          |> Phoenix.Component.assign(assigns)
+          |> Phoenix.Component.assign(param_assigns)
+          |> Phoenix.Component.assign(:__vapor_runtime__, runtime)
 
-        # Evaluate computeds
-        computed_assigns =
-          unquote(Macro.escape(computed_exprs))
-          |> Enum.reduce(%{}, fn {name, expr}, acc ->
-            value = PhoenixVapor.Expr.eval(expr, socket.assigns)
-            Map.put(acc, String.to_atom(name), value)
-          end)
-
-        {:ok, Phoenix.Component.assign(socket, computed_assigns)}
+        {:ok, socket}
       end
     end
   end
 
-  defp gen_render(escaped_split, computeds) do
-    computed_exprs = Map.to_list(computeds)
-
+  defp gen_render(escaped_split) do
     quote do
       def render(var!(assigns)) do
-        var!(assigns) =
-          unquote(Macro.escape(computed_exprs))
-          |> Enum.reduce(var!(assigns), fn {name, expr}, acc ->
-            value = PhoenixVapor.Expr.eval(expr, acc)
-            Map.put(acc, String.to_atom(name), value)
-          end)
-
-        PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns), vapor_metadata: true)
+        PhoenixVapor.Renderer.to_rendered(
+          unquote(escaped_split),
+          var!(assigns),
+          vapor_metadata: true
+        )
       end
     end
   end
 
-  defp gen_events(functions, function_bodies, refs, computeds) do
-    ref_names = Map.keys(refs)
-    computed_exprs = Map.to_list(computeds)
-
+  defp gen_events(functions) do
     Enum.map(functions, fn func_name ->
-      body = Map.get(function_bodies, func_name, "")
-
       quote do
         def handle_event(unquote(func_name), params, socket) do
-          current =
-            unquote(Macro.escape(ref_names))
-            |> Enum.reduce(%{}, fn name, acc ->
-              atom = String.to_atom(name)
-              Map.put(acc, name, Map.get(socket.assigns, atom))
-            end)
+          runtime = socket.assigns.__vapor_runtime__
 
-          new_state = PhoenixVapor.Reactive.eval_handler(unquote(body), current, params)
+          {:ok, state} =
+            PhoenixVapor.Runtime.call_handler(runtime, unquote(func_name), params)
 
-          ref_assigns =
-            Enum.reduce(new_state, %{}, fn {k, v}, acc ->
-              Map.put(acc, String.to_atom(k), v)
-            end)
-
-          socket = Phoenix.Component.assign(socket, ref_assigns)
-
-          # Re-evaluate computeds
-          computed_assigns =
-            unquote(Macro.escape(computed_exprs))
-            |> Enum.reduce(%{}, fn {name, expr}, acc ->
-              value = PhoenixVapor.Expr.eval(expr, socket.assigns)
-              Map.put(acc, String.to_atom(name), value)
-            end)
-
-          {:noreply, Phoenix.Component.assign(socket, computed_assigns)}
+          assigns = PhoenixVapor.Reactive.state_to_assigns(state)
+          {:noreply, Phoenix.Component.assign(socket, assigns)}
         end
       end
     end)
   end
 
   @doc false
-  def eval_handler(body, current_state, _params) do
-    if Code.ensure_loaded?(QuickBEAM) do
-      {:ok, rt} = QuickBEAM.start()
-
-      return_expr =
-        current_state
-        |> Map.keys()
-        |> Enum.map(fn k -> "\"#{k}\": #{k}" end)
-        |> Enum.join(", ")
-
-      code = "#{body};\n({#{return_expr}})"
-
-      case QuickBEAM.eval(rt, code, vars: current_state) do
-        {:ok, result} when is_map(result) -> result
-        _ -> current_state
-      end
-    else
-      current_state
-    end
+  def state_to_assigns(state) when is_map(state) do
+    Enum.reduce(state, %{}, fn {k, v}, acc ->
+      Map.put(acc, String.to_atom(k), v)
+    end)
   end
-
 end

@@ -2,22 +2,13 @@ defmodule PhoenixVapor.ScriptSetup do
   @moduledoc """
   Extracts reactive state and functions from `<script setup>` blocks.
 
-  Parses the script with OXC and evaluates initial state in QuickBEAM.
-  The resulting state map becomes LiveView assigns, and functions become
-  event handlers.
+  Parses the script with OXC AST and extracts declarations for the
+  `PhoenixVapor.Runtime` (persistent QuickBEAM + Vue reactivity):
 
-  ## Architecture
-
-  Instead of running Vue's full reactive system, we take a pragmatic approach:
-
-  - `ref(value)` → extracted as initial assign value
-  - `computed(() => expr)` → extracted as a derived assign (re-evaluated on change)
+  - `ref(value)` → initial expression passed to `Runtime`'s reactive context
+  - `computed(() => expr)` → expression body, auto-wired with `.value` access
   - `defineProps([...])` → maps directly to LiveView assigns
-  - Functions → mapped to `handle_event` callbacks
-  - `ref.value` access in templates → already handled by Expr evaluator
-
-  This gives us 90% of `<script setup>` ergonomics without needing the Vue
-  reactive runtime on the server.
+  - Functions → bodies extracted for execution in `with(scope)` context
   """
 
   @doc """

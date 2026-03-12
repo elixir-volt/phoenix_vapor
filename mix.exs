@@ -35,7 +35,7 @@ defmodule PhoenixVapor.MixProject do
         "GitHub" => @source_url,
         "Volt" => "https://github.com/elixir-volt/volt"
       },
-      files: ~w(lib .formatter.exs mix.exs README.md LICENSE)
+      files: ~w(lib priv/js .formatter.exs mix.exs README.md LICENSE)
     ]
   end
 
@@ -52,7 +52,7 @@ defmodule PhoenixVapor.MixProject do
       {:phoenix_live_view, "~> 1.0"},
       {:vize, "~> 0.5.0 or ~> 0.6.0"},
       {:oxc, "~> 0.5.0"},
-      {:quickbeam, "~> 0.3.0", optional: true},
+      {:quickbeam, "~> 0.3.0 or ~> 0.4.0", optional: true},
       {:ex_doc, "~> 0.35", only: :dev, runtime: false}
     ]
   end

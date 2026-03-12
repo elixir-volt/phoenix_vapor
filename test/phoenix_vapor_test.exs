@@ -943,33 +943,41 @@ defmodule PhoenixVaporTest do
     end
 
     test "generates handle_event for increment" do
-      socket = %Phoenix.LiveView.Socket{
-        assigns: %{count: 3, doubled: 6, __changed__: %{}, flash: %{}, live_action: nil},
-        private: %{assign_new: {%{}, []}}
-      }
+      {:ok, socket} =
+        ReactiveCounter.mount(%{}, %{}, %Phoenix.LiveView.Socket{
+          assigns: %{__changed__: %{}, flash: %{}, live_action: nil},
+          private: %{assign_new: {%{}, []}}
+        })
 
       {:noreply, socket} = ReactiveCounter.handle_event("increment", %{}, socket)
-      assert socket.assigns.count == 4
-      assert socket.assigns.doubled == 8
+      assert socket.assigns.count == 1
+      assert socket.assigns.doubled == 2
     end
 
     test "generates handle_event for decrement" do
-      socket = %Phoenix.LiveView.Socket{
-        assigns: %{count: 3, doubled: 6, __changed__: %{}, flash: %{}, live_action: nil},
-        private: %{assign_new: {%{}, []}}
-      }
+      {:ok, socket} =
+        ReactiveCounter.mount(%{}, %{}, %Phoenix.LiveView.Socket{
+          assigns: %{__changed__: %{}, flash: %{}, live_action: nil},
+          private: %{assign_new: {%{}, []}}
+        })
 
+      {:noreply, socket} = ReactiveCounter.handle_event("increment", %{}, socket)
+      {:noreply, socket} = ReactiveCounter.handle_event("increment", %{}, socket)
+      {:noreply, socket} = ReactiveCounter.handle_event("increment", %{}, socket)
       {:noreply, socket} = ReactiveCounter.handle_event("decrement", %{}, socket)
       assert socket.assigns.count == 2
       assert socket.assigns.doubled == 4
     end
 
     test "generates handle_event for reset" do
-      socket = %Phoenix.LiveView.Socket{
-        assigns: %{count: 99, doubled: 198, __changed__: %{}, flash: %{}, live_action: nil},
-        private: %{assign_new: {%{}, []}}
-      }
+      {:ok, socket} =
+        ReactiveCounter.mount(%{}, %{}, %Phoenix.LiveView.Socket{
+          assigns: %{__changed__: %{}, flash: %{}, live_action: nil},
+          private: %{assign_new: {%{}, []}}
+        })
 
+      {:noreply, socket} = ReactiveCounter.handle_event("increment", %{}, socket)
+      {:noreply, socket} = ReactiveCounter.handle_event("increment", %{}, socket)
       {:noreply, socket} = ReactiveCounter.handle_event("reset", %{}, socket)
       assert socket.assigns.count == 0
       assert socket.assigns.doubled == 0
