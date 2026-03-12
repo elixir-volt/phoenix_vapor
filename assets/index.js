@@ -1,10 +1,11 @@
 /**
  * LiveVueNext — Vapor-style direct DOM patching for Phoenix LiveView.
  *
- * Replaces morphdom's tree reconciliation with targeted node writes
- * for elements rendered by LiveVueNext. On first render, builds a
- * registry mapping each dynamic slot to its DOM node. On diffs,
- * applies changes directly — one property write per changed slot.
+ * Bypasses morphdom entirely for Vapor-managed elements. Instead of:
+ *   diff → mergeDiff → toString() → innerHTML → morphdom tree walk
+ *
+ * Does:
+ *   diff → mergeDiff → read dynamic values → single DOM write per slot
  *
  * ## Usage
  *
@@ -13,118 +14,179 @@
  *   let liveSocket = new LiveSocket("/live", Socket, { ... })
  *   patchLiveSocket(liveSocket)
  *   liveSocket.connect()
- *
- * ## How It Works
- *
- * 1. Server renders elements with `data-vapor-statics` attribute
- *    containing the JSON-encoded statics array.
- *
- * 2. On first render (join), VaporPatch parses the statics and builds
- *    a registry mapping each dynamic slot index to its DOM node + type.
- *
- * 3. On subsequent diffs, instead of going through toString → morphdom,
- *    reads the merged dynamic values from the Rendered object and applies
- *    them directly to registered DOM nodes.
- *
- * 4. Falls through to the standard morphdom path for:
- *    - Fingerprint changes (template shape changed)
- *    - Structural operations (v-if branch switch, v-for list changes)
- *    - Component diffs
- *    - Stream operations
  */
 
 import { analyzeStatics, resolveRegistry, applyDiff } from "./vapor_patch.js"
 
-// Per-view Vapor state
-const vaporViews = new WeakMap()
+// Per-element state: { statics, slots, registry }
+const vaporElements = new WeakMap()
+
+// Flag set after first view is patched
+let viewPrototypePatched = false
 
 /**
- * Patch a LiveSocket instance to use Vapor rendering for elements
- * with data-vapor-statics attributes.
+ * Patch a LiveSocket to use Vapor rendering for data-vapor-statics elements.
+ *
+ * Monkey-patches View.prototype.update to bypass toString+morphdom when a diff
+ * only contains dynamic value changes (no structural/component changes).
+ *
+ * @param {LiveSocket} liveSocket
+ * @param {Object} [opts]
+ * @param {boolean} [opts.debug] - Enable performance counters on window
  */
 export function patchLiveSocket(liveSocket, opts = {}) {
   const debug = opts.debug || false
 
-  // Hook into the dom callbacks to build registries on mount
+  // Hook into dom callbacks for registry building
   const origOnNodeAdded = liveSocket.domCallbacks.onNodeAdded
-  const origOnPatchEnd = liveSocket.domCallbacks.onPatchEnd
   const origOnBeforeElUpdated = liveSocket.domCallbacks.onBeforeElUpdated
 
   liveSocket.domCallbacks.onNodeAdded = function(el) {
     origOnNodeAdded && origOnNodeAdded(el)
     if (el.dataset && el.dataset.vaporStatics) {
-      buildVaporRegistry(el)
+      buildRegistry(el)
     }
   }
 
+  // Fallback: if the View.prototype patch misses (structural changes, etc.),
+  // still optimize the morphdom walk
   liveSocket.domCallbacks.onBeforeElUpdated = function(fromEl, toEl) {
     if (origOnBeforeElUpdated) {
       const result = origOnBeforeElUpdated(fromEl, toEl)
       if (result === false) return false
     }
 
-    // Intercept updates to vapor-managed elements
-    const state = vaporViews.get(fromEl)
+    const state = vaporElements.get(fromEl)
     if (!state || state.registry.size === 0) return true
 
-    const t0 = performance.now()
-
-    // Apply targeted updates by comparing fromEl and toEl
+    // Apply targeted updates from morphdom's toEl
     let allHandled = true
-    for (const [slotIdx, entry] of state.registry) {
-      if (!applySlotFromMorphdom(entry, fromEl, toEl)) {
+    for (const [, entry] of state.registry) {
+      if (!applyFromMorphdom(entry, fromEl, toEl)) {
         allHandled = false
       }
     }
 
     if (allHandled) {
       syncControlAttrs(fromEl, toEl)
-      if (debug) {
-        const dt = performance.now() - t0
-        window.__vaporPatchCount = (window.__vaporPatchCount || 0) + 1
-        window.__vaporPatchTotalMs = (window.__vaporPatchTotalMs || 0) + dt
-      }
       return false
     }
-
     return true
   }
 
-  liveSocket.domCallbacks.onPatchEnd = function(container) {
-    origOnPatchEnd && origOnPatchEnd(container)
+  // Build initial registries for any elements already in the DOM
+  document.querySelectorAll("[data-vapor-statics]").forEach(buildRegistry)
 
-    // Rebuild registries after morphdom runs (handles structural changes)
-    rebuildRegistries()
+  // Patch View.prototype.update when the first view connects.
+  // We can't do this immediately because View isn't exported, so we
+  // wait for a root view to appear, then patch its prototype.
+  const origConnect = liveSocket.connect.bind(liveSocket)
+  liveSocket.connect = function() {
+    origConnect()
+    waitForViews(liveSocket, debug)
   }
 }
 
-function buildVaporRegistry(el) {
+function waitForViews(liveSocket, debug) {
+  if (viewPrototypePatched) return
+
+  const check = () => {
+    const rootId = Object.keys(liveSocket.roots || {})[0]
+    if (!rootId) {
+      requestAnimationFrame(check)
+      return
+    }
+
+    const view = liveSocket.roots[rootId]
+    const proto = Object.getPrototypeOf(view)
+
+    if (proto.update && !proto.__vaporPatched) {
+      patchViewPrototype(proto, debug)
+    }
+  }
+
+  requestAnimationFrame(check)
+}
+
+function patchViewPrototype(proto, debug) {
+  const origUpdate = proto.update
+  viewPrototypePatched = true
+  proto.__vaporPatched = true
+
+  proto.update = function(diff, events, isPending) {
+    // Only attempt Vapor path for simple diffs
+    if (diff && !("c" in diff) && !("s" in diff)) {
+      const vaporEl = this.el.querySelector("[data-vapor-statics]")
+      const state = vaporEl && vaporElements.get(vaporEl)
+
+      if (state && state.registry.size > 0) {
+        // Merge diff into rendered tree (state tracking)
+        this.rendered.mergeDiff(diff)
+
+        // Read dynamic values directly from the Rendered object
+        const inner = this.rendered.rendered
+        let applied = 0
+
+        for (const [slotIdx, entry] of state.registry) {
+          const value = inner[slotIdx]
+          if (value === null || value === undefined) continue
+
+          const strValue = String(value)
+
+          switch (entry.type) {
+            case "text":
+              if (entry.node.nodeValue !== strValue) {
+                entry.node.nodeValue = strValue
+                applied++
+              }
+              break
+            case "attr":
+              if (entry.key && entry.node.getAttribute(entry.key) !== strValue) {
+                setAttr(entry.node, entry.key, strValue)
+                applied++
+              }
+              break
+          }
+        }
+
+        if (applied > 0 || hasOnlyKnownSlots(diff, state.registry)) {
+          if (debug) {
+            window.__vaporDirectPatches = (window.__vaporDirectPatches || 0) + 1
+          }
+          this.liveSocket.dispatchEvents(events)
+          return true
+        }
+      }
+    }
+
+    // Fallback to original update (toString + morphdom)
+    return origUpdate.call(this, diff, events, isPending)
+  }
+}
+
+function hasOnlyKnownSlots(diff, registry) {
+  for (const key of Object.keys(diff)) {
+    const idx = parseInt(key)
+    if (!isNaN(idx) && !registry.has(idx)) return false
+  }
+  return true
+}
+
+function buildRegistry(el) {
   try {
     const statics = JSON.parse(el.dataset.vaporStatics)
     const slots = analyzeStatics(statics)
     const registry = resolveRegistry(slots, el)
-    vaporViews.set(el, { statics, slots, registry })
+    vaporElements.set(el, { statics, slots, registry })
   } catch (e) {
     console.warn("[LiveVueNext] Registry build failed:", e)
   }
 }
 
-function rebuildRegistries() {
-  // Find all vapor elements and rebuild their registries
-  document.querySelectorAll("[data-vapor-statics]").forEach(el => {
-    const state = vaporViews.get(el)
-    if (state) {
-      state.registry = resolveRegistry(state.slots, el)
-    } else {
-      buildVaporRegistry(el)
-    }
-  })
-}
-
-function applySlotFromMorphdom(entry, fromEl, toEl) {
+function applyFromMorphdom(entry, fromEl, toEl) {
   switch (entry.type) {
     case "text": {
-      const toNode = findCorrespondingNode(entry.node, fromEl, toEl)
+      const toNode = findNodeByPath(entry.node, fromEl, toEl)
       if (toNode && entry.node.nodeValue !== toNode.nodeValue) {
         entry.node.nodeValue = toNode.nodeValue
       }
@@ -132,7 +194,7 @@ function applySlotFromMorphdom(entry, fromEl, toEl) {
     }
     case "attr": {
       if (!entry.key) return false
-      const toNode = findCorrespondingElement(entry.node, fromEl, toEl)
+      const toNode = findElementByPath(entry.node, fromEl, toEl)
       if (toNode) {
         const newVal = toNode.getAttribute(entry.key)
         if (newVal !== null && entry.node.getAttribute(entry.key) !== newVal) {
@@ -157,7 +219,7 @@ function syncControlAttrs(fromEl, toEl) {
   }
 }
 
-function findCorrespondingNode(node, fromRoot, toRoot) {
+function findNodeByPath(node, fromRoot, toRoot) {
   const path = getNodePath(node, fromRoot)
   if (!path) return null
   let target = toRoot
@@ -168,7 +230,7 @@ function findCorrespondingNode(node, fromRoot, toRoot) {
   return target
 }
 
-function findCorrespondingElement(el, fromRoot, toRoot) {
+function findElementByPath(el, fromRoot, toRoot) {
   const path = getElementPath(el, fromRoot)
   if (!path) return null
   let target = toRoot

@@ -61,7 +61,8 @@ defmodule LiveVueNextDemo.MixProject do
       {:bandit, "~> 1.5"},
       {:live_vue_next, path: "../.."},
       {:quickbeam, path: "../../../quickbeam"},
-      {:oxc, path: "../../../oxc_ex", override: true}
+      {:oxc, path: "../../../oxc_ex", override: true},
+      {:rustler, ">= 0.0.0", optional: true}
     ]
   end
 
