@@ -244,4 +244,81 @@ defmodule PhoenixVapor.RuntimeTest do
       GenServer.stop(rt)
     end
   end
+
+  describe "context pool mode" do
+    setup do
+      if Code.ensure_loaded?(QuickBEAM.ContextPool) do
+        {:ok, pool} = QuickBEAM.ContextPool.start_link(size: 2)
+        {:ok, pool: pool}
+      else
+        :ok
+      end
+    end
+
+    @tag :context_pool
+    test "isolated state on shared pool", %{pool: pool} do
+      {:ok, rt1} =
+        Runtime.start_link(
+          pool: pool,
+          refs: %{"count" => "0"},
+          computeds: %{"doubled" => "count * 2"},
+          functions: ["increment"],
+          function_bodies: %{"increment" => "count++"}
+        )
+
+      {:ok, rt2} =
+        Runtime.start_link(
+          pool: pool,
+          refs: %{"count" => "100"},
+          computeds: %{"doubled" => "count * 2"},
+          functions: ["increment"],
+          function_bodies: %{"increment" => "count++"}
+        )
+
+      {:ok, _} = Runtime.call_handler(rt1, "increment")
+      {:ok, _} = Runtime.call_handler(rt1, "increment")
+      {:ok, _} = Runtime.call_handler(rt2, "increment")
+
+      {:ok, s1} = Runtime.get_state(rt1)
+      {:ok, s2} = Runtime.get_state(rt2)
+
+      assert s1["count"] == 2
+      assert s1["doubled"] == 4
+      assert s2["count"] == 101
+      assert s2["doubled"] == 202
+
+      GenServer.stop(rt1)
+      GenServer.stop(rt2)
+    end
+
+    @tag :context_pool
+    test "many contexts on one pool", %{pool: pool} do
+      runtimes =
+        for i <- 0..9 do
+          {:ok, rt} =
+            Runtime.start_link(
+              pool: pool,
+              refs: %{"value" => "#{i}"},
+              functions: ["double"],
+              function_bodies: %{"double" => "value = value * 2"}
+            )
+
+          rt
+        end
+
+      for rt <- runtimes, do: {:ok, _} = Runtime.call_handler(rt, "double")
+
+      states =
+        for rt <- runtimes do
+          {:ok, s} = Runtime.get_state(rt)
+          s
+        end
+
+      for {s, i} <- Enum.with_index(states) do
+        assert s["value"] == i * 2
+      end
+
+      for rt <- runtimes, do: GenServer.stop(rt)
+    end
+  end
 end
