@@ -21,3 +21,10 @@ live_vue_ext-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# npm packages (installed via mix npm.install)
+/node_modules/
+
+# Generated bundles (built from assets/)
+/priv/js/reka-dialog.js
+/priv/js/manifest.json

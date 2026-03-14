@@ -52,7 +52,8 @@ defmodule PhoenixVapor.MixProject do
       {:phoenix_live_view, "~> 1.0"},
       {:vize, "~> 0.5.0 or ~> 0.6.0"},
       {:oxc, "~> 0.5.0"},
-      {:quickbeam, "~> 0.3.0 or ~> 0.4.0 or ~> 0.5.0", optional: true},
+      {:quickbeam, "~> 0.3.0 or ~> 0.4.0 or ~> 0.5.0 or ~> 0.6.0", optional: true},
+      {:npm, "~> 0.4.1", override: true, optional: true},
       {:ex_doc, "~> 0.35", only: :dev, runtime: false}
     ]
   end
