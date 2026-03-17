@@ -26,31 +26,13 @@ defmodule PhoenixVapor.LiveVue do
 
             createApp(defineComponent({
               setup() {
-                return () => h(DialogRoot, { open: open.value, "onUpdate:open": v => open.value = v }, {
-                  default: () => [
-                    h(DialogTrigger, { asChild: true }, {
-                      default: () => h("button", "Open Dialog")
-                    }),
-                    h(DialogPortal, null, {
-                      default: () => [
-                        h(DialogOverlay, { class: "overlay" }),
-                        h(DialogContent, { class: "content" }, {
-                          default: () => [
-                            h(DialogTitle, null, { default: () => "Edit Profile" }),
-                            h(DialogDescription, null, { default: () => "Make changes." }),
-                            h(DialogClose, { asChild: true }, {
-                              default: () => h("button", "Save")
-                            })
-                          ]
-                        })
-                      ]
-                    })
-                  ]
-                });
+                return () => h(DialogRoot, {
+                  open: open.value,
+                  "onUpdate:open": v => open.value = v
+                }, { ... });
               }
             })).mount(document.body);
 
-            globalThis.__pv_refs = { open };
             globalThis.__pv_handlers = {
               toggle() { open.value = !open.value; }
             };
@@ -61,12 +43,10 @@ defmodule PhoenixVapor.LiveVue do
   defmacro __using__(opts) do
     bundle = Keyword.fetch!(opts, :bundle)
     setup = Keyword.fetch!(opts, :setup)
-    events = Keyword.get(opts, :events, [])
 
     quote do
       @__vue_bundle__ unquote(bundle)
       @__vue_setup__ unquote(setup)
-      @__vue_events__ unquote(events)
 
       def mount(_params, _session, socket) do
         {:ok, runtime} =
@@ -85,35 +65,20 @@ defmodule PhoenixVapor.LiveVue do
         {:ok, socket}
       end
 
-      def render(assigns) do
-        html = assigns[:__vue_html__] || ""
+      @__vue_fingerprint__ :erlang.phash2({@__vue_bundle__, @__vue_setup__})
 
-        rendered = %Phoenix.LiveView.Rendered{
+      def render(assigns) do
+        %Phoenix.LiveView.Rendered{
           static: [~s(<div data-vue-root>), ~s(</div>)],
-          dynamic: fn _changed? -> [html] end,
-          fingerprint: :erlang.phash2(html),
+          dynamic: fn _changed? -> [assigns[:__vue_html__] || ""] end,
+          fingerprint: @__vue_fingerprint__,
           root: true
         }
-
-        rendered
       end
 
       def handle_event(event, params, socket) do
         runtime = socket.assigns.__vue_runtime__
-
-        js_code =
-          cond do
-            # Check for registered handler
-            true ->
-              """
-              if (typeof __pv_handlers !== 'undefined' && __pv_handlers['#{event}']) {
-                __pv_handlers['#{event}'](#{Jason.encode!(params)});
-              }
-              """
-          end
-
-        {:ok, html} = PhoenixVapor.VueRuntime.call(runtime, js_code)
-
+        {:ok, html} = PhoenixVapor.VueRuntime.dispatch(runtime, event, params)
         {:noreply, Phoenix.Component.assign(socket, :__vue_html__, html)}
       end
 

@@ -10,25 +10,11 @@ defmodule PhoenixVapor.VueRuntime do
   VueRuntime loads the full Vue runtime and renders into QuickBEAM's
   lexbor DOM. The resulting HTML feeds into `%Phoenix.LiveView.Rendered{}`
   for LiveView's diff protocol.
-
-  ## Usage
-
-      {:ok, rt} = VueRuntime.start_link(
-        bundle: "priv/js/reka-dialog.js",
-        setup: ~s(
-          const { createApp, ref, defineComponent, h } = Vue;
-          const { DialogRoot, DialogTrigger, DialogContent } = RekaDialog;
-
-          const open = ref(false);
-          // ... mount app ...
-        )
-      )
-
-      {:ok, html} = VueRuntime.render(rt)
-      {:ok, html} = VueRuntime.call(rt, "dialogOpen.value = true")
   """
 
   use GenServer
+
+  @stack_size 8 * 1024 * 1024
 
   # ── Public API ──
 
@@ -37,11 +23,12 @@ defmodule PhoenixVapor.VueRuntime do
   @doc "Get the current DOM HTML."
   def render(runtime), do: GenServer.call(runtime, :render)
 
-  @doc "Evaluate JS (e.g. mutate reactive state), flush Vue updates, return new HTML."
-  def call(runtime, js_code), do: GenServer.call(runtime, {:call, js_code})
+  @doc "Dispatch a named event to __pv_handlers, return updated HTML."
+  def dispatch(runtime, event, params \\ %{}),
+    do: GenServer.call(runtime, {:dispatch, event, params})
 
-  @doc "Get current state of all registered refs."
-  def get_state(runtime), do: GenServer.call(runtime, :get_state)
+  @doc "Evaluate arbitrary JS, flush Vue updates, return new HTML."
+  def call(runtime, js_code), do: GenServer.call(runtime, {:call, js_code})
 
   def stop(runtime), do: GenServer.stop(runtime)
 
@@ -56,8 +43,6 @@ defmodule PhoenixVapor.VueRuntime do
     {js, mode} = start_js(pool)
     state = %{js: js, mode: mode}
 
-    # Combined eval avoids QuickBEAM microtask queue issue
-    # where separate evals hang after Vue's reactive mount
     combined = read_bundle(bundle) <> "\n;\n" <> setup
 
     case js_eval(state, combined) do
@@ -73,27 +58,38 @@ defmodule PhoenixVapor.VueRuntime do
     {:reply, js_eval(state, "document.body.innerHTML"), state}
   end
 
-  def handle_call({:call, js_code}, _from, state) do
-    # Mutate state — ignore errors (e.g. FocusScope stack overflow in Reka UI)
-    js_eval(state, js_code)
-    # Vue batches updates via microtask — separate eval flushes the queue
+  def handle_call({:dispatch, event, params}, _from, state) do
+    js_eval(state, dispatch_js(event, params))
     {:reply, js_eval(state, "document.body.innerHTML"), state}
   end
 
-  def handle_call(:get_state, _from, state) do
-    {:reply, js_eval(state, "typeof __pv_getState === 'function' ? __pv_getState() : {}"), state}
+  def handle_call({:call, js_code}, _from, state) do
+    js_eval(state, js_code)
+    {:reply, js_eval(state, "document.body.innerHTML"), state}
   end
 
   @impl true
   def terminate(_reason, %{js: js, mode: :context}), do: QuickBEAM.Context.stop(js)
   def terminate(_reason, %{js: js, mode: :runtime}), do: QuickBEAM.stop(js)
 
-  # ── JS dispatch ──
+  # ── Private ──
+
+  defp dispatch_js(event, params) do
+    encoded = Jason.encode!(params)
+    # Safe dispatch — event name looked up as object key, not interpolated into code
+    """
+    (function() {
+      var h = typeof __pv_handlers !== 'undefined' && __pv_handlers;
+      if (h) {
+        var fn = h[arguments[0]];
+        if (fn) fn(JSON.parse(arguments[1]));
+      }
+    })(#{Jason.encode!(event)}, #{Jason.encode!(encoded)})
+    """
+  end
 
   defp js_eval(%{js: js, mode: :context}, code), do: QuickBEAM.Context.eval(js, code)
   defp js_eval(%{js: js, mode: :runtime}, code), do: QuickBEAM.eval(js, code)
-
-  @stack_size 8 * 1024 * 1024
 
   defp start_js(nil) do
     {:ok, rt} = QuickBEAM.start(apis: [:browser], max_stack_size: @stack_size)
@@ -113,11 +109,17 @@ defmodule PhoenixVapor.VueRuntime do
   defp stop_js(js, :runtime), do: QuickBEAM.stop(js)
 
   defp read_bundle(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
     cond do
-      File.regular?(path) -> File.read!(path)
-      File.regular?(Path.join(:code.priv_dir(:phoenix_vapor) |> to_string(), path)) ->
-        File.read!(Path.join(:code.priv_dir(:phoenix_vapor) |> to_string(), path))
-      true -> raise "Bundle not found: #{path}"
+      File.regular?(expanded) ->
+        File.read!(expanded)
+
+      File.regular?(Path.join(to_string(:code.priv_dir(:phoenix_vapor)), path)) ->
+        File.read!(Path.join(to_string(:code.priv_dir(:phoenix_vapor)), path))
+
+      true ->
+        raise "Bundle not found: #{path}"
     end
   end
 end
