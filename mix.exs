@@ -49,7 +49,7 @@ defmodule PhoenixVapor.MixProject do
 
   defp deps do
     [
-      {:phoenix_live_view, "~> 1.0"},
+      {:phoenix_live_view, path: "../live_view", override: true},
       {:vize, "~> 0.8.0"},
       {:oxc, "~> 0.5.3"},
       {:quickbeam, "~> 0.7.1", optional: true},

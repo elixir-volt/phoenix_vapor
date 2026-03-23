@@ -40,6 +40,7 @@ defmodule PhoenixVapor do
   """
 
   alias PhoenixVapor.Renderer
+  alias PhoenixVapor.VaporRenderer
 
   defmacro __using__(_opts) do
     quote do
@@ -61,5 +62,22 @@ defmodule PhoenixVapor do
 
   def render(%{statics: _, slots: _} = split, assigns) do
     Renderer.to_rendered(split, assigns)
+  end
+
+  @doc """
+  Render a Vue template as a `%Phoenix.LiveView.VaporRendered{}` struct.
+
+  Uses the first-class Vapor render mode — schema-driven direct DOM
+  patching with explicit slot, branch, and list semantics.
+
+  Accepts either a template string or a pre-compiled split map.
+  """
+  @spec vapor_render(String.t() | map(), map()) :: Phoenix.LiveView.VaporRendered.t()
+  def vapor_render(template, assigns) when is_binary(template) do
+    vapor_render(Vize.vapor_split!(template), assigns)
+  end
+
+  def vapor_render(%{statics: _, slots: _} = split, assigns) do
+    VaporRenderer.to_vapor_rendered(split, assigns)
   end
 end

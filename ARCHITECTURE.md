@@ -1,520 +1,658 @@
-# Architecture
+# PhoenixVapor Architecture
 
-## Three rendering systems compared
+PhoenixVapor blends Phoenix LiveView and Vue along three layers:
 
-Phoenix Vapor sits at the intersection of two rendering architectures that independently arrived at the same patterns. This section compares them at the protocol and DOM operation level, then shows how Phoenix Vapor bridges them.
+1. **Vue template syntax compiled to native LiveView rendered trees**
+2. **Optional server-side Vue reactivity via lightweight QuickBEAM contexts**
+3. **Optional Vapor-native DOM patching on the client**
 
-### The template: a counter
+The goal is not to embed Vue beside LiveView, but to exploit the structural similarities between **Vue/Vapor templates** and **LiveView rendered diffs** as deeply as possible.
 
-```html
-<div>
-  <p class="active">Count: 42</p>
-  <button>+</button>
-</div>
-```
+PhoenixVapor keeps the strengths of both systems:
 
-### How Phoenix LiveView renders it
-
-**Compile time** — the HEEx engine splits the template into static strings and dynamic holes:
-
-```elixir
-# ~H"""
-# <div>
-#   <p class={@label}>Count: <%= @count %></p>
-#   <button phx-click="inc">+</button>
-# </div>
-# """
-
-%Rendered{
-  static: ["<div><p class=\"", "\">Count: ", "</p><button phx-click=\"inc\">+</button></div>"],
-  dynamic: fn changed? ->
-    [
-      if !changed? || changed?[:label], do: assigns.label,   # slot 0
-      if !changed? || changed?[:count], do: assigns.count    # slot 1
-    ]
-  end,
-  fingerprint: 28537016426557327042948424934498587137
-}
-```
-
-**Wire — first render (join reply):**
-
-```json
-{
-  "s": ["<div><p class=\"", "\">Count: ", "</p><button phx-click=\"inc\">+</button></div>"],
-  "0": "active",
-  "1": "42"
-}
-```
-
-Key `"s"` = statics (sent once, cached by fingerprint). `"0"`, `"1"` = dynamic slot values.
-
-**Wire — update (only count changed):**
-
-The server sees `__changed__: %{count: true}`. Slot 0 (label) returns `nil` → omitted. Only slot 1 is sent:
-
-```json
-{"1": "43"}
-```
-
-**Client processing (`rendered.js` → `dom_patch.js`):**
-
-```
-1. rendered.mergeDiff({"1": "43"})
-   └─ stores "43" at rendered["1"]
-
-2. rendered.toString()
-   └─ concatenates: static[0] + rendered[0] + static[1] + rendered[1] + static[2]
-   └─ result: "<div><p class=\"active\">Count: 43</p><button phx-click=\"inc\">+</button></div>"
-
-3. new DOMPatch(view, container, id, html, streams, null)
-   └─ wraps in container tag: "<div id=\"phx-Fxyz\"><div><p class=...>...</div></div>"
-
-4. morphdom(targetContainer, source, callbacks)
-   └─ parses source HTML into a DOM tree
-   └─ walks both old and new trees node by node
-   └─ for each node pair: compares tag, attributes, children
-   └─ applies minimal mutations: here just textContent of one text node
-   └─ runs ~30 callback hooks (onBeforeElUpdated, onNodeAdded, onNodeDiscarded, ...)
-   └─ handles focus preservation, form state, PHX_SKIP optimization, streams, etc.
-```
-
-For a single number change, morphdom still: allocates an HTML string, parses it into DOM, walks the entire tree, and compares every node.
-
-### How Vue Vapor renders it
-
-**Compile time** — the Vapor compiler produces JS code that creates a template once and sets up per-expression reactive effects:
-
-```js
-const t0 = _template("<div><p><button>+</button></p></div>")
-
-export function render(_ctx) {
-  const n0 = t0()                          // cloneNode(true) from cached template
-  const n1 = n0.firstChild                 // <p>
-  const n2 = n1.nextSibling               // <button>
-
-  // One effect per dynamic expression, tracked by Vue's reactivity system
-  renderEffect(() => setClass(n1, _ctx.label))
-  renderEffect(() => setText(n1, "Count: ", _ctx.count))
-  on(n2, "click", _ctx.inc)
-
-  return n0
-}
-```
-
-**Runtime — update (count changes from ref(42) to ref(43)):**
-
-```
-1. Vue's reactivity system detects that `count` ref changed
-2. Only the setText effect is dirty (setClass effect's deps didn't change)
-3. The scheduler runs: setText(n1, "Count: ", 43)
-   └─ n1.textContent = "Count: 43"    ← one DOM write
-```
-
-No wire protocol — everything happens client-side. No HTML string. No tree diff. The reactive dependency graph knows exactly which effects to re-run.
-
-### How Phoenix Vapor bridges them
-
-**Compile time** — Vize (Rust NIF) compiles the Vue template to a statics/slots split:
-
-```elixir
-Vize.vapor_split!(~s[<div><p :class="label">Count: {{ count }}</p><button @click="inc">+</button></div>])
-
-%{
-  statics: ["<div><p class=\"", "\">", "</p><button phx-click=\"inc\">+</button></div>"],
-  slots: [
-    %{kind: :set_prop, values: ["label"]},              # slot 0 — attribute
-    %{kind: :set_text, values: [{:static_, "Count: "}, "count"]}  # slot 1 — text
-  ]
-}
-```
-
-`@click="inc"` becomes `phx-click="inc"` in statics. `:class="label"` becomes a `set_prop` slot.
-
-**Runtime** — `Renderer.to_rendered/2` evaluates slots against LiveView assigns:
-
-```elixir
-%Rendered{
-  static: ["<div><p class=\"", "\">", "</p><button phx-click=\"inc\">+</button></div>"],
-  dynamic: fn changed? ->
-    [
-      if !changed? || slot_changed?(:label, changed?), do: "active",
-      if !changed? || slot_changed?(:count, changed?), do: "Count: 42"
-    ]
-  end,
-  fingerprint: 94949380559044124300359658668089091771
-}
-```
-
-From here it's standard LiveView. Same `diff.ex`, same wire format, same `"s"`/`"0"`/`"1"` keys.
-
-**Wire — identical to LiveView:**
-
-```json
-{"1": "Count: 43"}
-```
-
-**Client — with `patchLiveSocket` (Vapor DOM):**
-
-```
-1. rendered.mergeDiff({"1": "Count: 43"})
-   └─ same as standard LiveView
-
-2. Instead of toString + morphdom:
-   └─ registry lookup: slot 1 → {type: "text", node: <TextNode>}
-   └─ node.textContent = "Count: 43"     ← one DOM write, like Vue Vapor
-```
-
-The registry is built once on first render by parsing the statics:
-
-```
-statics: ["<div><p class=\"", "\">", "</p>..."]
-                            ↑      ↑
-                          slot 0  slot 1
-
-slot 0: prefix ends inside class=" → type: "attr", key: "class", node: <p>
-slot 1: prefix ends with ">       → type: "text", node: <p>.childNodes[1]
-```
-
-### Summary
-
-|  | LiveView (HEEx) | Vue Vapor | Phoenix Vapor |
-|--|---|---|---|
-| **Template syntax** | `<%= @count %>` | `{{ count }}` | `{{ count }}` (Vue) |
-| **Compilation** | Elixir AST | JS codegen | Rust NIF → statics/slots |
-| **Server state** | `assigns` map | — (client only) | `assigns` map |
-| **Change tracking** | `__changed__` map | Reactive dep graph | `__changed__` map |
-| **Wire format** | `{"s": [...], "0": "val"}` | — (no wire) | Same as LiveView |
-| **Client: first render** | innerHTML + morphdom | template() + cloneNode | innerHTML + morphdom + build registry |
-| **Client: update** | toString → innerHTML → morphdom | setText(node, val) | registry[slot].node.textContent = val |
-| **Structural change** | New fingerprint → full re-render | Tear down + mount new block | New fingerprint → morphdom fallback |
-| **List reconciliation** | `%Comprehension{}` + keyed | createFor + LIS algorithm | `%Comprehension{}` + keyed |
+- **LiveView** owns lifecycle, transport, events, supervision, reconnects, domain integration, and authoritative application state
+- **Server-side Vue reactivity** owns local UI state, computed values, and dependency-driven updates
+- **Vapor-style statics/dynamics** provide a shared rendering model that can drive efficient server and client patching
 
 ---
 
-## LiveView wire protocol reference
+# Server-side JS vs client-side JS
 
-The keys used in the JSON diff protocol, as defined in `constants.js` and `diff.ex`:
+PhoenixVapor uses JavaScript in two very different places. Keeping them separate is essential.
 
-| Key | Constant | Meaning |
-|-----|----------|---------|
-| `"s"` | `STATIC` | Statics array — the unchanging HTML fragments. Sent on first render or fingerprint change. Can be an integer referencing a shared template. |
-| `"0"`, `"1"`, ... | (integer keys) | Dynamic slot values. String = text/attribute value. Object = nested `%Rendered{}`. Integer = component CID. `null` = unchanged. |
-| `"r"` | `ROOT` | `1` if this rendered struct is a root element (has a single static HTML tag at the top). |
-| `"c"` | `COMPONENTS` | Map of component CID → component diff. Components are diffed separately and referenced by integer CID in the parent's dynamic slots. |
-| `"p"` | `TEMPLATES` | Shared template registry. Map of integer index → statics array. Multiple rendered structs with the same fingerprint share statics via integer reference in `"s"`. |
-| `"k"` | `KEYED` | Keyed comprehension entries. Map of index → entry diff. Entries can be: object (new/changed), integer (moved, no changes), `[old_idx, diff]` (moved with changes). |
-| `"kc"` | `KEYED_COUNT` | Total number of entries in the comprehension. |
-| `"stream"` | `STREAM` | Stream metadata: `[ref, inserts, deleteIds, reset]`. |
-| `"e"` | `EVENTS` | Server-pushed events. |
-| `"t"` | `TITLE` | Page title update. |
-| `"r"` | `REPLY` | Reply payload for `handle_event` return. |
+## Server-side JS
+Server-side JS runs inside **QuickBEAM** inside the BEAM process tree. It is used for:
 
-### Nested rendered struct (v-if)
+- Vue reactivity (`ref`, `computed`, watchers, local handlers)
+- optional full Vue runtime execution
+- evaluating or precomputing reactive values for rendering
+- maintaining per-LiveView local reactive state on the server
 
-A dynamic slot containing an object is a nested `%Rendered{}`:
+This JS is authoritative only for **local reactive UI state**.
 
-```json
-{
-  "s": ["<div>", "</div>"],
-  "0": {
-    "s": ["<p>", "</p>"],
-    "0": "Hello",
-    "r": 1
-  }
-}
-```
+Current server-side JS assets include:
+- `priv/js/vue-reactivity.js`
+- `priv/js/runtime-setup.js`
+- bundles loaded by `PhoenixVapor.VueRuntime` such as `priv/js/reka-dialog.js`
 
-When the fingerprint changes (v-if branch switch), the new `"s"` is sent:
+Current Elixir entrypoints for server-side JS:
+- `PhoenixVapor.Runtime`
+- `PhoenixVapor.VueRuntime`
+- `PhoenixVapor.Reactive`
+- `PhoenixVapor.LiveVue`
 
-```json
-{
-  "0": {
-    "s": ["<p>Hidden</p>"]
-  }
-}
-```
+## Client-side JS
+Client-side JS runs in the browser. It is used for:
 
-The client sees new statics → discards the old subtree and renders fresh.
+- standard Phoenix LiveView client behavior
+- receiving diffs over the websocket
+- applying DOM updates
+- optional Vapor-specific direct DOM patching
 
-### Comprehension (v-for)
+This JS does **not** own authoritative application state. It is primarily a DOM patch engine and transport peer.
 
-```json
-{
-  "s": ["<ul>", "</ul>"],
-  "0": {
-    "s": ["<li>", "</li>"],
-    "k": {
-      "0": {"0": "Elixir"},
-      "1": {"0": "Vue"},
-      "2": {"0": "Vapor"},
-      "kc": 3
-    }
-  }
-}
-```
+Current client-side JS assets include:
+- `examples/demo/assets/js/app.js`
+- `examples/demo/assets/phoenix_vapor/index.js`
+- `examples/demo/assets/phoenix_vapor/vapor_patch.js`
 
-On update (item 1 changed, item 2 moved):
+## Why the distinction matters
+PhoenixVapor is not a classic client-heavy Vue app. The Vue-like reactive brain can live **server-side** in QuickBEAM, while the browser remains mostly a LiveView client with an optionally smarter patch engine.
 
-```json
-{
-  "0": {
-    "k": {
-      "1": {"0": "Vue 4"},
-      "2": 1,
-      "kc": 3
-    }
-  }
-}
-```
-
-- `"1": {"0": "Vue 4"}` — entry at index 1 has new dynamics
-- `"2": 1` — entry at index 2 was previously at index 1 (moved, no content change)
-- `"kc": 3` — still 3 entries total
-
-### Component CID
-
-Dynamic slot containing an integer = component CID reference:
-
-```json
-{
-  "s": ["<div>", "</div>"],
-  "0": 1,
-  "c": {
-    "1": {
-      "s": ["<span>", "</span>"],
-      "0": "component content"
-    }
-  }
-}
-```
-
-Component diffs are in `"c"`, keyed by CID. Static sharing across components uses negative CID: `"s": -3` means "use statics from CID 3".
-
-### Template sharing (`"p"` key)
-
-When multiple structures share the same statics (same fingerprint), the server sends statics once in `"p"` and references by integer:
-
-```json
-{
-  "p": {
-    "0": ["<li>", "</li>"]
-  },
-  "s": ["<ul>", "</ul>"],
-  "0": {
-    "s": 0,
-    "k": { "0": {"0": "a"}, "1": {"0": "b"}, "kc": 2 }
-  }
-}
-```
-
-`"s": 0` means "look up statics at `templates[0]`" → `["<li>", "</li>"]`.
-
-### Client processing pipeline
-
-```
-WebSocket message
-      │
-      ▼
-Rendered.extract(diff)
-├─ pulls out "e" (events), "t" (title), "r" (reply)
-└─ returns {diff, title, reply, events}
-      │
-      ▼
-rendered.mergeDiff(diff)
-├─ if diff has "s" → new fingerprint, replace entire subtree state
-├─ if diff has "k" → keyed comprehension merge:
-│   ├─ integer entry → moved without changes
-│   ├─ [old_idx, diff] → moved with changes
-│   └─ object entry → new or in-place update
-├─ otherwise → merge dynamic values by key
-└─ sets newRender flag on root elements
-      │
-      ▼
-rendered.toString(cids)
-├─ recursiveToString walks the rendered tree
-├─ concatenates: static[0] + dynamic[0] + static[1] + dynamic[1] + ...
-├─ integers in dynamic slots → recursiveCIDToString (component rendering)
-├─ objects in dynamic slots → recursive toOutputBuffer
-├─ comprehensions → comprehensionToBuffer (loops over keyed entries)
-├─ root elements get data-phx-id="m{N}" for skip optimization
-└─ if !newRender → data-phx-skip="true" (morphdom skips innerHTML)
-      │
-      ▼
-new DOMPatch(view, container, id, html, streams)
-      │
-      ▼
-morphdom(targetContainer, source, callbacks)
-├─ parses source HTML string into DOM tree
-├─ getNodeKey: uses element id or data-phx-id for matching
-├─ onBeforeElUpdated:
-│   ├─ data-phx-skip → return false (skip this subtree entirely)
-│   ├─ PHX_REF_LOCK → clone tree for pending form lock
-│   ├─ focused form input → mergeFocusedInput (preserve user input)
-│   ├─ phx-update="ignore" → merge attrs only
-│   └─ otherwise → allow morphdom to patch
-├─ onNodeAdded: handles streams, portals, nested views, runtime hooks
-├─ onNodeDiscarded: destroys child views, hooks
-└─ after morph: restore focus/selection, dispatch "phx:update"
-```
+That means:
+- local UI state may be owned by **server-side JS**
+- authoritative domain state is owned by **Elixir/LiveView**
+- the browser JS is mainly responsible for **DOM application**, not app authority
 
 ---
 
-## Phoenix Vapor: how the bridge works
+# High-level model
 
-### Compile-time pipeline
+PhoenixVapor supports three progressively deeper modes.
 
-```
-Vue template ─→ Vize.vapor_split/1 ─→ %{statics, slots}
-                    Rust NIF
-```
-
-The NIF performs 5 steps in Rust:
-
-1. **Compile** — Vize Vapor compiler produces IR (operations, effects, templates)
-2. **Parse tag tree** — walks HTML tracking open/close tags, maps Vapor element IDs to byte positions
-3. **Inject markers** — inserts `\x00` at split points: inside attribute values for `:attr`, between tags for `{{ text }}`, before closing tags for structural directives
-4. **Split** — splits on `\x00` boundaries → statics array
-5. **Encode slots** — each slot gets `kind` + expression metadata. Sub-blocks (v-if branches, v-for body) are recursively split
-
-Result is `Macro.escape`d into BEAM bytecode — no NIF at runtime.
-
-### Runtime evaluation
+## 1. Compiled template mode
+Use Vue template syntax in a normal LiveView or component:
 
 ```elixir
-Renderer.to_rendered(split, assigns)
+def render(assigns) do
+  ~VUE"""
+  <div>
+    <p>{{ count }}</p>
+    <button @click="inc">+</button>
+  </div>
+  """
+end
 ```
 
-For each slot in order:
+In this mode:
 
-1. Check `__changed__` — if no referenced assigns changed, return `nil` (LiveView skips in diff)
-2. Evaluate expression via `Expr.eval`:
-   - `:set_text` → concatenate values, HTML-escape → string
-   - `:set_prop` → concatenate values, HTML-escape → string
-   - `:set_html` → evaluate, no escaping → string
-   - `:v_show` → evaluate condition → `""` or `"display: none"`
-   - `:v_model` → evaluate, HTML-escape → string
-   - `:if_node` → evaluate condition, recurse into positive or negative branch → nested `%Rendered{}`
-   - `:for_node` → evaluate source list, render each item → `%Comprehension{}`
-   - `:create_component` → look up in `__components__`, call with props → rendered output
+- the template is compiled at compile time into a Vapor split
+- the split is rendered into `%Phoenix.LiveView.Rendered{}`
+- expressions may be evaluated in Elixir
+- LiveView assigns are the primary input state
+- no persistent server-side JS runtime is required
 
-Output: standard `%Rendered{}` that `diff.ex` processes without modification.
-
-### Vapor DOM client
-
-With `patchLiveSocket(liveSocket)`, the client monkey-patches `View.prototype.update`:
-
-```
-diff arrives
-      │
-      ├─ has "c" (components) or "s" (new statics)?
-      │   yes → fall back to standard toString + morphdom
-      │
-      ├─ find [data-vapor-statics] element in view
-      │   not found → fall back
-      │
-      ├─ registry exists?
-      │   no → fall back
-      │
-      └─ for each changed slot in diff:
-          registry.get(slotIdx)
-          ├─ type: "text" → node.nodeValue = value
-          └─ type: "attr" → el.className / el.setAttribute / el.style.cssText = value
-```
-
-Registry is built once per element from `data-vapor-statics` (JSON-encoded statics array):
-
-```js
-analyzeStatics(["<div><p class=\"", "\">", "</p></div>"])
-// → [
-//   {type: "attr", nodePath: [0], key: "class"},
-//   {type: "text", parentPath: [0], textIndex: 0}
-// ]
-
-resolveRegistry(slots, rootElement)
-// → Map {
-//   0 → {type: "attr", node: <p>, key: "class"},
-//   1 → {type: "text", node: #text}
-// }
-```
+This mode is the lightest integration path.
 
 ---
 
-## `.vue` SFC → LiveView
+## 2. Reactive mode
+Use a `.vue` Single File Component with `<script setup>` and `<template>`:
 
-`use PhoenixVapor.Reactive, file: "Counter.vue"` at macro expansion:
-
-```
-Counter.vue
-    │
-    ├─ <template> ──→ Vize.vapor_split/1 ──→ statics/slots (embedded in bytecode)
-    │
-    └─ <script setup> ──→ OXC.parse/2 ──→ AST
-                                │
-                                ├─ ref(0)            → mount assign {count: 0}
-                                ├─ computed(() => x) → re-evaluated in render
-                                ├─ function inc()    → handle_event("inc", ...)
-                                └─ defineProps([])   → URL params merged to assigns
+```elixir
+defmodule MyAppWeb.CounterLive do
+  use MyAppWeb, :live_view
+  use PhoenixVapor.Reactive, file: "Counter.vue"
+end
 ```
 
-Generated callbacks:
+In this mode:
 
-- **`mount/3`** — initializes assigns from `ref()` initial values
-- **`render/1`** — evaluates computeds, then `Renderer.to_rendered(split, assigns)`
-- **`handle_event/3`** — one clause per function, executes body in QuickBEAM against current state, updates assigns, re-evaluates computeds
+- a lightweight **server-side QuickBEAM JS context** is started per LiveView
+- Vue refs/computeds/functions are loaded into that runtime
+- local reactive UI state is owned by the server-side JS runtime
+- LiveView remains the lifecycle and transport host
+- rendering is still integrated with LiveView’s rendered tree / diff model
 
-## Expression evaluation
+This is the main deep-fusion mode.
 
-```
-expression string
-      │
-      ▼
-  OXC.parse/2  (Rust NIF → ESTree AST)
-      │
-      ▼
-  eval_node/2  (Elixir pattern match on AST node types)
-      │
-      ├─ Identifier "count"         → Map.get(assigns, :count)
-      ├─ MemberExpression a.b       → nested map access
-      ├─ ConditionalExpression      → if/else
-      ├─ BinaryExpression + - * /   → arithmetic
-      ├─ CallExpression .trim()     → Elixir String/List equivalents
-      └─ ArrowFunction, .filter()   → throw :unsupported_node
-                                          │
-                                          ▼
-                                    QuickBEAM.eval/3
-                                    (JS runtime in BEAM, optional)
+---
+
+## 3. Full Vue runtime mode
+Mount a full Vue component runtime server-side:
+
+```elixir
+use PhoenixVapor.LiveVue,
+  bundle: "priv/js/reka-dialog.js",
+  setup: "..."
 ```
 
-## Limitations
+In this mode:
 
-- No `<slot />` mapping to LiveView inner content
-- No `<Suspense>`, `<Transition>`, `<KeepAlive>`
-- No watchers or lifecycle hooks (`onMounted`, `watch()`)
-- Without QuickBEAM, expressions with callbacks return nil
-- SFC `ref()` initial values must be literals; `computed()` must be single-expression arrow functions
-- Vapor DOM handles text/attribute diffs only — structural changes fall back to morphdom
+- full Vue runtime semantics are available in **server-side JS**
+- server-side DOM is rendered in QuickBEAM
+- HTML is fed back through LiveView render/update flow
+- the browser still acts as a LiveView client
 
-## Module inventory
+This mode is best for advanced Vue component libraries or full Vue semantics, but it is architecturally different from the more Vapor-native compiled/reactive path.
 
-| Module | Lines | Role |
-|--------|-------|------|
-| `PhoenixVapor` | 64 | Public API, `use` macro |
-| `PhoenixVapor.Sigil` | 47 | `~VUE` — compile-time `vapor_split!` |
-| `PhoenixVapor.Renderer` | 232 | Slot evaluation → `%Rendered{}` / `%Comprehension{}` |
-| `PhoenixVapor.Expr` | 363 | Expression eval — OXC AST + QuickBEAM fallback |
-| `PhoenixVapor.Reactive` | 222 | `.vue` SFC → LiveView macro |
-| `PhoenixVapor.ScriptSetup` | 171 | `<script setup>` parser via OXC AST |
-| `PhoenixVapor.Vue` | 82 | `.vue` → function component with scoped CSS |
-| `PhoenixVapor.Component` | 55 | `vue` helper (pass-through) |
-| `assets/index.js` | 293 | `patchLiveSocket` — `View.prototype.update` monkey-patch |
-| `assets/vapor_patch.js` | 333 | Statics analysis, registry builder, diff applier |
+---
 
-## Dependencies
+# Core architectural idea
 
-| Package | What it does here |
-|---------|---|
-| [Vize](https://hex.pm/packages/vize) | Vue compiler as Rust NIF — `vapor_split/1` |
-| [OXC](https://hex.pm/packages/oxc) | JS parser as Rust NIF — expression AST walking |
-| [Phoenix LiveView](https://hex.pm/packages/phoenix_live_view) | `%Rendered{}` / `%Comprehension{}` structs |
-| [QuickBEAM](https://hex.pm/packages/quickbeam) | Optional — JS runtime for complex expressions and event handlers |
+PhoenixVapor is built on a key structural observation:
+
+## LiveView and Vapor share the same deep shape
+Both systems naturally split rendering into:
+
+- **statics**: the stable template skeleton
+- **dynamics**: the changing values inserted into that skeleton
+- **structural subtrees**: conditionals, loops, nested renders
+- **template identity**: stable fingerprints that make incremental updates possible
+
+Because of this, a Vue/Vapor template can compile naturally into LiveView’s rendered representation:
+
+- Vapor statics/dynamics → `%Phoenix.LiveView.Rendered{}`
+- Vapor loops → `%Phoenix.LiveView.Comprehension{}`
+- conditional branches → nested `%Rendered{}` values
+- local changes → ordinary LiveView diffs
+
+This is the primary integration seam.
+
+---
+
+# Ownership model
+
+PhoenixVapor explicitly separates **authoritative application state** from **local reactive UI state**.
+
+## LiveView owns
+- process lifecycle
+- channel/event transport
+- reconnect and rehydration
+- routing and params
+- session/auth/current_user
+- domain state and database-backed data
+- validation and changesets
+- PubSub/shared state
+- authorization/security boundaries
+- render protocol metadata
+
+## Server-side Vue runtime owns
+- `ref()` local UI state
+- `computed()` derived state
+- watchers/effects
+- local event handlers
+- local presentation state
+- dependency graph for reactive invalidation
+
+## Projection between them
+- LiveView pushes external inputs into the server-side runtime
+- the runtime exposes a render snapshot or fine-grained slot changes
+- rendering consumes projected state, not multiple competing sources of truth
+
+### Guiding rule
+LiveView is the authoritative host for application state.  
+The server-side Vue runtime is the authoritative host for local reactive UI state.
+
+---
+
+# State categories
+
+## JS-owned state
+Examples:
+- open/closed flags
+- selected tab
+- local draft input
+- local filters
+- transient presentation state
+- computed labels/counts/classes
+
+In PhoenixVapor reactive mode, this means **server-side JS in QuickBEAM**.
+
+## LiveView-owned state
+Examples:
+- records loaded from the database
+- current user/session/permissions
+- route params
+- changeset results
+- PubSub-driven updates
+- collaborative/shared state
+
+## Split state
+Some UI derives from domain data:
+
+- the base dataset is LiveView-owned
+- the local view projection is owned by server-side JS
+
+For example:
+- list of orders from DB → LiveView
+- local sort key / filter / expanded row ids → server-side JS
+- filtered visible rows → server-side JS computed value
+
+---
+
+# Rendering architecture
+
+PhoenixVapor rendering is organized around an intermediate representation derived from Vapor.
+
+## Compile step
+A Vue template is compiled into a split:
+
+- `statics`
+- `slots`
+
+The split describes:
+- the static HTML skeleton
+- each dynamic insertion point
+- structural nodes such as conditionals and loops
+
+## Render step
+The split is turned into a native LiveView rendered tree:
+
+- scalar slots become dynamic values
+- conditional branches become nested `%Rendered{}`
+- loops become `%Comprehension{}`
+- template identity becomes a fingerprint
+
+This allows PhoenixVapor to participate directly in LiveView’s diff machinery.
+
+---
+
+# Server rendering modes
+
+## Compiled mode
+In compiled mode:
+
+- assigns are the primary input
+- simple expressions may be evaluated in Elixir
+- the output is a `%Phoenix.LiveView.Rendered{}` tree
+- LiveView computes and sends diffs normally
+- the browser uses normal LiveView client behavior unless Vapor patching is enabled
+
+This mode favors simplicity and compatibility.
+
+## Reactive mode
+In reactive mode:
+
+- a **server-side QuickBEAM runtime** is started per LiveView
+- refs/computeds/functions are initialized inside it
+- external inputs from LiveView are pushed into the runtime
+- template values are derived from the runtime state
+- the render layer projects the current runtime state into rendered slots
+
+Over time, reactive mode should move toward:
+- server-side JS-owned slot invalidation
+- server-side JS-owned dependency graphs
+- finer-grained structural patch plans
+
+instead of relying only on Elixir assign-level change detection.
+
+---
+
+# Reactive runtime architecture
+
+Each reactive LiveView may own a lightweight QuickBEAM context containing:
+
+- Vue reactivity runtime
+- initial refs
+- computed definitions
+- local handlers
+- external input bindings
+- optional precompiled slot getters
+
+## Runtime responsibilities
+- initialize local reactive graph
+- apply local UI mutations
+- apply external updates from LiveView
+- recompute computed values
+- expose renderable state
+- eventually expose changed slots / branch ops / list ops
+
+## LiveView responsibilities
+- start/stop the runtime
+- own supervision boundaries
+- dispatch browser events
+- decide whether an event is local, server, or hybrid
+- synchronize authoritative external state into the runtime
+- package render output into LiveView-compatible diffs
+
+---
+
+# Event model
+
+PhoenixVapor distinguishes three event classes.
+
+## 1. Local events
+Examples:
+- increment local counter
+- toggle modal
+- change local filter
+- expand/collapse row
+
+Handled entirely by the **server-side JS reactive runtime**.
+
+Flow:
+1. browser sends event
+2. LiveView dispatches to server-side JS runtime
+3. runtime mutates refs/computeds
+4. runtime exposes updated render state
+5. LiveView sends diff
+
+## 2. Server events
+Examples:
+- save record
+- delete item
+- submit validated form
+- query database
+- subscribe/unsubscribe
+
+Handled by LiveView/Elixir.
+
+Flow:
+1. browser sends event
+2. LiveView handles domain logic
+3. LiveView pushes updated external state into runtime if needed
+4. runtime recomputes local derived state
+5. LiveView sends diff
+
+## 3. Hybrid events
+Examples:
+- optimistic UI update
+- pending submit state
+- local mutation followed by server action
+
+Handled in both places:
+1. server-side JS updates local UI state
+2. LiveView performs authoritative server action
+3. authoritative results overwrite mirrored state if needed
+
+---
+
+# Rehydration and restart
+
+Because the server-side JS runtime owns local UI state, restart behavior must be explicit.
+
+## On mount
+LiveView initializes the runtime with:
+- initial refs
+- computed definitions
+- handlers
+- external props/params/session-derived inputs
+
+## On external update
+LiveView pushes authoritative changes into the runtime:
+- props
+- domain snapshots
+- validation errors
+- route changes
+
+## On reconnect or runtime restart
+LiveView recreates the runtime and rehydrates it from authoritative external state.
+
+Initially, PhoenixVapor may choose to:
+- rebuild local JS state from initialization only
+- recompute all derived state
+
+Later, selected server-side JS-owned refs may be serialized and restored if preserving local state across reconnects becomes a goal.
+
+---
+
+# Client patch architecture
+
+PhoenixVapor can optionally optimize the last-mile DOM update step in the **browser**.
+
+## Stock LiveView path
+Normally, browser-side LiveView JS:
+- merges incoming diffs into rendered state
+- materializes HTML
+- uses morphdom to update the DOM
+
+## Vapor patch path
+For Vapor-tagged roots, browser-side PhoenixVapor JS can:
+- identify the static skeleton
+- build a slot-to-DOM registry
+- write updated slot values directly to text nodes/attributes
+- skip generic morphdom work for eligible updates
+
+This is possible because the server and client already share the statics/dynamics model.
+
+---
+
+# Current state of Vapor DOM patching
+
+The current browser patcher is a prototype of a deeper rendering mode.
+
+It demonstrates that:
+
+- LiveView diffs can drive direct slot patching
+- morphdom is unnecessary for some classes of updates
+- Vapor metadata can be used to recover DOM patch targets
+
+Today, this path is best viewed as **experimental**.
+
+The long-term direction is to move from:
+- browser-side inference from raw statics
+- monkey-patching LiveView internals
+
+toward:
+- explicit server-generated slot metadata
+- a first-class patch engine
+- optional LiveView client tweaks or a dedicated integration layer
+
+---
+
+# Wire protocol
+
+PhoenixVapor should be understood as using a layered protocol model.
+
+## 1. Transport and session protocol
+This layer handles:
+- websocket join and reconnect
+- heartbeats
+- browser → server event pushes
+- server → browser replies
+- navigation/lifecycle concerns
+
+PhoenixVapor currently reuses the standard LiveView transport/session protocol.
+
+## 2. Render diff protocol
+This layer handles:
+- template identity and fingerprints
+- statics and dynamic slots
+- conditionals, loops, and nested renders
+- component or subtree boundaries
+- incremental update payloads
+
+### Current state
+Today, PhoenixVapor mostly reuses the standard LiveView render diff protocol by producing native `%Phoenix.LiveView.Rendered{}` and `%Phoenix.LiveView.Comprehension{}` values on the server. LiveView then serializes ordinary diffs over the wire.
+
+That means PhoenixVapor currently does **not** define a separate websocket diff format. Instead, it defines a new way to generate LiveView-compatible rendered trees.
+
+### Current Vapor-specific metadata
+Today, the browser-side Vapor patch prototype needs extra structure beyond the raw LiveView diff. That extra structure is currently carried **out-of-band in the DOM**, not in the wire payload itself.
+
+Current examples:
+- `data-vapor`
+- `data-vapor-statics`
+
+The current model is therefore:
+- **wire payload**: standard LiveView diff
+- **DOM metadata**: Vapor-specific static structure hints
+- **browser patcher**: combines both to attempt direct slot patching
+
+### Why this is transitional
+This approach proves the concept, but it asks the browser to infer too much from DOM metadata and LiveView internals. It is suitable for an experimental prototype, but it is not the ideal long-term protocol design.
+
+## 3. DOM patch protocol
+This layer handles how browser-side JS turns a diff/update payload into real DOM mutations.
+
+### Stock LiveView path
+- merge rendered diff state
+- materialize HTML
+- patch DOM with morphdom
+
+### Vapor path
+- identify a Vapor-aware root
+- resolve slot targets
+- apply direct scalar slot writes where possible
+- apply structural branch/list updates when supported
+- fall back when necessary
+
+Today, the browser-side Vapor patcher is experimental and relies on DOM metadata plus patched LiveView client behavior.
+
+## Long-term direction
+PhoenixVapor does not need to preserve stock LiveView internals unchanged forever. If deeper integration requires tweaking or forking LiveView, that is an acceptable direction.
+
+The most likely long-term direction is **not** a completely separate websocket protocol. Instead, PhoenixVapor can keep the LiveView transport/event/session framing while evolving a Vapor-aware rendering subprotocol for selected roots.
+
+That would mean:
+- keeping LiveView transport and event semantics
+- keeping the overall request/reply lifecycle
+- specializing rendered payload semantics for Vapor-aware roots
+- making browser patch behavior explicit rather than inferred
+
+Likely progression:
+
+### Phase 1
+- Vapor templates compile to native LiveView rendered trees
+- browser fast path opportunistically patches scalar slots
+
+### Phase 2
+- server emits explicit Vapor root metadata
+- server emits explicit slot descriptors or schema references
+- browser patching becomes deterministic rather than heuristic
+
+### Phase 3
+- conditionals and loops gain first-class branch/list patch operations
+- server-side JS runtime can contribute invalidation-aware patch payloads
+
+### Phase 4
+- Vapor patching becomes a supported render mode in a tweaked or forked LiveView client if needed
+
+This keeps the LiveView transport stack while letting the rendering subprotocol become increasingly Vapor-native.
+
+# Long-term protocol direction
+
+The project does not aim to invent a completely separate transport protocol immediately. Instead, it builds on LiveView’s transport and diff model while gradually specializing the rendering layer.
+
+The likely long-term progression is:
+
+## Phase 1
+- Vapor templates compile to native LiveView rendered trees
+- browser fast path opportunistically patches scalar slots
+
+## Phase 2
+- server emits richer slot metadata
+- browser patching becomes deterministic
+- structural eligibility becomes explicit
+
+## Phase 3
+- conditionals and loops gain specialized patch plans
+- branch swaps and keyed list ops become first-class
+
+## Phase 4
+- Vapor patching becomes a supported render mode in a tweaked or forked LiveView client if needed
+
+This preserves LiveView’s strengths while allowing a deeper Vue/Vapor-native rendering engine to emerge.
+
+---
+
+# Why not just compile everything into assigns?
+
+PhoenixVapor intentionally does not reduce Vue to syntax sugar over assigns.
+
+That lighter path is useful for simple mode, but it leaves too much on the table:
+
+- real computed semantics
+- dependency-driven invalidation
+- local reactive state graphs
+- richer `<script setup>` support
+- deeper alignment with Vue programming model
+
+The server-side reactive runtime exists precisely to make the blend deeper than syntax translation.
+
+---
+
+# Why not let JS own everything?
+
+PhoenixVapor also intentionally avoids giving full application authority to JS.
+
+LiveView remains the canonical owner of:
+- domain state
+- persistence
+- validation
+- auth/security
+- shared/distributed state
+- reconnect/lifecycle
+
+This keeps the architecture coherent and preserves the strengths of the BEAM.
+
+---
+
+# Summary
+
+PhoenixVapor’s architecture is based on three principles:
+
+## 1. Shared rendering shape
+Vue/Vapor templates and LiveView rendered diffs are structurally compatible.  
+PhoenixVapor uses that compatibility as the core integration seam.
+
+## 2. Split state ownership
+LiveView owns authoritative application state.  
+The server-side Vue runtime owns local reactive UI state.
+
+## 3. Progressive specialization
+Start by reusing LiveView’s rendered tree and diff pipeline.  
+Then progressively specialize the client/server rendering path where Vapor’s statics/dynamics model allows better performance or deeper semantics.
+
+---
+
+# Current module map
+
+## Core template/render layer
+- `PhoenixVapor`
+- `PhoenixVapor.Sigil`
+- `PhoenixVapor.Renderer`
+- `PhoenixVapor.Expr`
+- `PhoenixVapor.Component`
+- `PhoenixVapor.Vue`
+
+## Reactive runtime layer
+- `PhoenixVapor.Reactive`
+- `PhoenixVapor.Runtime`
+- `PhoenixVapor.ScriptSetup`
+
+## Full Vue runtime layer
+- `PhoenixVapor.LiveVue`
+- `PhoenixVapor.VueRuntime`
+
+## Server-side JS assets
+- `priv/js/vue-reactivity.js`
+- `priv/js/runtime-setup.js`
+- `priv/js/reka-dialog.js`
+
+## Client-side JS prototype
+- `examples/demo/assets/js/app.js`
+- `examples/demo/assets/phoenix_vapor/index.js`
+- `examples/demo/assets/phoenix_vapor/vapor_patch.js`
+
+---
+
+# Future work
+
+## Near-term
+- formalize render mode boundaries
+- document state ownership clearly
+- add protocol-level tests
+- emit explicit slot metadata instead of relying on statics inference
+- tighten reactive mode around server-side JS-owned canonical local state
+
+## Mid-term
+- move slot invalidation closer to the server-side JS dependency graph
+- support structural patch plans for conditionals and keyed loops
+- classify local vs server vs hybrid events explicitly
+
+## Long-term
+- establish a first-class Vapor patch mode in the LiveView client
+- tweak or fork LiveView internals if necessary
+- converge on a unified deep fusion model rather than a collection of partially overlapping modes
