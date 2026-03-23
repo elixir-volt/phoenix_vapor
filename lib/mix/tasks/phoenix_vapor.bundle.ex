@@ -32,7 +32,7 @@ defmodule Mix.Tasks.PhoenixVapor.Bundle do
 
     entry = Keyword.get(parsed, :entry, "assets/reka-entry.js")
     outdir = Keyword.get(parsed, :outdir, "priv/js")
-    minify = Keyword.get(parsed, :minify, true)
+    _minify = Keyword.get(parsed, :minify, true)
     name = Keyword.get(parsed, :name)
 
     unless File.regular?(entry) do

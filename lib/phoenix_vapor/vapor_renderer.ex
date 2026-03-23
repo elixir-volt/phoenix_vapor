@@ -63,7 +63,7 @@ defmodule PhoenixVapor.VaporRenderer do
     end)
   end
 
-  defp slot_to_schema(%{kind: :set_text} = slot, id) do
+  defp slot_to_schema(%{kind: :set_text}, id) do
     %{k: "slot", id: id, m: "text"}
   end
 
