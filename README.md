@@ -88,7 +88,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for protocol-level details.
 ## Docs
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it works at the protocol level, with wire format examples
-- **[examples/demo/](examples/demo/)** — runnable Phoenix app with all features
+- **[examples/demo](https://github.com/elixir-volt/phoenix_vapor/tree/master/examples/demo)** — runnable Phoenix app with all features
 
 ## License
 

@@ -22,7 +22,7 @@ defmodule PhoenixVapor.Runtime do
       # In config:
       config :phoenix_vapor, pool: MyApp.JSPool
 
-  Without a pool, each Runtime gets its own `QuickBEAM.Runtime` (full isolation,
+  Without a pool, each Runtime gets its own QuickBEAM runtime (full isolation,
   higher resource usage).
 
   ## Usage

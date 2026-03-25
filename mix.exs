@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.2.1"
   @source_url "https://github.com/elixir-volt/phoenix_vapor"
 
   def project do
@@ -35,15 +35,16 @@ defmodule PhoenixVapor.MixProject do
         "GitHub" => @source_url,
         "Volt" => "https://github.com/elixir-volt/volt"
       },
-      files: ~w(lib priv/js .formatter.exs mix.exs README.md LICENSE)
+      files: ~w(lib priv/js .formatter.exs mix.exs README.md ARCHITECTURE.md LICENSE)
     ]
   end
 
   defp docs do
     [
       main: "PhoenixVapor",
-      extras: ["README.md", "LICENSE"],
-      source_ref: "v#{@version}"
+      extras: ["README.md", "ARCHITECTURE.md", "LICENSE"],
+      source_ref: "v#{@version}",
+      skip_undefined_reference_warnings_on: ["ARCHITECTURE.md"]
     ]
   end
 
@@ -53,7 +54,7 @@ defmodule PhoenixVapor.MixProject do
       {:vize, "~> 0.8.0"},
       {:oxc, "~> 0.5.3"},
       {:quickbeam, "~> 0.8.0", optional: true},
-      {:volt, "~> 0.4.2", optional: true, runtime: false},
+      {:volt, "~> 0.4.3", optional: true, runtime: false},
       {:ex_doc, "~> 0.35", only: :dev, runtime: false}
     ]
   end
