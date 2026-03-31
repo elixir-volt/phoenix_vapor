@@ -43,7 +43,7 @@ defmodule PhoenixVaporDemo.MixProject do
       {:phoenix, "~> 1.8.4"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, path: "../../../live_view", override: true},
+      {:phoenix_live_view, "~> 1.1.0"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
@@ -60,7 +60,8 @@ defmodule PhoenixVaporDemo.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:phoenix_vapor, path: "../.."},
-      {:quickbeam, "~> 0.7.1", override: true}
+      {:quickbeam, "~> 0.8.0", override: true},
+      {:volt, "~> 0.4.2", runtime: false}
     ]
   end
 

@@ -35,3 +35,7 @@ live_vue_next_demo-*.tar
 npm-debug.log
 /assets/node_modules/
 
+
+/node_modules/
+/priv/js/reka-*.js
+/priv/js/manifest.json

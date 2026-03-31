@@ -15,20 +15,22 @@ defmodule PhoenixVaporDemoWeb.HomeLive do
          %{
            title: ".vue SFC",
            path: "/reactive",
-           desc: "A complete LiveView from a single .vue file — ref(), computed(), functions → mount + render + handle_event",
+           desc: "Vue SFC as LiveView — ref(), computed(), functions → persistent reactive state in QuickBEAM",
            tag: "Zero Elixir"
          },
          %{
-           title: "Vapor DOM",
-           path: "/vapor-test",
-           desc: "Bypass morphdom entirely — direct DOM writes from LiveView diffs, ~50μs per patch",
-           tag: "Performance"
+           title: "Reka UI Dialog",
+           path: "/dialog",
+           desc: "Third-party Vue component library rendered server-side — full ARIA, provide/inject, slots",
+           tag: "Component Libraries"
          }
        ],
        more: [
+         %{title: "Reactive List", path: "/reactive-list", desc: "Array mutations persisting across events"},
          %{title: "Todo List", path: "/todo", desc: "v-for, v-if, :class, filtering"},
          %{title: "Feature Showcase", path: "/showcase", desc: "Expressions, ternaries, .length, .toUpperCase()"},
-         %{title: "Comparison", path: "/compare", desc: "Same component in HEEx vs ~VUE side by side"}
+         %{title: "Vapor DOM", path: "/vapor-test", desc: "Bypass morphdom — direct DOM writes from diffs"},
+         %{title: "HEEx vs ~VUE", path: "/compare", desc: "Same component side by side"}
        ]
      )}
   end
@@ -38,7 +40,7 @@ defmodule PhoenixVaporDemoWeb.HomeLive do
     <div class="space-y-8">
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Phoenix Vapor</h1>
-        <p class="text-gray-500 mt-1">Vue templates → native <code class="bg-gray-100 px-1 rounded text-sm">%Rendered{}</code> structs — no JS runtime, no virtual DOM</p>
+        <p class="text-gray-500 mt-1">Vue templates → native <code class="bg-gray-100 px-1 rounded text-sm">%Rendered{}</code> structs via Vapor IR</p>
       </div>
 
       <div class="grid gap-4">
@@ -62,8 +64,8 @@ defmodule PhoenixVaporDemoWeb.HomeLive do
       </div>
 
       <div class="text-sm text-gray-400 border-t pt-4">
-        <p>Every page in this app uses Vue template syntax rendered server-side via Rust NIFs.</p>
-        <p>Same WebSocket. Same diff protocol. Same LiveView client. Just faster.</p>
+        <p>Toolchain: <code>mix npm.install</code> → Volt.Builder → OXC — no Node.js required.</p>
+        <p>Rendering: Vize (Rust NIF) → Vapor IR → %Rendered{} / QuickBEAM (Vue runtime + lexbor DOM).</p>
       </div>
     </div>
     """

@@ -43,7 +43,7 @@ defmodule PhoenixVapor.VueRuntime do
     {js, mode} = start_js(pool)
     state = %{js: js, mode: mode}
 
-    combined = read_bundle(bundle) <> "\n;\n" <> setup
+    combined = read_bundle(bundle) <> "\n;\n(function(){\n" <> setup <> "\n})();"
 
     case js_eval(state, combined) do
       {:ok, _} -> {:ok, state}

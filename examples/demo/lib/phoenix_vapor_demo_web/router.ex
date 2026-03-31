@@ -23,6 +23,7 @@ defmodule PhoenixVaporDemoWeb.Router do
     live "/showcase", ShowcaseLive
     live "/reactive", ReactiveCounterLive
     live "/reactive-list", ReactiveListLive
+    live "/dialog", DialogLive
     live "/vapor-test", VaporTestLive
     live "/compare", CompareLive
   end

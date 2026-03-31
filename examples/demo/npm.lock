@@ -1,0 +1,385 @@
+{
+  "lockfileVersion": 1,
+  "packages": {
+    "@babel/helper-string-parser": {
+      "dependencies": {},
+      "integrity": "sha512-qMlSxKbpRlAridDExk92nSobyDdpPijUq2DW6oDnUqd0iOGxmQjyqhMIihI9+zv4LPyZdRje2cavWPbCbWm3eA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.27.1.tgz",
+      "version": "7.27.1"
+    },
+    "@babel/helper-validator-identifier": {
+      "dependencies": {},
+      "integrity": "sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.28.5.tgz",
+      "version": "7.28.5"
+    },
+    "@babel/parser": {
+      "dependencies": {
+        "@babel/types": "^7.29.0"
+      },
+      "integrity": "sha512-4GgRzy/+fsBa72/RZVJmGKPmZu9Byn8o4MoLpmNe1m8ZfYnz5emHLQz3U4gLud6Zwl0RZIcgiLD7Uq7ySFuDLA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@babel/parser/-/parser-7.29.2.tgz",
+      "version": "7.29.2"
+    },
+    "@babel/types": {
+      "dependencies": {
+        "@babel/helper-string-parser": "^7.27.1",
+        "@babel/helper-validator-identifier": "^7.28.5"
+      },
+      "integrity": "sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@babel/types/-/types-7.29.0.tgz",
+      "version": "7.29.0"
+    },
+    "@floating-ui/core": {
+      "dependencies": {
+        "@floating-ui/utils": "^0.2.11"
+      },
+      "integrity": "sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@floating-ui/core/-/core-1.7.5.tgz",
+      "version": "1.7.5"
+    },
+    "@floating-ui/dom": {
+      "dependencies": {
+        "@floating-ui/core": "^1.7.5",
+        "@floating-ui/utils": "^0.2.11"
+      },
+      "integrity": "sha512-9gZSAI5XM36880PPMm//9dfiEngYoC6Am2izES1FF406YFsjvyBMmeJ2g4SAju3xWwtuynNRFL2s9hgxpLI5SQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@floating-ui/dom/-/dom-1.7.6.tgz",
+      "version": "1.7.6"
+    },
+    "@floating-ui/utils": {
+      "dependencies": {},
+      "integrity": "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@floating-ui/utils/-/utils-0.2.11.tgz",
+      "version": "0.2.11"
+    },
+    "@floating-ui/vue": {
+      "dependencies": {
+        "@floating-ui/dom": "^1.7.6",
+        "@floating-ui/utils": "^0.2.11",
+        "vue-demi": ">=0.13.0"
+      },
+      "integrity": "sha512-HzHKCNVxnGS35r9fCHBc3+uCnjw9IWIlCPL683cGgM9Kgj2BiAl8x1mS7vtvP6F9S/e/q4O6MApwSHj8hNLGfw==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@floating-ui/vue/-/vue-1.1.11.tgz",
+      "version": "1.1.11"
+    },
+    "@internationalized/date": {
+      "dependencies": {
+        "@swc/helpers": "^0.5.0"
+      },
+      "integrity": "sha512-/PyIMzK29jtXaGU23qTvNZxvBXRtKbNnGDFD+PY6CZw/Y8Ex8pFUzkuCJCG9aOqmShjqhS9mPqP6Dk5onQY8rQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@internationalized/date/-/date-3.12.0.tgz",
+      "version": "3.12.0"
+    },
+    "@internationalized/number": {
+      "dependencies": {
+        "@swc/helpers": "^0.5.0"
+      },
+      "integrity": "sha512-6hY4Kl4HPBvtfS62asS/R22JzNNy8vi/Ssev7x6EobfCp+9QIB2hKvI2EtbdJ0VSQacxVNtqhE/NmF/NZ0gm6g==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@internationalized/number/-/number-3.6.5.tgz",
+      "version": "3.6.5"
+    },
+    "@jridgewell/sourcemap-codec": {
+      "dependencies": {},
+      "integrity": "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz",
+      "version": "1.5.5"
+    },
+    "@swc/helpers": {
+      "dependencies": {
+        "tslib": "^2.8.0"
+      },
+      "integrity": "sha512-2egEBHUMasdypIzrprsu8g+OEVd7Vp2MM3a2eVlM/cyFYto0nGz5BX5BTgh/ShZZI9ed+ozEq+Ngt+rgmUs8tw==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.20.tgz",
+      "version": "0.5.20"
+    },
+    "@tanstack/virtual-core": {
+      "dependencies": {},
+      "integrity": "sha512-zSz2Z2HNyLjCplANTDyl3BcdQJc2k1+yyFoKhNRmCr7V7dY8o8q5m8uFTI1/Pg1kL+Hgrz6u3Xo6eFUB7l66cg==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@tanstack/virtual-core/-/virtual-core-3.13.23.tgz",
+      "version": "3.13.23"
+    },
+    "@tanstack/vue-virtual": {
+      "dependencies": {
+        "@tanstack/virtual-core": "3.13.23"
+      },
+      "integrity": "sha512-b5jPluAR6U3eOq6GWAYSpj3ugnAIZgGR0e6aGAgyRse0Yu6MVQQ0ZWm9SArSXWtageogn6bkVD8D//c4IjW3xQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@tanstack/vue-virtual/-/vue-virtual-3.13.23.tgz",
+      "version": "3.13.23"
+    },
+    "@types/web-bluetooth": {
+      "dependencies": {},
+      "integrity": "sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@types/web-bluetooth/-/web-bluetooth-0.0.21.tgz",
+      "version": "0.0.21"
+    },
+    "@vue/compiler-core": {
+      "dependencies": {
+        "@babel/parser": "^7.29.2",
+        "@vue/shared": "3.5.31",
+        "entities": "^7.0.1",
+        "estree-walker": "^2.0.2",
+        "source-map-js": "^1.2.1"
+      },
+      "integrity": "sha512-k/ueL14aNIEy5Onf0OVzR8kiqF/WThgLdFhxwa4e/KF/0qe38IwIdofoSWBTvvxQOesaz6riAFAUaYjoF9fLLQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/compiler-core/-/compiler-core-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vue/compiler-dom": {
+      "dependencies": {
+        "@vue/compiler-core": "3.5.31",
+        "@vue/shared": "3.5.31"
+      },
+      "integrity": "sha512-BMY/ozS/xxjYqRFL+tKdRpATJYDTTgWSo0+AJvJNg4ig+Hgb0dOsHPXvloHQ5hmlivUqw1Yt2pPIqp4e0v1GUw==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/compiler-dom/-/compiler-dom-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vue/compiler-sfc": {
+      "dependencies": {
+        "@babel/parser": "^7.29.2",
+        "@vue/compiler-core": "3.5.31",
+        "@vue/compiler-dom": "3.5.31",
+        "@vue/compiler-ssr": "3.5.31",
+        "@vue/shared": "3.5.31",
+        "estree-walker": "^2.0.2",
+        "magic-string": "^0.30.21",
+        "postcss": "^8.5.8",
+        "source-map-js": "^1.2.1"
+      },
+      "integrity": "sha512-M8wpPgR9UJ8MiRGjppvx9uWJfLV7A/T+/rL8s/y3QG3u0c2/YZgff3d6SuimKRIhcYnWg5fTfDMlz2E6seUW8Q==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/compiler-sfc/-/compiler-sfc-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vue/compiler-ssr": {
+      "dependencies": {
+        "@vue/compiler-dom": "3.5.31",
+        "@vue/shared": "3.5.31"
+      },
+      "integrity": "sha512-h0xIMxrt/LHOvJKMri+vdYT92BrK3HFLtDqq9Pr/lVVfE4IyKZKvWf0vJFW10Yr6nX02OR4MkJwI0c1HDa1hog==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/compiler-ssr/-/compiler-ssr-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vue/reactivity": {
+      "dependencies": {
+        "@vue/shared": "3.5.31"
+      },
+      "integrity": "sha512-DtKXxk9E/KuVvt8VxWu+6Luc9I9ETNcqR1T1oW1gf02nXaZ1kuAx58oVu7uX9XxJR0iJCro6fqBLw9oSBELo5g==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/reactivity/-/reactivity-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vue/runtime-core": {
+      "dependencies": {
+        "@vue/reactivity": "3.5.31",
+        "@vue/shared": "3.5.31"
+      },
+      "integrity": "sha512-AZPmIHXEAyhpkmN7aWlqjSfYynmkWlluDNPHMCZKFHH+lLtxP/30UJmoVhXmbDoP1Ng0jG0fyY2zCj1PnSSA6Q==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/runtime-core/-/runtime-core-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vue/runtime-dom": {
+      "dependencies": {
+        "@vue/reactivity": "3.5.31",
+        "@vue/runtime-core": "3.5.31",
+        "@vue/shared": "3.5.31",
+        "csstype": "^3.2.3"
+      },
+      "integrity": "sha512-xQJsNRmGPeDCJq/u813tyonNgWBFjzfVkBwDREdEWndBnGdHLHgkwNBQxLtg4zDrzKTEcnikUy1UUNecb3lJ6g==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/runtime-dom/-/runtime-dom-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vue/server-renderer": {
+      "dependencies": {
+        "@vue/compiler-ssr": "3.5.31",
+        "@vue/shared": "3.5.31"
+      },
+      "integrity": "sha512-GJuwRvMcdZX/CriUnyIIOGkx3rMV3H6sOu0JhdKbduaeCji6zb60iOGMY7tFoN24NfsUYoFBhshZtGxGpxO4iA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/server-renderer/-/server-renderer-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vue/shared": {
+      "dependencies": {},
+      "integrity": "sha512-nBxuiuS9Lj5bPkPbWogPUnjxxWpkRniX7e5UBQDWl6Fsf4roq9wwV+cR7ezQ4zXswNvPIlsdj1slcLB7XCsRAw==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/shared/-/shared-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "@vueuse/core": {
+      "dependencies": {
+        "@types/web-bluetooth": "^0.0.21",
+        "@vueuse/metadata": "14.2.1",
+        "@vueuse/shared": "14.2.1"
+      },
+      "integrity": "sha512-3vwDzV+GDUNpdegRY6kzpLm4Igptq+GA0QkJ3W61Iv27YWwW/ufSlOfgQIpN6FZRMG0mkaz4gglJRtq5SeJyIQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vueuse/core/-/core-14.2.1.tgz",
+      "version": "14.2.1"
+    },
+    "@vueuse/metadata": {
+      "dependencies": {},
+      "integrity": "sha512-1ButlVtj5Sb/HDtIy1HFr1VqCP4G6Ypqt5MAo0lCgjokrk2mvQKsK2uuy0vqu/Ks+sHfuHo0B9Y9jn9xKdjZsw==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vueuse/metadata/-/metadata-14.2.1.tgz",
+      "version": "14.2.1"
+    },
+    "@vueuse/shared": {
+      "dependencies": {},
+      "integrity": "sha512-shTJncjV9JTI4oVNyF1FQonetYAiTBd+Qj7cY89SWbXSkx7gyhrgtEdF2ZAVWS1S3SHlaROO6F2IesJxQEkZBw==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vueuse/shared/-/shared-14.2.1.tgz",
+      "version": "14.2.1"
+    },
+    "aria-hidden": {
+      "dependencies": {
+        "tslib": "^2.0.0"
+      },
+      "integrity": "sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/aria-hidden/-/aria-hidden-1.2.6.tgz",
+      "version": "1.2.6"
+    },
+    "csstype": {
+      "dependencies": {},
+      "integrity": "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz",
+      "version": "3.2.3"
+    },
+    "defu": {
+      "dependencies": {},
+      "integrity": "sha512-mEQCMmwJu317oSz8CwdIOdwf3xMif1ttiM8LTufzc3g6kR+9Pe236twL8j3IYT1F7GfRgGcW6MWxzZjLIkuHIg==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/defu/-/defu-6.1.4.tgz",
+      "version": "6.1.4"
+    },
+    "entities": {
+      "dependencies": {},
+      "integrity": "sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/entities/-/entities-7.0.1.tgz",
+      "version": "7.0.1"
+    },
+    "estree-walker": {
+      "dependencies": {},
+      "integrity": "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/estree-walker/-/estree-walker-2.0.2.tgz",
+      "version": "2.0.2"
+    },
+    "magic-string": {
+      "dependencies": {
+        "@jridgewell/sourcemap-codec": "^1.5.5"
+      },
+      "integrity": "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/magic-string/-/magic-string-0.30.21.tgz",
+      "version": "0.30.21"
+    },
+    "nanoid": {
+      "dependencies": {},
+      "integrity": "sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.11.tgz",
+      "version": "3.3.11"
+    },
+    "ohash": {
+      "dependencies": {},
+      "integrity": "sha512-RdR9FQrFwNBNXAr4GixM8YaRZRJ5PUWbKYbE5eOsrwAjJW0q2REGcf79oYPsLyskQCZG1PLN+S/K1V00joZAoQ==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/ohash/-/ohash-2.0.11.tgz",
+      "version": "2.0.11"
+    },
+    "picocolors": {
+      "dependencies": {},
+      "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+      "version": "1.1.1"
+    },
+    "postcss": {
+      "dependencies": {
+        "nanoid": "^3.3.11",
+        "picocolors": "^1.1.1",
+        "source-map-js": "^1.2.1"
+      },
+      "integrity": "sha512-OW/rX8O/jXnm82Ey1k44pObPtdblfiuWnrd8X7GJ7emImCOstunGbXUpp7HdBrFQX6rJzn3sPT397Wp5aCwCHg==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/postcss/-/postcss-8.5.8.tgz",
+      "version": "8.5.8"
+    },
+    "reka-ui": {
+      "dependencies": {
+        "@floating-ui/dom": "^1.6.13",
+        "@floating-ui/vue": "^1.1.6",
+        "@internationalized/date": "^3.5.0",
+        "@internationalized/number": "^3.5.0",
+        "@tanstack/vue-virtual": "^3.12.0",
+        "@vueuse/core": "^14.1.0",
+        "@vueuse/shared": "^14.1.0",
+        "aria-hidden": "^1.2.4",
+        "defu": "^6.1.4",
+        "ohash": "^2.0.11"
+      },
+      "integrity": "sha512-/t4e6y1hcG+uDuRfpg6tbMz3uUEvRzNco6NeYTufoJeUghy5Iosxos5YL/p+ieAsid84sdMX9OrgDqpEuCJhBw==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/reka-ui/-/reka-ui-2.9.2.tgz",
+      "version": "2.9.2"
+    },
+    "source-map-js": {
+      "dependencies": {},
+      "integrity": "sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz",
+      "version": "1.2.1"
+    },
+    "tslib": {
+      "dependencies": {},
+      "integrity": "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz",
+      "version": "2.8.1"
+    },
+    "vue": {
+      "dependencies": {
+        "@vue/compiler-dom": "3.5.31",
+        "@vue/compiler-sfc": "3.5.31",
+        "@vue/runtime-dom": "3.5.31",
+        "@vue/server-renderer": "3.5.31",
+        "@vue/shared": "3.5.31"
+      },
+      "integrity": "sha512-iV/sU9SzOlmA/0tygSmjkEN6Jbs3nPoIPFhCMLD2STrjgOU8DX7ZtzMhg4ahVwf5Rp9KoFzcXeB1ZrVbLBp5/Q==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/vue/-/vue-3.5.31.tgz",
+      "version": "3.5.31"
+    },
+    "vue-demi": {
+      "dependencies": {},
+      "integrity": "sha512-nMZBOwuzabUO0nLgIcc6rycZEebF6eeUfaiQx9+WSk8e29IbLvPU9feI6tqW4kTo3hvoYAJkMh8n8D0fuISphg==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/vue-demi/-/vue-demi-0.14.10.tgz",
+      "version": "0.14.10"
+    }
+  }
+}
