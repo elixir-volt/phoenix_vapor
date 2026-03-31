@@ -24,7 +24,8 @@ defmodule PhoenixVaporDemoWeb.DialogLive do
               default: () => [
                 h(RD.DialogTrigger, { asChild: true }, {
                   default: () => h("button", {
-                    class: "px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                    class: "px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700",
+                    "phx-click": "toggle"
                   }, "Open Dialog")
                 }),
                 h(RD.DialogPortal, null, {
@@ -59,12 +60,14 @@ defmodule PhoenixVaporDemoWeb.DialogLive do
                         h("div", { class: "mt-4 flex justify-end gap-2" }, [
                           h(RD.DialogClose, { asChild: true }, {
                             default: () => h("button", {
-                              class: "px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                              class: "px-4 py-2 bg-gray-200 rounded hover:bg-gray-300",
+                              "phx-click": "toggle"
                             }, "Cancel")
                           }),
                           h(RD.DialogClose, { asChild: true }, {
                             default: () => h("button", {
-                              class: "px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                              class: "px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700",
+                              "phx-click": "toggle"
                             }, "Save Changes")
                           }),
                         ]),
