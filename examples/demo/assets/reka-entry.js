@@ -1,5 +1,5 @@
-import { createApp, ref, computed, defineComponent, h, provide, inject, onMounted, nextTick, watch, watchEffect, shallowRef, triggerRef, toRaw, markRaw, reactive, readonly } from 'vue';
-import { DialogRoot, DialogTrigger, DialogPortal, DialogOverlay, DialogContent, DialogTitle, DialogDescription, DialogClose } from 'reka-ui';
+import * as Vue from 'vue';
+import * as RekaUI from 'reka-ui';
 
-globalThis.Vue = { createApp, ref, computed, defineComponent, h, provide, inject, onMounted, nextTick, watch, watchEffect, shallowRef, triggerRef, toRaw, markRaw, reactive, readonly };
-globalThis.RekaDialog = { DialogRoot, DialogTrigger, DialogPortal, DialogOverlay, DialogContent, DialogTitle, DialogDescription, DialogClose };
+globalThis.Vue = Vue;
+globalThis.RekaDialog = RekaUI;

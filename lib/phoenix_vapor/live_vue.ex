@@ -1,52 +1,43 @@
 defmodule PhoenixVapor.LiveVue do
   @moduledoc """
-  Mount Vue component trees as LiveView pages.
+  Mount Vue SFC files as LiveView pages with full component runtime.
 
-  Uses `VueRuntime` to run Vue's full component runtime in QuickBEAM —
-  `defineComponent`, `provide/inject`, render functions, slots, and
-  third-party libraries like Reka UI.
-
-  The server renders the Vue app into HTML via QuickBEAM's lexbor DOM.
-  State mutations trigger Vue's reactive re-render, and the new HTML
-  is sent through LiveView's diff protocol.
+  Compiles `.vue` files with Vize, bundles with Volt (resolving component
+  imports as externals against the pre-loaded bundle), then runs the result
+  in QuickBEAM with the full Vue runtime.
 
   ## Usage
 
       defmodule MyAppWeb.DialogLive do
         use MyAppWeb, :live_view
         use PhoenixVapor.LiveVue,
-          bundle: "priv/js/reka-dialog.js",
-          setup: ~s'''
-            const { createApp, ref, defineComponent, h } = Vue;
-            const { DialogRoot, DialogTrigger, DialogContent,
-                    DialogTitle, DialogDescription, DialogClose,
-                    DialogOverlay, DialogPortal } = RekaDialog;
-
-            const open = ref(false);
-
-            createApp(defineComponent({
-              setup() {
-                return () => h(DialogRoot, {
-                  open: open.value,
-                  "onUpdate:open": v => open.value = v
-                }, { ... });
-              }
-            })).mount(document.body);
-
-            globalThis.__pv_handlers = {
-              toggle() { open.value = !open.value; }
-            };
-          '''
+          file: "Dialog.vue",
+          bundle: "priv/js/reka-dialog.js"
       end
   """
 
+  @external_map %{
+    "vue" => "Vue",
+    "reka-ui" => "RekaDialog",
+    "@vueuse/core" => "VueUse",
+    "@vueuse/shared" => "VueUseShared"
+  }
+
   defmacro __using__(opts) do
     bundle = Keyword.fetch!(opts, :bundle)
-    setup = Keyword.fetch!(opts, :setup)
+    file = Keyword.fetch!(opts, :file)
+    caller_dir = __CALLER__.file |> Path.dirname()
+    full_path = Path.expand(file, caller_dir)
+
+    {setup_js, handlers} = compile_sfc(full_path)
+    escaped_handlers = Macro.escape(handlers)
 
     quote do
       @__vue_bundle__ unquote(bundle)
-      @__vue_setup__ unquote(setup)
+      @__vue_setup__ unquote(setup_js)
+      @__vue_handlers__ unquote(escaped_handlers)
+      @__vue_fingerprint__ :erlang.phash2({@__vue_bundle__, @__vue_setup__})
+      @external_resource unquote(full_path)
 
       def mount(_params, _session, socket) do
         {:ok, runtime} =
@@ -64,8 +55,6 @@ defmodule PhoenixVapor.LiveVue do
 
         {:ok, socket}
       end
-
-      @__vue_fingerprint__ :erlang.phash2({@__vue_bundle__, @__vue_setup__})
 
       def render(assigns) do
         %Phoenix.LiveView.Rendered{
@@ -87,6 +76,98 @@ defmodule PhoenixVapor.LiveVue do
           PhoenixVapor.VueRuntime.stop(runtime)
         end
       end
+    end
+  end
+
+  @doc false
+  def compile_sfc(path) do
+    # Write compiled SFC to a temp file so Volt.Builder can process it
+    sfc_source = File.read!(path)
+    handlers = extract_handlers(sfc_source)
+
+    dir = System.tmp_dir!()
+    tmp_dir = Path.join(dir, "phoenix_vapor_sfc_#{:erlang.phash2(path)}")
+    File.mkdir_p!(tmp_dir)
+
+    # Vize compiles the SFC into JS with import statements
+    {:ok, result} = Vize.compile_sfc(sfc_source, filename: Path.basename(path))
+    entry_path = Path.join(tmp_dir, "entry.js")
+    File.write!(entry_path, result.code)
+
+    # Detect node_modules from the SFC's directory
+    node_modules = find_node_modules(Path.dirname(path))
+
+    # Volt.Builder compiles + bundles with externals resolved to globals
+    {:ok, build_result} =
+      Volt.Builder.build(
+        entry: entry_path,
+        outdir: tmp_dir,
+        node_modules: node_modules,
+        name: "sfc",
+        minify: false,
+        sourcemap: false,
+        hash: false,
+        code_splitting: false,
+        external: @external_map
+      )
+
+    compiled = File.read!(build_result.js.path)
+
+    # Wrap in IIFE that mounts the app and registers handlers
+    setup_js = wrap_setup(compiled, handlers)
+
+    # Cleanup
+    File.rm_rf!(tmp_dir)
+
+    {setup_js, handlers}
+  end
+
+  defp wrap_setup(compiled, handlers) do
+    # Inject handler registration into the SFC's setup function.
+    # The compiled code has: setup(__props) { ... return (render fn) }
+    # We inject `globalThis.__pv_handlers = { toggle, ... }` before the return.
+
+    handler_obj =
+      handlers
+      |> Enum.map_join(", ", fn name -> "#{name}: #{name}" end)
+
+    inject = "globalThis.__pv_handlers = { #{handler_obj} };"
+
+    # Find "return (_ctx" in the setup function and inject before it
+    patched =
+      compiled
+      |> String.replace("var _default =", "globalThis.__sfc_component =")
+      |> String.replace(
+        ~r/return \(_ctx/,
+        "#{inject}\n\t\t\treturn (_ctx"
+      )
+
+    """
+    #{patched}
+    Vue.createApp(globalThis.__sfc_component).mount(document.body);
+    """
+  end
+
+  defp extract_handlers(sfc_source) do
+    with {:ok, desc} <- Vize.parse_sfc(sfc_source),
+         %{content: content} <- desc.script_setup || desc.script,
+         {:ok, ast} <- OXC.parse(content, "setup.js") do
+      OXC.collect(ast, fn
+        %{type: "FunctionDeclaration", id: %{name: name}} -> {:keep, name}
+        _ -> :skip
+      end)
+    else
+      _ -> []
+    end
+  end
+
+  defp find_node_modules(dir) do
+    candidate = Path.join(dir, "node_modules")
+
+    cond do
+      File.dir?(candidate) -> candidate
+      dir == "/" -> nil
+      true -> find_node_modules(Path.dirname(dir))
     end
   end
 end
