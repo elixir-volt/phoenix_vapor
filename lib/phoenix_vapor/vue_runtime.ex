@@ -14,7 +14,7 @@ defmodule PhoenixVapor.VueRuntime do
 
   use GenServer
 
-  @stack_size 8 * 1024 * 1024
+  @stack_size 16 * 1024 * 1024
 
   # ── Public API ──
 

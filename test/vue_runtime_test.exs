@@ -105,6 +105,8 @@ defmodule PhoenixVapor.VueRuntimeTest do
       {:ok, open_html} = VueRuntime.call(rt, "open.value = true")
       assert open_html =~ ~s(aria-expanded="true")
       assert open_html =~ ~s(data-state="open")
+      assert open_html =~ ~s(role="dialog")
+      assert open_html =~ "Title"
 
       {:ok, closed_again} = VueRuntime.call(rt, "open.value = false")
       assert closed_again =~ ~s(data-state="closed")
