@@ -55,9 +55,9 @@ defmodule PhoenixVapor.Vue do
 
   @doc false
   def extract_template(sfc_source) do
-    case Regex.run(~r/<template>([\s\S]*?)<\/template>/, sfc_source) do
-      [_, template] -> String.trim(template)
-      nil -> sfc_source
+    case Vize.parse_sfc(sfc_source) do
+      {:ok, %{template: %{content: content}}} -> String.trim(content)
+      _ -> sfc_source
     end
   end
 
@@ -67,13 +67,10 @@ defmodule PhoenixVapor.Vue do
     css = result.css
 
     if css && css != "" do
+      # Scope ID is embedded in the CSS by Vize's scoped style compiler
       case Regex.run(~r/\[data-v-([a-f0-9]+)\]/, css) do
-        [_, hash] ->
-          scope_id = "data-v-#{hash}"
-          {scope_id, css}
-
-        nil ->
-          {nil, css}
+        [_, hash] -> {"data-v-#{hash}", css}
+        nil -> {nil, css}
       end
     else
       {nil, nil}
