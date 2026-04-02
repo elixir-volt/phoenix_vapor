@@ -81,28 +81,87 @@ defmodule PhoenixVapor.LiveVue do
 
   @doc false
   def compile_sfc(path) do
-    # Write compiled SFC to a temp file so Volt.Builder can process it
     sfc_source = File.read!(path)
     handlers = extract_handlers(sfc_source)
 
-    dir = System.tmp_dir!()
-    tmp_dir = Path.join(dir, "phoenix_vapor_sfc_#{:erlang.phash2(path)}")
+    # Compile SFC with Vize
+    {:ok, result} = Vize.compile_sfc(sfc_source, filename: Path.basename(path))
+
+    # Inject handler registration into the compiled setup function via AST,
+    # BEFORE bundling — so the code is still parseable ES modules
+    patched = inject_handler_registration(result.code, handlers)
+
+    # Bundle with Volt: resolve imports, rewrite externals to globals
+    bundled = volt_bundle(patched, path)
+
+    # The bundled IIFE has `var _default` scoped inside.
+    # Replace with globalThis assignment so we can mount after.
+    setup_js =
+      bundled
+      |> String.replace("var _default =", "globalThis.__sfc_component =")
+      |> Kernel.<>("\nVue.createApp(globalThis.__sfc_component).mount(document.body);\n")
+
+    {setup_js, handlers}
+  end
+
+  defp inject_handler_registration(code, []), do: code
+
+  defp inject_handler_registration(code, handlers) do
+    {:ok, ast} = OXC.parse(code, "sfc.js")
+
+    # Find the setup function's return position
+    setup_return_pos = find_setup_return(ast)
+
+    if setup_return_pos do
+      handler_obj = Enum.map_join(handlers, ", ", fn name -> "#{name}: #{name}" end)
+      inject = "globalThis.__pv_handlers = { #{handler_obj} };\n"
+
+      OXC.patch_string(code, [
+        %{start: setup_return_pos, end: setup_return_pos, change: inject}
+      ])
+    else
+      code
+    end
+  end
+
+  defp find_setup_return(ast) do
+    # Find the setup FunctionExpression body span
+    setup_spans =
+      OXC.collect(ast, fn
+        %{type: "Property", key: %{name: "setup"},
+          value: %{type: "FunctionExpression", body: %{start: bs, end: be}}} ->
+          {:keep, {bs, be}}
+        _ ->
+          :skip
+      end)
+
+    case setup_spans do
+      [{setup_start, setup_end} | _] ->
+        returns =
+          OXC.collect(ast, fn
+            %{type: "ReturnStatement", start: s} -> {:keep, s}
+            _ -> :skip
+          end)
+
+        Enum.find(returns, fn s -> s > setup_start and s < setup_end end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp volt_bundle(compiled, sfc_path) do
+    tmp_dir = Path.join(System.tmp_dir!(), "pv_sfc_#{:erlang.phash2(sfc_path)}")
     File.mkdir_p!(tmp_dir)
 
-    # Vize compiles the SFC into JS with import statements
-    {:ok, result} = Vize.compile_sfc(sfc_source, filename: Path.basename(path))
     entry_path = Path.join(tmp_dir, "entry.js")
-    File.write!(entry_path, result.code)
+    File.write!(entry_path, compiled)
 
-    # Detect node_modules from the SFC's directory
-    node_modules = find_node_modules(Path.dirname(path))
-
-    # Volt.Builder compiles + bundles with externals resolved to globals
     {:ok, build_result} =
       Volt.Builder.build(
         entry: entry_path,
         outdir: tmp_dir,
-        node_modules: node_modules,
+        node_modules: find_node_modules(Path.dirname(sfc_path)),
         name: "sfc",
         minify: false,
         sourcemap: false,
@@ -111,41 +170,9 @@ defmodule PhoenixVapor.LiveVue do
         external: @external_map
       )
 
-    compiled = File.read!(build_result.js.path)
-
-    # Wrap in IIFE that mounts the app and registers handlers
-    setup_js = wrap_setup(compiled, handlers)
-
-    # Cleanup
+    bundled = File.read!(build_result.js.path)
     File.rm_rf!(tmp_dir)
-
-    {setup_js, handlers}
-  end
-
-  defp wrap_setup(compiled, handlers) do
-    # Inject handler registration into the SFC's setup function.
-    # The compiled code has: setup(__props) { ... return (render fn) }
-    # We inject `globalThis.__pv_handlers = { toggle, ... }` before the return.
-
-    handler_obj =
-      handlers
-      |> Enum.map_join(", ", fn name -> "#{name}: #{name}" end)
-
-    inject = "globalThis.__pv_handlers = { #{handler_obj} };"
-
-    # Find "return (_ctx" in the setup function and inject before it
-    patched =
-      compiled
-      |> String.replace("var _default =", "globalThis.__sfc_component =")
-      |> String.replace(
-        ~r/return \(_ctx/,
-        "#{inject}\n\t\t\treturn (_ctx"
-      )
-
-    """
-    #{patched}
-    Vue.createApp(globalThis.__sfc_component).mount(document.body);
-    """
+    bundled
   end
 
   defp extract_handlers(sfc_source) do
