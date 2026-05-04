@@ -3,11 +3,21 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import {patchLiveSocket} from "../phoenix_vapor/index.js"
+import {getHybridHooks} from "../../priv/js/hybrid-bridge.js"
+
+import * as HybridContacts from "./hybrid/HybridContacts.hybrid.js"
+import * as HybridUsers from "./hybrid/HybridUsers.hybrid.js"
+
+const hybridHooks = getHybridHooks({
+  HybridContacts,
+  HybridUsers,
+})
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
+  hooks: { ...hybridHooks },
 })
 
 patchLiveSocket(liveSocket, {debug: true})

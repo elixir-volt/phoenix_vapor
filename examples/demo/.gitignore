@@ -39,3 +39,4 @@ npm-debug.log
 /node_modules/
 /priv/js/reka-*.js
 /priv/js/manifest.json
+assets/js/hybrid/

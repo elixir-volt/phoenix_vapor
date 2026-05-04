@@ -65,10 +65,12 @@ defmodule PhoenixVapor.Hybrid do
 
     split = Vize.vapor_split!(template_content)
 
-    render_ast = ServerCodegen.gen_render(split, classification, props, computeds)
+    component_name = Path.basename(file, ".vue")
+    render_ast = ServerCodegen.gen_render(split, classification, props, computeds, component_name)
     event_asts = ServerCodegen.gen_handle_events(classification)
 
-    client_js = generate_client_js(sfc_source, classification, full_path, opts)
+    client_output_dir = Keyword.get(opts, :client_output, default_client_output(caller_dir))
+    client_js = generate_client_js(sfc_source, classification, full_path, client_output_dir)
 
     escaped_classification = Macro.escape(classification)
     escaped_client_js = Macro.escape(client_js)
@@ -91,10 +93,16 @@ defmodule PhoenixVapor.Hybrid do
     end
   end
 
-  defp generate_client_js(sfc_source, classification, full_path, opts) do
+  defp generate_client_js(sfc_source, classification, full_path, output_dir) do
     case ClientCodegen.generate(sfc_source, classification) do
       {:ok, js} ->
-        maybe_write_client_js(js, full_path, opts)
+        if output_dir do
+          basename = Path.basename(full_path, ".vue")
+          output_path = Path.join(output_dir, "#{basename}.hybrid.js")
+          File.mkdir_p!(output_dir)
+          File.write!(output_path, js)
+        end
+
         js
 
       {:error, errors} ->
@@ -102,14 +110,10 @@ defmodule PhoenixVapor.Hybrid do
     end
   end
 
-  defp maybe_write_client_js(js, full_path, opts) do
-    output_dir = Keyword.get(opts, :client_output, nil)
+  defp default_client_output(_caller_dir) do
+    project_root = File.cwd!()
+    assets_dir = Path.join(project_root, "assets/js/hybrid")
 
-    if output_dir do
-      basename = Path.basename(full_path, ".vue")
-      output_path = Path.join(output_dir, "#{basename}.hybrid.js")
-      File.mkdir_p!(Path.dirname(output_path))
-      File.write!(output_path, js)
-    end
+    if File.dir?(Path.join(project_root, "assets")), do: assets_dir
   end
 end

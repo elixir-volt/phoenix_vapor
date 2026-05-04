@@ -38,7 +38,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   - A `data-pv-props` attribute with JSON-encoded client-consumed props
   - Change tracking that skips client-owned slots when only client props changed
   """
-  def gen_render(split, classification, _props, computeds \\ %{}) do
+  def gen_render(split, classification, _props, computeds \\ %{}, component_name \\ nil) do
     escaped_split = Macro.escape(split)
     client_props = Macro.escape(classification.client_props)
     slot_owners = classify_slots(split.slots, classification)
@@ -50,6 +50,8 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     computed_exprs = extract_computed_exprs(classification, computeds)
     escaped_computed_exprs = Macro.escape(computed_exprs)
 
+    escaped_component_name = Macro.escape(component_name)
+
     quote do
       def render(var!(assigns)) do
         PhoenixVapor.Hybrid.ServerCodegen.build_rendered(
@@ -58,7 +60,8 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
           unquote(client_props),
           unquote(escaped_slot_owners),
           unquote(escaped_ref_defaults),
-          unquote(escaped_computed_exprs)
+          unquote(escaped_computed_exprs),
+          unquote(escaped_component_name)
         )
       end
     end
@@ -97,7 +100,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   - Change tracking: client-owned slots still re-evaluate when their
     underlying server prop changes (for LV diff correctness)
   """
-  def build_rendered(split, assigns, client_props, _slot_owners, ref_defaults, computed_exprs) do
+  def build_rendered(split, assigns, client_props, _slot_owners, ref_defaults, computed_exprs, component_name \\ nil) do
     props_json = encode_client_props(assigns, client_props)
     escaped_props = props_json |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 
@@ -106,7 +109,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       |> seed_ref_defaults(ref_defaults)
       |> eval_computed_defaults(computed_exprs, ref_defaults)
 
-    wrapped_statics = wrap_statics(split.statics, escaped_props)
+    wrapped_statics = wrap_statics(split.statics, escaped_props, component_name)
     PhoenixVapor.Renderer.split_to_rendered(wrapped_statics, split.slots, full_assigns)
   end
 
@@ -172,8 +175,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     end
   end
 
-  defp wrap_statics([first | rest], escaped_props) do
-    wrapper_open = ~s(<div data-pv data-pv-props=") <> escaped_props <> ~s(">)
+  defp wrap_statics([first | rest], escaped_props, component_name) do
+    hook_attrs =
+      if component_name do
+        ~s( phx-hook="PhoenixVaporHybrid" data-pv-client="#{component_name}")
+      else
+        ""
+      end
+
+    wrapper_open = ~s(<div data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}>)
 
     case rest do
       [] ->
@@ -186,8 +196,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     end
   end
 
-  defp wrap_statics([], escaped_props) do
-    [~s(<div data-pv data-pv-props=") <> escaped_props <> ~s("></div>)]
+  defp wrap_statics([], escaped_props, component_name) do
+    hook_attrs =
+      if component_name do
+        ~s( phx-hook="PhoenixVaporHybrid" data-pv-client="#{component_name}")
+      else
+        ""
+      end
+
+    [~s(<div data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}></div>)]
   end
 
   defp encode_client_props(assigns, client_props) do

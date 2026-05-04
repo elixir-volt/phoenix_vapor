@@ -19,9 +19,9 @@ defmodule PhoenixVaporDemoWeb.HomeLive do
            tag: "Zero Elixir"
          },
          %{
-           title: "Hybrid Mode",
-           path: "/hybrid",
-           desc: "Split reactivity — server owns data, client owns UI state. Instant filtering, zero RTT.",
+           title: "Hybrid Contacts",
+           path: "/contacts",
+           desc: "Real-world CRM — instant search/sort/select on client, server-side delete with confirmation dialog.",
            tag: "New"
          },
          %{
