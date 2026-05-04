@@ -64,7 +64,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         """)
 
       assert js =~ "__mount"
-      assert js =~ "dataset.pvProps"
+      assert js =~ "__vaporComponent"
     end
 
     test "replaces __props with __serverProps.value" do

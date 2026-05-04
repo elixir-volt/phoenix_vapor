@@ -1,5 +1,5 @@
 import { shallowRef, triggerRef } from 'vue';
-const __serverProps = shallowRef({});
+const __serverProps = { value: {} };
 let __bridge = null;
 
 export function __applyProps(props) {
@@ -42,11 +42,11 @@ function render(_ctx, $props, $emit, $attrs, $slots) {
 const __vaporRender = render
 import { ref, computed } from 'vue'
 
-export default /*@__PURE__*/_defineVaporComponent({
+const __vaporComponent = /*@__PURE__*/_defineVaporComponent({
   __name: 'anonymous',
   props: ["users", "title"],
   render: __vaporRender,
-  setup(__pvProps, { emit: __emit, attrs: __attrs, slots: __slots }) {
+  setup(__pvOriginalProps, { emit: __emit, attrs: __attrs, slots: __slots }) {
 
 const search = ref("")
 const filtered = computed(() => users.filter(u => u.name.includes(search.value)))
@@ -68,8 +68,16 @@ return __vaporRender(__ctx, __serverProps.value, __emit, __attrs, __slots)
 
 })
 
+export default __vaporComponent;
+
 export function __mount(el, bridge) {
   __bridge = bridge;
-  const props = JSON.parse(el.dataset.pvProps || '{}');
-  __serverProps.value = props;
+  const setup = __vaporComponent.setup;
+  if (!setup) return;
+  const result = setup(
+    __serverProps.value,
+    { emit: () => {}, attrs: {}, slots: {} }
+  );
+  if (result instanceof Node) el.appendChild(result);
+  else if (Array.isArray(result)) result.forEach(n => { if (n instanceof Node) el.appendChild(n); });
 }

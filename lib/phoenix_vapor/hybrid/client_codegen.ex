@@ -56,7 +56,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
     preamble = """
     import { shallowRef, triggerRef } from 'vue';
-    const __serverProps = shallowRef({});
+    const __serverProps = { value: {} };
     let __bridge = null;
 
     export function __applyProps(props) {
@@ -80,17 +80,16 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     "[#{pairs}]"
   end
 
+  # Workaround: Vue Vapor 3.6.0-alpha does not forward component props
+  # to setup(__props) via createVaporApp(). Replace `const props = __props`
+  # with direct access to our reactive bridge object.
+  # Remove when Vue Vapor stabilizes prop forwarding.
   defp rewrite_props_source(code) do
-    # Replace `const props = __props` with reactive bridge access
-    code = String.replace(code, "const props = __props", "const props = __serverProps.value")
-
-    # Replace the setup parameter `setup(__props,` with a local alias
-    # We can't put `__serverProps.value` as a parameter name, so we
-    # rename the parameter and alias it inside setup
     code
+    |> String.replace("const props = __props", "const props = __serverProps.value")
     |> String.replace(
       ~r/setup\(__props,\s*\{/,
-      "setup(__pvProps, {"
+      "setup(__pvOriginalProps, {"
     )
     |> String.replace(
       ~r/return __vaporRender\(__ctx,\s*__props,/,
@@ -291,13 +290,29 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   defp skip_template_literal(<<_, rest::binary>>, pos, depth), do: skip_template_literal(rest, pos + 1, depth)
 
   defp inject_bridge_exports(code) do
+    # Replace `export default` with a local binding so __mount can reference it
+    code =
+      String.replace(
+        code,
+        ~r/export default\s+\/\*@__PURE__\*\/\s*/,
+        "const __vaporComponent = /*@__PURE__*/"
+      )
+
     code <>
       """
 
+      export default __vaporComponent;
+
       export function __mount(el, bridge) {
         __bridge = bridge;
-        const props = JSON.parse(el.dataset.pvProps || '{}');
-        __serverProps.value = props;
+        const setup = __vaporComponent.setup;
+        if (!setup) return;
+        const result = setup(
+          __serverProps.value,
+          { emit: () => {}, attrs: {}, slots: {} }
+        );
+        if (result instanceof Node) el.appendChild(result);
+        else if (Array.isArray(result)) result.forEach(n => { if (n instanceof Node) el.appendChild(n); });
       }
       """
   end

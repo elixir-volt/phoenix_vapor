@@ -9,8 +9,6 @@
  * - Provides pushEvent for server actions
  */
 
-import { createVaporApp, shallowReactive } from 'vue'
-
 export function createHybridHook(components) {
   return {
     mounted() {
@@ -23,12 +21,6 @@ export function createHybridHook(components) {
       }
 
       const mod = components[componentName]
-      const component = mod.default || mod
-
-      if (!component) {
-        console.warn(`[PhoenixVapor] No component found for "${componentName}"`)
-        return
-      }
 
       const bridge = {
         pushEvent: (event, params, callback) => {
@@ -42,47 +34,42 @@ export function createHybridHook(components) {
       if (mod.__setBridge) mod.__setBridge(bridge)
 
       const initialProps = JSON.parse(el.dataset.pvProps || '{}')
+      console.log('[PV-bridge] applyProps with', Object.keys(initialProps), initialProps.contacts?.length, 'contacts')
+      if (mod.__applyProps) mod.__applyProps(initialProps)
 
-      this.__pvProps = shallowReactive({ ...initialProps })
-      if (mod.__applyProps) mod.__applyProps(this.__pvProps)
-
-      const app = createVaporApp(component, this.__pvProps)
-      app.config.warnHandler = (msg) => {
-        if (!msg.includes('Extraneous')) console.warn('[Vue]', msg)
+      if (mod.__mount) {
+        console.log('[PV-bridge] calling __mount')
+        el.innerHTML = ''
+        mod.__mount(el, bridge)
+        console.log('[PV-bridge] mount done, el children:', el.childElementCount, 'text:', el.innerText?.substring(0, 100))
       }
-      el.innerHTML = ''
-      const instance = app.mount(el)
-      this.__pvInstance = instance
 
-      this.__pvApp = app
       this.__pvModule = mod
     },
 
     updated() {
-      if (!this.__pvModule || !this.__pvProps) return
+      if (!this.__pvModule) return
 
       const propsAttr = this.el.dataset.pvProps
       if (!propsAttr) return
 
       try {
         const newProps = JSON.parse(propsAttr)
-        Object.assign(this.__pvProps, newProps)
-        this.__pvModule.__applyProps(this.__pvProps)
+        this.__pvModule.__applyProps(newProps)
       } catch (e) {
         console.warn("[PhoenixVapor] Failed to parse props update:", e)
       }
     },
 
     reconnected() {
-      if (!this.__pvModule || !this.__pvProps) return
+      if (!this.__pvModule) return
 
       const propsAttr = this.el.dataset.pvProps
       if (!propsAttr) return
 
       try {
         const newProps = JSON.parse(propsAttr)
-        Object.assign(this.__pvProps, newProps)
-        this.__pvModule.__applyProps(this.__pvProps)
+        this.__pvModule.__applyProps(newProps)
       } catch (e) {
         console.warn("[PhoenixVapor] Failed to parse props on reconnect:", e)
       }
@@ -94,7 +81,6 @@ export function createHybridHook(components) {
       }
       this.__pvApp = null
       this.__pvModule = null
-      this.__pvProps = null
     }
   }
 }
