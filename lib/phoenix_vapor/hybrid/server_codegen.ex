@@ -97,17 +97,33 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   Generate `handle_event/3` clauses for server actions.
   """
   def gen_handle_events(classification) do
-    classification.handlers
-    |> Enum.filter(fn {_name, kind} -> match?({:server_action, _}, kind) end)
-    |> Enum.map(fn {name, {:server_action, _body}} ->
+    action_names =
+      classification.handlers
+      |> Enum.filter(fn {_name, kind} -> match?({:server_action, _}, kind) end)
+      |> Enum.map(fn {name, _} -> name end)
+
+    if action_names == [] do
+      []
+    else
+      [quote do
+        @__hybrid_server_actions__ unquote(action_names)
+
+        @before_compile PhoenixVapor.Hybrid.ServerCodegen
+      end]
+    end
+  end
+
+  defmacro __before_compile__(env) do
+    actions = Module.get_attribute(env.module, :__hybrid_server_actions__, [])
+    defined = Module.defines?(env.module, {:handle_event, 3})
+
+    for name <- actions, !defined do
       quote do
-        def handle_event(unquote(name), params, socket) do
-          # Default: re-run the action on the server
-          # Users override this with their own implementation
+        def handle_event(unquote(name), _params, socket) do
           {:noreply, socket}
         end
       end
-    end)
+    end
   end
 
   @doc """

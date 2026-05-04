@@ -199,9 +199,9 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       events = ServerCodegen.gen_handle_events(classification)
 
       assert length(events) == 1
-
-      [{:def, _, [{:handle_event, _, [event_name, _, _]}, _]}] = events
-      assert event_name == "deleteUser"
+      # Should register a @before_compile with the action names
+      ast = hd(events)
+      assert Macro.to_string(ast) =~ "deleteUser"
     end
 
     test "no events for client-only handlers" do
