@@ -33,6 +33,7 @@ defmodule PhoenixVaporDemoWeb.Endpoint do
     socket "/phoenix/live_reload/socket", Phoenix.LiveReloader.Socket
     plug Phoenix.LiveReloader
     plug Phoenix.CodeReloader
+    plug Volt.DevServer, root: "assets"
   end
 
   plug Plug.RequestId

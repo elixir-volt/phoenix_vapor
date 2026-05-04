@@ -45,8 +45,6 @@ defmodule PhoenixVaporDemo.MixProject do
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.1.0"},
       {:lazy_html, ">= 0.1.0", only: :test},
-      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",
@@ -61,7 +59,7 @@ defmodule PhoenixVaporDemo.MixProject do
       {:bandit, "~> 1.5"},
       {:phoenix_vapor, path: "../.."},
       {:quickbeam, "~> 0.10.8", override: true},
-      {:volt, "~> 0.10.1", runtime: false}
+      {:volt, "~> 0.10.1"}
     ]
   end
 
@@ -73,14 +71,9 @@ defmodule PhoenixVaporDemo.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "assets.setup", "assets.build"],
-      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind phoenix_vapor_demo", "esbuild phoenix_vapor_demo"],
-      "assets.deploy": [
-        "tailwind phoenix_vapor_demo --minify",
-        "esbuild phoenix_vapor_demo --minify",
-        "phx.digest"
-      ],
+      setup: ["deps.get", "assets.build"],
+      "assets.build": ["volt.build --tailwind"],
+      "assets.deploy": ["volt.build --tailwind", "phx.digest"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end

@@ -15,8 +15,7 @@ config :phoenix_vapor_demo, PhoenixVaporDemoWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "d/TdWfeJxIryPLXfHCauumxABoDLfiOSXMJ8a4veOehW8gI8tC8yNKcDyhTyDxDi",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:phoenix_vapor_demo, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:phoenix_vapor_demo, ~w(--watch)]}
+    volt: {Mix.Tasks.Volt.Dev, :run, [~w(--tailwind)]}
   ]
 
 # ## SSL Support
@@ -55,7 +54,10 @@ config :phoenix_vapor_demo, PhoenixVaporDemoWeb.Endpoint,
     ]
   ]
 
-# Enable dev routes for dashboard and mailbox
+config :volt, :server,
+  prefix: "/assets",
+  watch_dirs: ["lib/"]
+
 config :phoenix_vapor_demo, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
