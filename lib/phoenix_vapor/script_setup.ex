@@ -95,9 +95,14 @@ defmodule PhoenixVapor.ScriptSetup do
               %{type: :call_expression, callee: %{name: "computed"}, arguments: args} <- [init],
               [%{type: :arrow_function_expression, body: body} | _] <- [args] do
             case body do
-              %{type: :block_statement} -> nil
-              %{start: _, end: _} = expr_node -> {name, slice_source(source, expr_node)}
-              _ -> nil
+              %{type: :block_statement, start: _, end: _} = block ->
+                {name, slice_source(source, block)}
+
+              %{start: _, end: _} = expr_node ->
+                {name, slice_source(source, expr_node)}
+
+              _ ->
+                nil
             end
           end
 

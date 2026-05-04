@@ -38,11 +38,17 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   - A `data-pv-props` attribute with JSON-encoded client-consumed props
   - Change tracking that skips client-owned slots when only client props changed
   """
-  def gen_render(split, classification, _props) do
+  def gen_render(split, classification, _props, computeds \\ %{}) do
     escaped_split = Macro.escape(split)
     client_props = Macro.escape(classification.client_props)
     slot_owners = classify_slots(split.slots, classification)
     escaped_slot_owners = Macro.escape(slot_owners)
+
+    ref_defaults = extract_ref_defaults(classification)
+    escaped_ref_defaults = Macro.escape(ref_defaults)
+
+    computed_exprs = extract_computed_exprs(classification, computeds)
+    escaped_computed_exprs = Macro.escape(computed_exprs)
 
     quote do
       def render(var!(assigns)) do
@@ -50,10 +56,36 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
           unquote(escaped_split),
           var!(assigns),
           unquote(client_props),
-          unquote(escaped_slot_owners)
+          unquote(escaped_slot_owners),
+          unquote(escaped_ref_defaults),
+          unquote(escaped_computed_exprs)
         )
       end
     end
+  end
+
+  defp extract_ref_defaults(classification) do
+    classification.bindings
+    |> Enum.flat_map(fn
+      {name, {:client_ref, init_expr}} -> [{name, init_expr}]
+      _ -> []
+    end)
+    |> Map.new()
+  end
+
+  defp extract_computed_exprs(classification, computeds) do
+    computed_names =
+      classification.bindings
+      |> Enum.flat_map(fn
+        {name, {:mixed_computed, _, _}} -> [name]
+        {name, :client_computed} -> [name]
+        _ -> []
+      end)
+      |> MapSet.new()
+
+    computeds
+    |> Enum.filter(fn {name, _} -> MapSet.member?(computed_names, name) end)
+    |> Map.new()
   end
 
   @doc """
@@ -65,22 +97,97 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   - Change tracking: client-owned slots still re-evaluate when their
     underlying server prop changes (for LV diff correctness)
   """
-  def build_rendered(split, assigns, client_props, _slot_owners) do
+  def build_rendered(split, assigns, client_props, _slot_owners, ref_defaults, computed_exprs) do
     props_json = encode_client_props(assigns, client_props)
-    inner_rendered = PhoenixVapor.Renderer.split_to_rendered(split.statics, split.slots, assigns)
     escaped_props = props_json |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 
-    %Phoenix.LiveView.Rendered{
-      static: [
-        ~s(<div data-pv data-pv-props=") <> escaped_props <> ~s(">),
-        ~s(</div>)
-      ],
-      dynamic: fn _track_changes? ->
-        [inner_rendered]
-      end,
-      fingerprint: inner_rendered.fingerprint,
-      root: true
-    }
+    full_assigns =
+      assigns
+      |> seed_ref_defaults(ref_defaults)
+      |> eval_computed_defaults(computed_exprs, ref_defaults)
+
+    wrapped_statics = wrap_statics(split.statics, escaped_props)
+    PhoenixVapor.Renderer.split_to_rendered(wrapped_statics, split.slots, full_assigns)
+  end
+
+  defp seed_ref_defaults(assigns, ref_defaults) do
+    ref_values = PhoenixVapor.ScriptSetup.eval_initial_state(ref_defaults)
+
+    Enum.reduce(ref_values, assigns, fn {key, value}, acc ->
+      string_key = to_string(key)
+      acc |> Map.put_new(key, value) |> Map.put_new(string_key, value)
+    end)
+  end
+
+  defp eval_computed_defaults(assigns, computed_exprs, ref_defaults) do
+    if computed_exprs == %{} do
+      assigns
+    else
+      eval_computeds_via_quickbeam(assigns, computed_exprs, ref_defaults)
+    end
+  end
+
+  defp eval_computeds_via_quickbeam(assigns, computed_exprs, ref_defaults) do
+    if Code.ensure_loaded?(QuickBEAM) do
+      {:ok, rt} = QuickBEAM.start()
+
+      ref_names = MapSet.new(Map.keys(ref_defaults))
+
+      vars =
+        assigns
+        |> Enum.filter(fn {k, _} -> is_atom(k) and k not in [:__changed__, :__components__] end)
+        |> Map.new(fn {k, v} ->
+          name = Atom.to_string(k)
+          if MapSet.member?(ref_names, name) do
+            {name, %{"value" => v}}
+          else
+            {name, v}
+          end
+        end)
+
+      Enum.reduce(computed_exprs, assigns, fn {name, expr}, acc ->
+        js_expr = wrap_computed_expr(expr)
+
+        case QuickBEAM.eval(rt, js_expr, vars: vars) do
+          {:ok, value} ->
+            atom_key = String.to_atom(name)
+            acc |> Map.put(atom_key, value) |> Map.put(name, value)
+
+          _ ->
+            acc
+        end
+      end)
+    else
+      assigns
+    end
+  end
+
+  defp wrap_computed_expr(expr) do
+    trimmed = String.trim(expr)
+
+    if String.starts_with?(trimmed, "{") do
+      "(function() #{trimmed})()"
+    else
+      "(#{trimmed})"
+    end
+  end
+
+  defp wrap_statics([first | rest], escaped_props) do
+    wrapper_open = ~s(<div data-pv data-pv-props=") <> escaped_props <> ~s(">)
+
+    case rest do
+      [] ->
+        [wrapper_open <> first <> "</div>"]
+
+      _ ->
+        last = List.last(rest)
+        middle = rest |> Enum.drop(-1)
+        [wrapper_open <> first | middle] ++ [last <> "</div>"]
+    end
+  end
+
+  defp wrap_statics([], escaped_props) do
+    [~s(<div data-pv data-pv-props=") <> escaped_props <> ~s("></div>)]
   end
 
   defp encode_client_props(assigns, client_props) do

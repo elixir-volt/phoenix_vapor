@@ -65,7 +65,7 @@ defmodule PhoenixVapor.Hybrid do
 
     split = Vize.vapor_split!(template_content)
 
-    render_ast = ServerCodegen.gen_render(split, classification, props)
+    render_ast = ServerCodegen.gen_render(split, classification, props, computeds)
     event_asts = ServerCodegen.gen_handle_events(classification)
 
     client_js = generate_client_js(sfc_source, classification, full_path, opts)

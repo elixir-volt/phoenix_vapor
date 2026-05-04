@@ -95,7 +95,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
     end
   end
 
-  describe "build_rendered/4" do
+  describe "build_rendered/6" do
     test "wraps content in data-pv div with props JSON" do
       {split, classification, _} =
         parse_and_classify(
@@ -111,7 +111,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners)
+        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
 
       html = render_to_html(rendered)
       assert html =~ "data-pv"
@@ -134,7 +134,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners)
+        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
 
       html = render_to_html(rendered)
       assert html =~ "Alice"
@@ -152,7 +152,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners)
+        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
 
       assert %Phoenix.LiveView.Rendered{} = rendered
       assert is_list(rendered.static)
@@ -175,7 +175,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners)
+        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
 
       html = render_to_html(rendered)
       assert html =~ "3"
