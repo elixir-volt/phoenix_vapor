@@ -65,11 +65,11 @@ defmodule PhoenixVapor.ScriptSetup do
 
   defp extract_refs(ast, source) do
     OXC.collect(ast, fn
-      %{type: "VariableDeclaration", declarations: decls} ->
+      %{type: :variable_declaration, declarations: decls} ->
         refs =
-          for %{type: "VariableDeclarator", id: %{name: name}, init: init} <- decls,
+          for %{type: :variable_declarator, id: %{name: name}, init: init} <- decls,
               init != nil,
-              %{type: "CallExpression", callee: %{name: "ref"}, arguments: args} <- [init],
+              %{type: :call_expression, callee: %{name: "ref"}, arguments: args} <- [init],
               [arg | _] <- [args] do
             {name, slice_source(source, arg)}
           end
@@ -88,14 +88,14 @@ defmodule PhoenixVapor.ScriptSetup do
 
   defp extract_computeds(ast, source) do
     OXC.collect(ast, fn
-      %{type: "VariableDeclaration", declarations: decls} ->
+      %{type: :variable_declaration, declarations: decls} ->
         computeds =
-          for %{type: "VariableDeclarator", id: %{name: name}, init: init} <- decls,
+          for %{type: :variable_declarator, id: %{name: name}, init: init} <- decls,
               init != nil,
-              %{type: "CallExpression", callee: %{name: "computed"}, arguments: args} <- [init],
-              [%{type: "ArrowFunctionExpression", body: body} | _] <- [args] do
+              %{type: :call_expression, callee: %{name: "computed"}, arguments: args} <- [init],
+              [%{type: :arrow_function_expression, body: body} | _] <- [args] do
             case body do
-              %{type: "BlockStatement"} -> nil
+              %{type: :block_statement} -> nil
               %{start: _, end: _} = expr_node -> {name, slice_source(source, expr_node)}
               _ -> nil
             end
@@ -115,7 +115,7 @@ defmodule PhoenixVapor.ScriptSetup do
 
   defp extract_functions(ast) do
     OXC.collect(ast, fn
-      %{type: "FunctionDeclaration", id: %{name: name}} ->
+      %{type: :function_declaration, id: %{name: name}} ->
         {:keep, name}
 
       _ ->
@@ -125,11 +125,11 @@ defmodule PhoenixVapor.ScriptSetup do
 
   defp extract_props(ast) do
     OXC.collect(ast, fn
-      %{type: "ExpressionStatement",
-        expression: %{type: "CallExpression", callee: %{name: "defineProps"}, arguments: args}} ->
+      %{type: :expression_statement,
+        expression: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}} ->
         case args do
-          [%{type: "ArrayExpression", elements: elements}] ->
-            props = for %{type: "Literal", value: v} <- elements, do: v
+          [%{type: :array_expression, elements: elements}] ->
+            props = for %{type: :literal, value: v} <- elements, do: v
             {:keep, props}
 
           _ ->
@@ -144,7 +144,7 @@ defmodule PhoenixVapor.ScriptSetup do
 
   defp extract_function_bodies(ast, source) do
     OXC.collect(ast, fn
-      %{type: "FunctionDeclaration", id: %{name: name}, body: %{start: s, end: e}} ->
+      %{type: :function_declaration, id: %{name: name}, body: %{start: s, end: e}} ->
         body = binary_part(source, s + 1, e - s - 2) |> String.trim()
         {:keep, {name, body}}
 

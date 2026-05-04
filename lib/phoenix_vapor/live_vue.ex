@@ -128,8 +128,8 @@ defmodule PhoenixVapor.LiveVue do
     # Find the setup FunctionExpression body span
     setup_spans =
       OXC.collect(ast, fn
-        %{type: "Property", key: %{name: "setup"},
-          value: %{type: "FunctionExpression", body: %{start: bs, end: be}}} ->
+        %{type: :property, key: %{name: "setup"},
+          value: %{type: :function_expression, body: %{start: bs, end: be}}} ->
           {:keep, {bs, be}}
         _ ->
           :skip
@@ -139,7 +139,7 @@ defmodule PhoenixVapor.LiveVue do
       [{setup_start, setup_end} | _] ->
         returns =
           OXC.collect(ast, fn
-            %{type: "ReturnStatement", start: s} -> {:keep, s}
+            %{type: :return_statement, start: s} -> {:keep, s}
             _ -> :skip
           end)
 
@@ -180,7 +180,7 @@ defmodule PhoenixVapor.LiveVue do
          %{content: content} <- desc.script_setup || desc.script,
          {:ok, ast} <- OXC.parse(content, "setup.js") do
       OXC.collect(ast, fn
-        %{type: "FunctionDeclaration", id: %{name: name}} -> {:keep, name}
+        %{type: :function_declaration, id: %{name: name}} -> {:keep, name}
         _ -> :skip
       end)
     else

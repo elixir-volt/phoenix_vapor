@@ -51,7 +51,7 @@ defmodule PhoenixVapor.Expr do
     case OXC.parse(expr, "e.js") do
       {:ok, ast} ->
         OXC.collect(ast, fn
-          %{type: "Identifier", name: name} -> {:keep, String.to_atom(name)}
+          %{type: :identifier, name: name} -> {:keep, String.to_atom(name)}
           _ -> :skip
         end)
         |> Enum.uniq()
@@ -76,7 +76,7 @@ defmodule PhoenixVapor.Expr do
   # Falls back to simple path resolution for basic identifiers.
   defp parse_and_eval(expr, assigns) do
     case OXC.parse(expr, "e.js") do
-      {:ok, %{body: [%{type: "ExpressionStatement", expression: node}]}} ->
+      {:ok, %{body: [%{type: :expression_statement, expression: node}]}} ->
         try do
           {:ok, eval_node(node, assigns)}
         catch
@@ -88,13 +88,13 @@ defmodule PhoenixVapor.Expr do
     end
   end
 
-  defp eval_node(%{type: "Identifier", name: name}, assigns) do
+  defp eval_node(%{type: :identifier, name: name}, assigns) do
     get_assign(assigns, name)
   end
 
-  defp eval_node(%{type: "Literal", value: value}, _assigns), do: value
+  defp eval_node(%{type: :literal, value: value}, _assigns), do: value
 
-  defp eval_node(%{type: "TemplateLiteral"} = node, assigns) do
+  defp eval_node(%{type: :template_literal} = node, assigns) do
     quasis = node.quasis || []
     expressions = node.expressions || []
 
@@ -109,7 +109,7 @@ defmodule PhoenixVapor.Expr do
     parts |> Enum.map(&to_string/1) |> IO.iodata_to_binary()
   end
 
-  defp eval_node(%{type: "MemberExpression", object: obj, property: prop} = node, assigns) do
+  defp eval_node(%{type: :member_expression, object: obj, property: prop} = node, assigns) do
     object_val = eval_node(obj, assigns)
     computed = Map.get(node, :computed, false)
 
@@ -122,11 +122,11 @@ defmodule PhoenixVapor.Expr do
     end
   end
 
-  defp eval_node(%{type: "ConditionalExpression", test: test, consequent: cons, alternate: alt}, assigns) do
+  defp eval_node(%{type: :conditional_expression, test: test, consequent: cons, alternate: alt}, assigns) do
     if eval_node(test, assigns), do: eval_node(cons, assigns), else: eval_node(alt, assigns)
   end
 
-  defp eval_node(%{type: "LogicalExpression", operator: op, left: left, right: right}, assigns) do
+  defp eval_node(%{type: :logical_expression, operator: op, left: left, right: right}, assigns) do
     case op do
       "&&" ->
         l = eval_node(left, assigns)
@@ -142,7 +142,7 @@ defmodule PhoenixVapor.Expr do
     end
   end
 
-  defp eval_node(%{type: "BinaryExpression", operator: op, left: left, right: right}, assigns) do
+  defp eval_node(%{type: :binary_expression, operator: op, left: left, right: right}, assigns) do
     l = eval_node(left, assigns)
     r = eval_node(right, assigns)
 
@@ -164,7 +164,7 @@ defmodule PhoenixVapor.Expr do
     end
   end
 
-  defp eval_node(%{type: "UnaryExpression", operator: op, argument: arg}, assigns) do
+  defp eval_node(%{type: :unary_expression, operator: op, argument: arg}, assigns) do
     val = eval_node(arg, assigns)
 
     case op do
@@ -176,17 +176,17 @@ defmodule PhoenixVapor.Expr do
     end
   end
 
-  defp eval_node(%{type: "ArrayExpression", elements: elements}, assigns) do
+  defp eval_node(%{type: :array_expression, elements: elements}, assigns) do
     Enum.map(elements || [], fn elem -> eval_node(elem, assigns) end)
   end
 
-  defp eval_node(%{type: "ObjectExpression", properties: properties}, assigns) do
+  defp eval_node(%{type: :object_expression, properties: properties}, assigns) do
     (properties || [])
     |> Enum.reduce(%{}, fn prop, acc ->
       key =
         case prop.key do
-          %{type: "Identifier", name: name} -> name
-          %{type: "Literal", value: value} -> to_string(value)
+          %{type: :identifier, name: name} -> name
+          %{type: :literal, value: value} -> to_string(value)
           _ -> nil
         end
 
@@ -198,10 +198,10 @@ defmodule PhoenixVapor.Expr do
     end)
   end
 
-  defp eval_node(%{type: "CallExpression", callee: callee, arguments: args}, assigns) do
+  defp eval_node(%{type: :call_expression, callee: callee, arguments: args}, assigns) do
     has_fn_args =
       Enum.any?(args || [], fn
-        %{type: t} when t in ["ArrowFunctionExpression", "FunctionExpression"] -> true
+        %{type: t} when t in [:arrow_function_expression, :function_expression] -> true
         _ -> false
       end)
 
@@ -210,7 +210,7 @@ defmodule PhoenixVapor.Expr do
     end
 
     case callee do
-      %{type: "MemberExpression", object: obj, property: %{name: method}} ->
+      %{type: :member_expression, object: obj, property: %{name: method}} ->
         receiver = eval_node(obj, assigns)
         evaluated_args = Enum.map(args || [], &eval_node(&1, assigns))
         call_method(receiver, method, evaluated_args)
@@ -221,9 +221,9 @@ defmodule PhoenixVapor.Expr do
   end
 
   defp eval_node(%{type: type}, _assigns)
-       when type in ["ArrowFunctionExpression", "FunctionExpression", "SequenceExpression",
-                      "AssignmentExpression", "UpdateExpression", "NewExpression",
-                      "TaggedTemplateExpression", "YieldExpression", "AwaitExpression"] do
+       when type in [:arrow_function_expression, :function_expression, :sequence_expression,
+                      :assignment_expression, :update_expression, :new_expression,
+                      :tagged_template_expression, :yield_expression, :await_expression] do
     throw(:unsupported_node)
   end
 
