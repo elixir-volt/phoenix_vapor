@@ -132,19 +132,36 @@ defmodule PhoenixVapor.ScriptSetup do
     OXC.collect(ast, fn
       %{type: :expression_statement,
         expression: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}} ->
-        case args do
-          [%{type: :array_expression, elements: elements}] ->
-            props = for %{type: :literal, value: v} <- elements, do: v
-            {:keep, props}
+        extract_props_from_args(args)
 
-          _ ->
-            :skip
+      %{type: :variable_declaration, declarations: decls} ->
+        results =
+          for %{type: :variable_declarator, init: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}} <- decls,
+              result = extract_props_from_args(args),
+              result != :skip do
+            result
+          end
+
+        case results do
+          [{:keep, _} = r | _] -> r
+          _ -> :skip
         end
 
       _ ->
         :skip
     end)
     |> List.flatten()
+  end
+
+  defp extract_props_from_args(args) do
+    case args do
+      [%{type: :array_expression, elements: elements}] ->
+        props = for %{type: :literal, value: v} <- elements, do: v
+        {:keep, props}
+
+      _ ->
+        :skip
+    end
   end
 
   defp extract_function_bodies(ast, source) do

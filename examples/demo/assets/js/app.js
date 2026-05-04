@@ -5,7 +5,7 @@ import topbar from "../vendor/topbar"
 import {patchLiveSocket} from "../phoenix_vapor/index.js"
 import {getHybridHooks} from "../phoenix_vapor_hybrid/bridge.js"
 
-import * as HybridContacts from "./hybrid/HybridContacts.hybrid.js"
+import HybridContacts from "./hybrid/HybridContacts.raw.js"
 import * as HybridUsers from "./hybrid/HybridUsers.hybrid.js"
 
 const hybridHooks = getHybridHooks({

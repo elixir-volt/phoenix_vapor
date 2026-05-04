@@ -69,7 +69,13 @@ defmodule PhoenixVapor.Hybrid.Classifier do
     computed_bindings =
       Map.new(computeds, fn {name, expr} ->
         free = free_variables(expr)
-        server_deps = free |> Enum.filter(&MapSet.member?(prop_set, &1))
+        prop_refs = prop_references(expr)
+
+        server_deps =
+          (free |> Enum.filter(&MapSet.member?(prop_set, &1)))
+          ++ (prop_refs |> Enum.filter(&MapSet.member?(prop_set, &1)))
+          |> Enum.uniq()
+
         client_deps = free |> Enum.filter(&MapSet.member?(ref_set, &1))
 
         kind =
@@ -170,12 +176,40 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   end
 
   @doc """
-  Extract free variables from a JavaScript expression string.
+  Extract property names accessed via `props.X` pattern in a JS expression.
 
-  Returns the set of unbound identifiers — variable names that are not:
-  - Property names in non-computed member expressions (`a.b` → only `a`)
-  - Function parameters (`x => x + 1` → only free vars, not `x`)
-  - Locally declared variables
+  Handles `props.contacts`, `props.users`, etc. — common when using
+  `const props = defineProps([...])` in Vue script setup.
+  """
+  @spec prop_references(String.t()) :: [String.t()]
+  def prop_references(source) do
+    parse_source = case OXC.parse(source, "e.js") do
+      {:ok, ast} -> {:ok, ast}
+      _ -> OXC.parse("function __wrapper() #{source}", "e.js")
+    end
+
+    case parse_source do
+      {:ok, ast} ->
+        OXC.collect(ast, fn
+          %{type: :member_expression,
+            object: %{type: :identifier, name: "props"},
+            property: %{type: :identifier, name: prop_name},
+            computed: false} ->
+            {:keep, prop_name}
+
+          _ ->
+            :skip
+        end)
+        |> Enum.uniq()
+        |> Enum.sort()
+
+      _ ->
+        []
+    end
+  end
+
+  @doc """
+  Extract free variables from a JavaScript expression string.
   """
   @spec free_variables(String.t()) :: [String.t()]
   def free_variables(source) do

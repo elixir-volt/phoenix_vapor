@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from "vue"
 
-defineProps(["contacts"])
+const props = defineProps(["contacts"])
 
 const search = ref("")
 const sortKey = ref("name")
@@ -11,7 +11,7 @@ const pendingDeleteId = ref(null)
 
 const filtered = computed(() => {
   const term = search.value.toLowerCase()
-  return contacts
+  return (props.contacts || [])
     .filter(c => c.name.toLowerCase().includes(term) || c.email.toLowerCase().includes(term) || c.company.toLowerCase().includes(term))
     .sort((a, b) => {
       const aVal = a[sortKey.value] || ""
@@ -55,7 +55,7 @@ function cancelDelete() {
 
 function deleteContact(id) {
   "use server"
-  contacts = contacts.filter(c => c.id !== id)
+  props.contacts = props.contacts.filter(c => c.id !== id)
 }
 
 function executeDelete() {
@@ -69,7 +69,7 @@ function executeDelete() {
 
 function deleteSelected() {
   "use server"
-  contacts = contacts.filter(c => !selectedIds.value.includes(c.id))
+  props.contacts = props.contacts.filter(c => !selectedIds.value.includes(c.id))
 }
 
 function executeDeleteSelected() {
@@ -129,7 +129,7 @@ function executeDeleteSelected() {
     </div>
 
     <div class="text-sm text-gray-500">
-      {{ filtered.length }} of {{ contacts.length }} contacts
+      {{ filtered.length }} of {{ props.contacts.length }} contacts
       <button v-if="filtered.length > 0 && selectedCount !== filtered.length" @click="selectAll" class="ml-2 text-blue-600 hover:underline">
         Select all
       </button>
