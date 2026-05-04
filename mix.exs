@@ -50,7 +50,7 @@ defmodule PhoenixVapor.MixProject do
 
   defp deps do
     [
-      {:phoenix_live_view, "~> 1.0"},
+      {:phoenix_live_view, "~> 1.1"},
       {:vize, "~> 0.10.0"},
       {:oxc, "~> 0.11.0"},
       {:quickbeam, "~> 0.10.8", optional: true},

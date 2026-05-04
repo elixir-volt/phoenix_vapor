@@ -85,10 +85,10 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
 
   defp encode_client_props(assigns, client_props) do
     client_props
-    |> Enum.reduce(%{}, fn prop, acc ->
+    |> Map.new(fn prop ->
       key = if is_atom(prop), do: prop, else: String.to_atom(prop)
       value = Map.get(assigns, key, Map.get(assigns, prop))
-      if value != nil, do: Map.put(acc, prop, value), else: acc
+      {prop, value}
     end)
     |> Jason.encode!()
   end
@@ -115,12 +115,16 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
 
   defmacro __before_compile__(env) do
     actions = Module.get_attribute(env.module, :__hybrid_server_actions__, [])
-    defined = Module.defines?(env.module, {:handle_event, 3})
+    has_handle_event = Module.defines?(env.module, {:handle_event, 3})
 
-    for name <- actions, !defined do
-      quote do
-        def handle_event(unquote(name), _params, socket) do
-          {:noreply, socket}
+    if has_handle_event do
+      []
+    else
+      for name <- actions do
+        quote do
+          def handle_event(unquote(name), _params, socket) do
+            {:noreply, socket}
+          end
         end
       end
     end

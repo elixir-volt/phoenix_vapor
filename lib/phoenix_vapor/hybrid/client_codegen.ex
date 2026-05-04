@@ -105,12 +105,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   end
 
   defp rewrite_single_action(code, name, original_body, classification) do
-    # Find the function in the setup block and replace its body
-    # Strategy: use OXC to locate the function, then string-replace
-    # the body with our generated stub
-
     optimistic_code = generate_optimistic_update(name, original_body, classification)
-    params = generate_params_extraction(original_body)
+    params = generate_params_extraction(original_body, classification)
     push_code = ~s|__bridge.pushEvent("#{name}", #{params})|
     new_body = "#{optimistic_code}\n    #{push_code}"
 
@@ -200,19 +196,20 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   defp reconstruct_rhs(_node), do: "undefined"
 
-  defp generate_params_extraction(body) do
-    # Extract function parameter names used in the body
-    # For now, collect all free variables that aren't prop names
-    # and pass them as the event payload
-    case OXC.parse("function __fn(#{extract_likely_params(body)}) { #{body} }", "fn.js") do
-      {:ok, _} -> "{}"
-      _ -> "{}"
-    end
-  end
+  defp generate_params_extraction(body, classification) do
+    prop_names = MapSet.new(classification.client_props ++ classification.server_only_props)
 
-  defp extract_likely_params(_body) do
-    # This is refined in Phase 5 when we have the full function signature
-    ""
+    params =
+      body
+      |> Classifier.free_variables()
+      |> Enum.reject(&MapSet.member?(prop_names, &1))
+
+    if params == [] do
+      "{}"
+    else
+      pairs = Enum.map_join(params, ", ", fn name -> "#{name}: #{name}" end)
+      "{ #{pairs} }"
+    end
   end
 
   defp replace_function_body(code, fn_name, new_body) do
