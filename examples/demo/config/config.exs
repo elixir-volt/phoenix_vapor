@@ -31,6 +31,7 @@ config :volt,
   minify: false,
   hash: false,
   resolve_dirs: ["node_modules", "deps"],
+  aliases: %{"vue" => "node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.js"},
   tailwind: [
     css: "assets/css/app.css",
     sources: [

@@ -186,7 +186,15 @@ defmodule PhoenixVapor.Hybrid.Classifier do
         |> Enum.sort()
 
       _ ->
-        []
+        case OXC.parse("function __wrapper() #{source}", "e.js") do
+          {:ok, ast} ->
+            walk(ast.body, MapSet.new())
+            |> MapSet.to_list()
+            |> Enum.sort()
+
+          _ ->
+            []
+        end
     end
   end
 
@@ -255,7 +263,7 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   defp walk(%{type: :update_expression, argument: arg}, bound), do: walk(arg, bound)
   defp walk(%{type: :expression_statement, expression: expr}, bound), do: walk(expr, bound)
   defp walk(%{type: :return_statement, argument: arg}, bound), do: if(arg, do: walk(arg, bound), else: MapSet.new())
-  defp walk(%{type: :block_statement, body: body}, bound), do: walk(body, bound)
+  defp walk(%{type: :block_statement, body: body}, bound), do: walk_block(body, bound)
   defp walk(%{type: :template_literal, expressions: exprs}, bound), do: walk(exprs || [], bound)
   defp walk(%{type: :array_expression, elements: elems}, bound), do: walk(elems || [], bound)
   defp walk(%{type: :object_expression, properties: props}, bound), do: walk(props || [], bound)
@@ -338,6 +346,32 @@ defmodule PhoenixVapor.Hybrid.Classifier do
 
   defp walk(nil, _bound), do: MapSet.new()
   defp walk(_, _bound), do: MapSet.new()
+
+  defp walk_block(stmts, bound) when is_list(stmts) do
+    {free, _} =
+      Enum.reduce(stmts, {MapSet.new(), bound}, fn stmt, {acc_free, acc_bound} ->
+        case stmt do
+          %{type: :variable_declaration, declarations: decls} ->
+            {decl_free, new_bound} =
+              Enum.reduce(decls, {MapSet.new(), acc_bound}, fn decl, {df, db} ->
+                name = get_in(decl, [:id, :name])
+                new_db = if name, do: MapSet.put(db, name), else: db
+                init_free = if decl[:init], do: walk(decl[:init], new_db), else: MapSet.new()
+                {MapSet.union(df, init_free), new_db}
+              end)
+
+            {MapSet.union(acc_free, decl_free), new_bound}
+
+          _ ->
+            stmt_free = walk(stmt, acc_bound)
+            {MapSet.union(acc_free, stmt_free), acc_bound}
+        end
+      end)
+
+    free
+  end
+
+  defp walk_block(nil, _bound), do: MapSet.new()
 
   defp extract_param_names(params) when is_list(params) do
     Enum.flat_map(params, fn
