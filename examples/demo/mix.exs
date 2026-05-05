@@ -45,6 +45,8 @@ defmodule VaporDemo.MixProject do
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.1.0"},
       {:lazy_html, ">= 0.1.0", only: :test},
+      {:phoenix_test, "~> 0.5", only: :test, runtime: false},
+      {:phoenix_test_playwright, "~> 0.14", only: :test, runtime: false},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",

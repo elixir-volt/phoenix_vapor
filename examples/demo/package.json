@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "@vueuse/core": "^14.3.0",
+    "@vueuse/shared": "^14.3.0",
     "reka-ui": "^2.9.2",
     "vue": "^3.5.0"
   }

@@ -107,10 +107,24 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     full_assigns =
       assigns
       |> seed_ref_defaults(ref_defaults)
+      |> seed_props_alias(client_props)
       |> eval_computed_defaults(computed_exprs, ref_defaults)
 
     wrapped_statics = wrap_statics(split.statics, escaped_props, component_name)
     PhoenixVapor.Renderer.split_to_rendered(wrapped_statics, split.slots, full_assigns)
+  end
+
+  defp seed_props_alias(assigns, client_props) do
+    props_map =
+      Enum.reduce(client_props, %{}, fn prop, acc ->
+        key = if is_atom(prop), do: prop, else: String.to_atom(prop)
+        value = Map.get(assigns, key, Map.get(assigns, prop))
+        Map.put(acc, prop, value)
+      end)
+
+    assigns
+    |> Map.put(:props, props_map)
+    |> Map.put("props", props_map)
   end
 
   defp seed_ref_defaults(assigns, ref_defaults) do

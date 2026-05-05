@@ -28,6 +28,7 @@ defmodule VaporDemoWeb.Router do
     live "/compare", CompareLive
     live "/hybrid", HybridUsersLive
     live "/contacts", HybridContactsLive
+    live "/search", HybridSearchLive
   end
 
   # Other scopes may use custom stacks.

@@ -189,11 +189,12 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   defp generate_params_extraction(body, classification) do
     prop_names = MapSet.new(classification.client_props ++ classification.server_only_props)
+    reserved = MapSet.union(prop_names, MapSet.new(["props", "this", "console", "window", "document"]))
 
     params =
       body
       |> Classifier.free_variables()
-      |> Enum.reject(&MapSet.member?(prop_names, &1))
+      |> Enum.reject(&MapSet.member?(reserved, &1))
 
     if params == [] do
       "{}"
