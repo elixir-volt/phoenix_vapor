@@ -137,6 +137,49 @@ end
 
 The `"use server"` directive in the `.vue` file only defines which event names the client can push and generates `pushEvent` stubs in the client JS. The actual server logic is Elixir you write yourself. If you don't write a `handle_event` for a given name, a no-op fallback is generated.
 
+### Single-File Mode (`<script lang="elixir">`)
+
+For convenience, you can embed Elixir code directly in the `.vue` file. Everything in one place, at the cost of losing Elixir IDE support for that block:
+
+```vue
+<script lang="elixir">
+def mount(_params, _session, socket) do
+  {:ok, assign(socket, contacts: Repo.all(Contact))}
+end
+
+def handle_event("deleteContact", %{"id" => id}, socket) do
+  Repo.delete!(Contact, id)
+  {:noreply, assign(socket, contacts: Repo.all(Contact))}
+end
+</script>
+
+<script setup>
+import { ref, computed } from "vue"
+const props = defineProps(["contacts"])
+const search = ref("")
+const filtered = computed(() =>
+  (props.contacts || []).filter(c => c.name.includes(search.value))
+)
+function deleteContact(id) {
+  "use server"
+}
+</script>
+
+<template>
+  <input v-model="search" />
+  <div v-for="c in filtered">{{ c.name }}</div>
+</template>
+```
+
+```elixir
+defmodule MyAppWeb.ContactsLive do
+  use MyAppWeb, :live_view
+  use PhoenixVapor.Hybrid, file: "Contacts.vue"
+end
+```
+
+The `<script lang="elixir">` block is extracted and injected into the LiveView module at compile time. The Elixir block is stripped before Vue compilation — Vize and Volt never see it.
+
 ## Installation
 
 ```elixir

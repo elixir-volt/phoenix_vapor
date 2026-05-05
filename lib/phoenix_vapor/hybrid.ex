@@ -72,6 +72,8 @@ defmodule PhoenixVapor.Hybrid do
     client_output_dir = Keyword.get(opts, :client_output, default_client_output(caller_dir))
     client_js = generate_client_js(sfc_source, classification, full_path, client_output_dir)
 
+    elixir_block_ast = extract_elixir_block(desc, full_path)
+
     escaped_classification = Macro.escape(classification)
     escaped_client_js = Macro.escape(client_js)
 
@@ -84,6 +86,7 @@ defmodule PhoenixVapor.Hybrid do
 
       unquote(render_ast)
       unquote_splicing(event_asts)
+      unquote_splicing(elixir_block_ast)
 
       @doc false
       def __hybrid_client_js__, do: @__hybrid_client_js__
@@ -115,5 +118,24 @@ defmodule PhoenixVapor.Hybrid do
     assets_dir = Path.join(project_root, "assets/js/hybrid")
 
     if File.dir?(Path.join(project_root, "assets")), do: assets_dir
+  end
+
+  defp extract_elixir_block(desc, file_path) do
+    case desc.script do
+      %{lang: "elixir", content: content} when is_binary(content) ->
+        case Code.string_to_quoted(content, file: file_path) do
+          {:ok, {:__block__, _, exprs}} -> exprs
+          {:ok, expr} -> [expr]
+          {:error, {meta, msg, token}} ->
+            line = Keyword.get(List.wrap(meta), :line, 0)
+            raise CompileError,
+              file: file_path,
+              line: line,
+              description: "#{msg}#{token}"
+        end
+
+      _ ->
+        []
+    end
   end
 end
