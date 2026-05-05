@@ -1,6 +1,17 @@
 # Phoenix Vapor
 
-Vue template syntax compiled to native `%Phoenix.LiveView.Rendered{}` structs via Rust NIFs.
+Vue template syntax compiled to native `%Phoenix.LiveView.Rendered{}` structs via Rust NIFs. Four progressive modes from zero-JS templates to full hybrid reactivity.
+
+## Modes
+
+| Mode | What | Client JS |
+|------|------|-----------|
+| `~VUE` sigil | Vue templates in any LiveView | 0 KB |
+| `.vue` Reactive | SFC with server-side reactivity (QuickBEAM) | 0 KB |
+| `.vue` Hybrid | Split reactivity — server owns data, client owns UI | ~50 KB (Vue 3) |
+| Full Vue Runtime | Third-party Vue component libraries server-side | 0 KB |
+
+## `~VUE` Sigil
 
 ```elixir
 defmodule MyAppWeb.CounterLive do
@@ -24,32 +35,9 @@ end
 
 Same WebSocket, same diff protocol, same LiveView client. No wrapper divs, no `phx-update="ignore"`.
 
-## Three tiers
+Supported syntax: `{{ expr }}` · `:attr="expr"` · `@click` · `v-if` / `v-else-if` / `v-else` · `v-for` · `v-show` · `v-model` · `v-html` · ternaries · arithmetic · `.length` · `.toUpperCase()` · dot access · components.
 
-| Tier | What | How |
-|------|------|-----|
-| `~VUE` sigil | Vue templates in any LiveView | `~VUE"""<p>{{ count }}</p>"""` |
-| `.vue` SFC | Complete LiveView from a `.vue` file | `use PhoenixVapor.Reactive, file: "Counter.vue"` |
-| Vapor DOM | Bypass morphdom — direct DOM writes | `patchLiveSocket(liveSocket)` |
-
-## Installation
-
-```elixir
-def deps do
-  [
-    {:phoenix_vapor, "~> 0.1.0"},
-    {:quickbeam, "~> 0.3.0", optional: true}  # for complex JS expressions
-  ]
-end
-```
-
-## Supported syntax
-
-`{{ expr }}` · `:attr="expr"` · `@click="handler"` · `v-if` / `v-else-if` / `v-else` · `v-for` · `v-show` · `v-model` · `v-html` · ternaries · arithmetic · `.length` · `.toUpperCase()` · dot access · components
-
-Simple expressions evaluate in pure Elixir via OXC AST. Complex expressions (arrow functions, `.filter()`, `.map()`) fall back to [QuickBEAM](https://hex.pm/packages/quickbeam).
-
-## `.vue` SFC mode
+## Reactive Mode
 
 ```vue
 <script setup>
@@ -72,23 +60,83 @@ defmodule MyAppWeb.CounterLive do
 end
 ```
 
-`ref()` → assigns, `computed()` → derived state, functions → event handlers. Three lines of Elixir.
+`ref()` → server-side state in QuickBEAM, `computed()` → derived state, functions → event handlers. Three lines of Elixir.
 
-## Vapor DOM
+## Hybrid Mode
 
-Opt-in morphdom bypass. The client parses statics once, builds a registry mapping each dynamic slot to its DOM node, then applies diffs as direct property writes.
+Server owns data (`defineProps`), client owns UI state (`ref()`). Search, sort, filter are instant — zero server round-trip.
 
-```js
-import { patchLiveSocket } from "phoenix_vapor"
-patchLiveSocket(liveSocket)
+```vue
+<script setup>
+import { ref, computed } from "vue"
+const props = defineProps(["contacts"])
+const search = ref("")
+const filtered = computed(() =>
+  (props.contacts || []).filter(c => c.name.toLowerCase().includes(search.value.toLowerCase()))
+)
+function deleteContact(id) {
+  "use server"
+  props.contacts = props.contacts.filter(c => c.id !== id)
+}
+</script>
+
+<template>
+  <input v-model="search" placeholder="Search..." />
+  <p>{{ filtered.length }} of {{ props.contacts.length }} contacts</p>
+  <div v-for="contact in filtered" :key="contact.id">
+    {{ contact.name }}
+    <button @click="deleteContact(contact.id)">×</button>
+  </div>
+</template>
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for protocol-level details.
+```elixir
+defmodule MyAppWeb.ContactsLive do
+  use MyAppWeb, :live_view
+  use PhoenixVapor.Hybrid, file: "Contacts.vue"
+
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, contacts: Repo.all(Contact))}
+  end
+
+  def handle_event("deleteContact", %{"id" => id}, socket) do
+    Repo.delete!(Contact, id)
+    {:noreply, assign(socket, contacts: Repo.all(Contact))}
+  end
+end
+```
+
+The compiler auto-classifies bindings: `defineProps` → server, `ref()` → client, `"use server"` → server action. See [docs/hybrid-architecture.md](docs/hybrid-architecture.md).
+
+## Installation
+
+```elixir
+def deps do
+  [
+    {:phoenix_vapor, "~> 0.2.0"},
+    {:quickbeam, "~> 0.10.0", optional: true},
+    {:volt, "~> 0.10.0", optional: true}
+  ]
+end
+```
+
+## Toolchain
+
+All compilation runs through Rust NIFs and the BEAM — no Node.js required.
+
+| Tool | Role |
+|------|------|
+| [Vize](https://hex.pm/packages/vize) | Vue SFC → Vapor IR / standard render functions |
+| [OXC](https://hex.pm/packages/oxc) | JS/TS parse, transform, bundle, format, lint |
+| [QuickBEAM](https://hex.pm/packages/quickbeam) | Server-side JS runtime (Vue reactivity, complex expressions) |
+| [Volt](https://hex.pm/packages/volt) | Dev server, HMR, Tailwind, production builds |
 
 ## Docs
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it works at the protocol level, with wire format examples
-- **[examples/demo](https://github.com/elixir-volt/phoenix_vapor/tree/master/examples/demo)** — runnable Phoenix app with all features
+- [Architecture](ARCHITECTURE.md) — how each mode works at the protocol level
+- [Hybrid Architecture](docs/hybrid-architecture.md) — the split-reactivity design
+- [Wire Protocol Comparison](docs/comparison-fronix-wire-protocol.md) — PhoenixVapor vs Fronix/LiveVue
+- [examples/demo](examples/demo) — runnable Phoenix app with all modes
 
 ## License
 

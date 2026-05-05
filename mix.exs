@@ -42,7 +42,17 @@ defmodule PhoenixVapor.MixProject do
   defp docs do
     [
       main: "PhoenixVapor",
-      extras: ["README.md", "ARCHITECTURE.md", "LICENSE"],
+      extras: [
+        "README.md",
+        "ARCHITECTURE.md",
+        "docs/hybrid-architecture.md",
+        "docs/comparison-fronix-wire-protocol.md",
+        "docs/comparison-nested-props.md",
+        "LICENSE"
+      ],
+      groups_for_extras: [
+        Guides: ~r/docs\/.*/
+      ],
       source_ref: "v#{@version}",
       skip_undefined_reference_warnings_on: ["ARCHITECTURE.md"]
     ]
