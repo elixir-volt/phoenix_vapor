@@ -1,6 +1,6 @@
 defmodule VaporDemoWeb.HybridUsersLive do
   use VaporDemoWeb, :live_view
-  use PhoenixVapor.Hybrid, file: "HybridUsers.vue"
+  use PhoenixVapor, file: "HybridUsers.vue"
 
   @users [
     %{id: 1, name: "Alice Chen", email: "alice@example.com"},

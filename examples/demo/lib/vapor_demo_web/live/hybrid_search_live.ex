@@ -1,6 +1,6 @@
 defmodule VaporDemoWeb.HybridSearchLive do
   use VaporDemoWeb, :live_view
-  use PhoenixVapor.Hybrid, file: "HybridSearch.vue"
+  use PhoenixVapor, file: "HybridSearch.vue"
 
   @contacts [
     %{id: 1, name: "Alice Chen", email: "alice@acme.co", company: "Acme Corp"},
