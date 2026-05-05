@@ -282,17 +282,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   defp skip_template_literal(<<_, rest::binary>>, pos, depth), do: skip_template_literal(rest, pos + 1, depth)
 
   defp inject_bridge_exports(code) do
-    # Replace `export default` with a local binding so __mount can reference it
-    code =
-      code
-      |> String.replace(
-        ~r/export default\s+\/\*@__PURE__\*\/\s*/,
-        "const __component = /*@__PURE__*/"
-      )
-      |> String.replace(
-        ~r/export default\s*\{/,
-        "const __component = {"
-      )
+    code = rewrite_default_export(code)
 
     code <>
       """
@@ -311,6 +301,29 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
         if (__app) { __app.unmount(); __app = null; }
       }
       """
+  end
+
+  defp rewrite_default_export(code) do
+    case OXC.parse(code, "module.js") do
+      {:ok, ast} ->
+        patches =
+          OXC.collect(ast, fn
+            %{type: :export_default_declaration, start: s, declaration: %{start: ds}} ->
+              {:keep, %{start: s, end: ds, change: "const __component = "}}
+
+            _ ->
+              :skip
+          end)
+
+        if patches == [] do
+          code
+        else
+          OXC.patch_string(code, patches)
+        end
+
+      _ ->
+        code
+    end
   end
 
   defp extract_server_actions(classification) do

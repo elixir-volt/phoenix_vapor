@@ -98,10 +98,31 @@ defmodule PhoenixVapor.LiveVue do
     # Replace with globalThis assignment so we can mount after.
     setup_js =
       bundled
-      |> String.replace("var _default =", "globalThis.__sfc_component =")
+      |> rewrite_var_default_to_global()
       |> Kernel.<>("\nVue.createApp(globalThis.__sfc_component).mount(document.body);\n")
 
     {setup_js, handlers}
+  end
+
+  defp rewrite_var_default_to_global(code) do
+    case OXC.parse(code, "sfc.js") do
+      {:ok, ast} ->
+        patches =
+          OXC.collect(ast, fn
+            %{type: :variable_declaration,
+              declarations: [%{type: :variable_declarator, id: %{name: "_default"}, start: ds}],
+              start: s, kind: kind} when kind in [:var, "var"] ->
+              {:keep, %{start: s, end: ds, change: "globalThis.__sfc_component"}}
+
+            _ ->
+              :skip
+          end)
+
+        if patches == [], do: code, else: OXC.patch_string(code, patches)
+
+      _ ->
+        code
+    end
   end
 
   defp inject_handler_registration(code, []), do: code

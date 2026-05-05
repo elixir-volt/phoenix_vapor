@@ -7,13 +7,20 @@ defmodule PhoenixVapor.Renderer do
   def inject_scope_id(%Phoenix.LiveView.Rendered{static: static} = rendered, scope_id) do
     case static do
       [first | rest] ->
-        injected =
-          Regex.replace(~r/<([a-zA-Z][a-zA-Z0-9]*)/, first, "<\\1 #{scope_id}", global: false)
-
-        %{rendered | static: [injected | rest]}
+        %{rendered | static: [inject_attr_into_first_tag(first, scope_id) | rest]}
 
       _ ->
         rendered
+    end
+  end
+
+  defp inject_attr_into_first_tag(html, attr) do
+    case :binary.match(html, ">") do
+      {pos, 1} ->
+        binary_part(html, 0, pos) <> " #{attr}" <> binary_part(html, pos, byte_size(html) - pos)
+
+      :nomatch ->
+        html
     end
   end
 
@@ -210,10 +217,7 @@ defmodule PhoenixVapor.Renderer do
       attr =
         ~s( data-vapor data-vapor-statics="#{Phoenix.HTML.Engine.html_escape(statics_json)}")
 
-      injected =
-        Regex.replace(~r/<([a-zA-Z][a-zA-Z0-9-]*)/, first, "<\\1#{attr}", global: false)
-
-      [injected | rest]
+      [inject_attr_into_first_tag(first, attr) | rest]
     else
       [first | rest]
     end

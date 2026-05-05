@@ -68,12 +68,27 @@ defmodule PhoenixVapor.Vue do
 
     if css && css != "" do
       # Scope ID is embedded in the CSS by Vize's scoped style compiler
-      case Regex.run(~r/\[data-v-([a-f0-9]+)\]/, css) do
-        [_, hash] -> {"data-v-#{hash}", css}
-        nil -> {nil, css}
+      case extract_scope_id_from_css(css) do
+        {:ok, hash} -> {"data-v-#{hash}", css}
+        :error -> {nil, css}
       end
     else
       {nil, nil}
+    end
+  end
+
+  defp extract_scope_id_from_css(css) do
+    # Vize embeds scope IDs as [data-v-HASH] in compiled scoped CSS.
+    # The hash comes from Vize.compile_sfc result's style_hash.
+    case String.split(css, "[data-v-", parts: 2) do
+      [_, rest] ->
+        case String.split(rest, "]", parts: 2) do
+          [hash, _] when byte_size(hash) > 0 -> {:ok, hash}
+          _ -> :error
+        end
+
+      _ ->
+        :error
     end
   end
 end

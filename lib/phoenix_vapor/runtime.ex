@@ -152,7 +152,8 @@ defmodule PhoenixVapor.Runtime do
 
     deps =
       Map.new(computeds, fn {name, expr} ->
-        referenced = Enum.filter(names, &(&1 != name && Regex.match?(~r/\b#{Regex.escape(&1)}\b/, expr)))
+        free = free_vars_in_expr(expr)
+        referenced = Enum.filter(names, &(&1 != name && &1 in free))
         {name, referenced}
       end)
 
@@ -165,5 +166,19 @@ defmodule PhoenixVapor.Runtime do
       end)
 
     Map.new(sorted)
+  end
+
+  defp free_vars_in_expr(expr) do
+    case OXC.parse(expr, "e.js") do
+      {:ok, ast} ->
+        OXC.collect(ast, fn
+          %{type: :identifier, name: name} -> {:keep, name}
+          _ -> :skip
+        end)
+        |> MapSet.new()
+
+      _ ->
+        MapSet.new()
+    end
   end
 end
