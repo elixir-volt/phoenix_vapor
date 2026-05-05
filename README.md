@@ -135,7 +135,8 @@ All compilation runs through Rust NIFs and the BEAM — no Node.js required.
 
 - [Architecture](ARCHITECTURE.md) — how each mode works at the protocol level
 - [Hybrid Architecture](docs/hybrid-architecture.md) — the split-reactivity design
-- [Wire Protocol Comparison](docs/comparison-fronix-wire-protocol.md) — PhoenixVapor vs Fronix/LiveVue
+- [Wire Protocol Comparison](docs/comparisons/fronix-wire-protocol.md) — PhoenixVapor vs Fronix/LiveVue
+- [Hologram Comparison](docs/comparisons/hologram.md) — PhoenixVapor vs Hologram
 - [examples/demo](examples/demo) — runnable Phoenix app with all modes
 
 ## License

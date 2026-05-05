@@ -46,12 +46,14 @@ defmodule PhoenixVapor.MixProject do
         "README.md",
         "ARCHITECTURE.md",
         "docs/hybrid-architecture.md",
-        "docs/comparison-fronix-wire-protocol.md",
-        "docs/comparison-nested-props.md",
+        "docs/comparisons/fronix-wire-protocol.md",
+        "docs/comparisons/hologram.md",
+        "docs/comparisons/nested-props.md",
         "LICENSE"
       ],
       groups_for_extras: [
-        Guides: ~r/docs\/.*/
+        Guides: ["docs/hybrid-architecture.md"],
+        Comparisons: ~r/docs\/comparisons\/.*/
       ],
       source_ref: "v#{@version}",
       skip_undefined_reference_warnings_on: ["ARCHITECTURE.md"]
