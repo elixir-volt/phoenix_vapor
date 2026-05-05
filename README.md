@@ -108,6 +108,35 @@ end
 
 The compiler auto-classifies bindings: `defineProps` → server, `ref()` → client, `"use server"` → server action. See [docs/hybrid-architecture.md](docs/hybrid-architecture.md).
 
+### Custom Elixir Code
+
+The hybrid module is a normal LiveView. The macro only generates `render/1` and fallback event handlers — everything else is yours:
+
+```elixir
+defmodule MyAppWeb.ContactsLive do
+  use MyAppWeb, :live_view
+  use PhoenixVapor.Hybrid, file: "Contacts.vue"
+
+  # Standard LiveView callbacks — write whatever you need
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, contacts: Repo.all(Contact))}
+  end
+
+  # Your handle_event takes precedence over the generated fallback
+  def handle_event("deleteContact", %{"id" => id}, socket) do
+    Repo.delete!(Contact, id)
+    {:noreply, assign(socket, contacts: Repo.all(Contact))}
+  end
+
+  # handle_info, handle_params, etc. all work normally
+  def handle_info({:contact_created, contact}, socket) do
+    {:noreply, assign(socket, contacts: [contact | socket.assigns.contacts])}
+  end
+end
+```
+
+The `"use server"` directive in the `.vue` file only defines which event names the client can push and generates `pushEvent` stubs in the client JS. The actual server logic is Elixir you write yourself. If you don't write a `handle_event` for a given name, a no-op fallback is generated.
+
 ## Installation
 
 ```elixir

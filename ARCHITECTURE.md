@@ -81,6 +81,25 @@ Initial render: server sends statics + dynamics + props JSON in `data-pv-props` 
 - **Client → Server**: `"use server"` function → `pushEvent` → `handle_event` → assign change → back to step 1
 - **Client → Client**: `ref` mutation → computed recomputation → Vue re-render. No wire.
 
+### Custom Elixir Code
+
+A hybrid module is a standard LiveView. The `use PhoenixVapor.Hybrid` macro generates `render/1` and fallback `handle_event/3` stubs (via `@before_compile`) — everything else is yours to define. User-defined `handle_event` clauses take precedence over generated fallbacks.
+
+The `"use server"` directive in the `.vue` file serves two purposes:
+1. Tells the client codegen to generate a `pushEvent` call for that function name
+2. Registers the event name so a fallback `handle_event` is generated if the developer doesn't write one
+
+The developer writes the actual server logic in Elixir:
+
+```elixir
+def handle_event("deleteContact", %{"id" => id}, socket) do
+  Repo.delete!(Contact, id)
+  {:noreply, assign(socket, contacts: Repo.all(Contact))}
+end
+```
+
+All standard LiveView callbacks work: `mount/3`, `handle_info/2`, `handle_params/3`, `terminate/2`. PubSub subscriptions, presence, streams — the full LiveView toolkit is available.
+
 ## Mode 4: Full Vue Runtime
 
 Third-party Vue component libraries rendered server-side in QuickBEAM.
