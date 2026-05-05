@@ -122,8 +122,8 @@ defmodule PhoenixVapor.HybridTest do
 
     test "client JS contains Vue Vapor render" do
       js = TestLive.__hybrid_client_js__()
-      assert js =~ "renderEffect"
-      assert js =~ "_template("
+      assert js =~ "openBlock" or js =~ "createElementVNode"
+      assert js =~ "createElementVNode"
     end
 
     test "client JS has deleteUser as server action" do

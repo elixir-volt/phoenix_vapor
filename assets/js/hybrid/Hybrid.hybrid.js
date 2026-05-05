@@ -1,9 +1,12 @@
-import { shallowRef, triggerRef } from 'vue';
-const __serverProps = { value: {} };
+import { createApp as __createApp, reactive as __reactive } from 'vue';
 let __bridge = null;
+let __propsState = __reactive({});
 
 export function __applyProps(props) {
-  __serverProps.value = props;
+  for (const key of Object.keys(__propsState)) {
+    if (!(key in props)) delete __propsState[key];
+  }
+  Object.assign(__propsState, props);
 }
 
 export function __setBridge(bridge) {
@@ -14,39 +17,14 @@ export function __getClientState() {
   return ["search"];
 }
 
-import { defineVaporComponent as _defineVaporComponent, getCurrentInstance as _getCurrentInstance, proxyRefs as _proxyRefs } from 'vue'
-import { child as _child, next as _next, txt as _txt, toDisplayString as _toDisplayString, setText as _setText, setProp as _setProp, createInvoker as _createInvoker, delegateEvents as _delegateEvents, renderEffect as _renderEffect, template as _template } from 'vue';
+import { openBlock as _openBlock, createElementBlock as _createElementBlock, createElementVNode as _createElementVNode, toDisplayString as _toDisplayString } from "vue"
 
-
-const t0 = _template("<div><h1> </h1><input><p> </p><button>Clear</button><button>Delete</button></div>", true)
-_delegateEvents("click")
-_delegateEvents("input")
-
-function render(_ctx, $props, $emit, $attrs, $slots) {
-  const n5 = t0()
-  const n0 = _child(n5)
-  const n1 = _next(n0)
-  const n2 = _next(n1)
-  const n3 = _next(n2)
-  const n4 = _next(n3)
-  const x0 = _txt(n0)
-  const x2 = _txt(n2)
-  n1.$evtinput = _createInvoker($event => (_ctx.search = $event.target.value))
-  n3.$evtclick = _createInvoker(e => _ctx.clearSearch(e))
-  n4.$evtclick = _createInvoker(() => (_ctx.deleteUser(1)))
-  _renderEffect(() => _setText(x0, _toDisplayString(_ctx.title)))
-  _renderEffect(() => _setProp(n1, "value", _ctx.search))
-  _renderEffect(() => _setText(x2, _toDisplayString(_ctx.filtered.length) + " results"))
-  return n5
-}
-const __vaporRender = render
 import { ref, computed } from 'vue'
 
-const __vaporComponent = /*@__PURE__*/_defineVaporComponent({
+const __component = {
   __name: 'anonymous',
   props: ["users", "title"],
-  render: __vaporRender,
-  setup(__pvOriginalProps, { emit: __emit, attrs: __attrs, slots: __slots }) {
+  setup(__props) {
 
 const search = ref("")
 const filtered = computed(() => users.filter(u => u.name.includes(search.value)))
@@ -58,26 +36,28 @@ function deleteUser(id) { Object.assign(__serverProps.value, { users: users.filt
     __bridge.pushEvent("deleteUser", { id: id }) 
 }
 
-const __returned__ = { filtered, clearSearch, computed, ref, search, deleteUser }
-Object.defineProperty(__returned__, '__isScriptSetup', { enumerable: false, value: true })
-const __instance = _getCurrentInstance()
-const __ctx = _proxyRefs(__returned__)
-if (__instance) __instance.setupState = __ctx
-return __vaporRender(__ctx, __serverProps.value, __emit, __attrs, __slots)
+return (_ctx, _cache) => {
+  return (_openBlock(), _createElementBlock("div", null, [ _createElementVNode("h1", null, _toDisplayString(__props.title), 1 /* TEXT */), _createElementVNode("input", {
+        value: search.value,
+        onInput: _cache[0] || (_cache[0] = $event => (search.value = $event.target.value))
+      }, null, 40 /* PROPS, NEED_HYDRATION */, ["value"]), _createElementVNode("p", null, _toDisplayString(filtered.value.length) + " results", 1 /* TEXT */), _createElementVNode("button", { onClick: clearSearch }, "Clear"), _createElementVNode("button", {
+        onClick: _cache[1] || (_cache[1] = $event => (deleteUser(1)))
+      }, "Delete") ]))
+}
 }
 
-})
+}
 
-export default __vaporComponent;
+export { __component as default };
+
+let __app = null;
 
 export function __mount(el, bridge) {
   __bridge = bridge;
-  const setup = __vaporComponent.setup;
-  if (!setup) return;
-  const result = setup(
-    __serverProps.value,
-    { emit: () => {}, attrs: {}, slots: {} }
-  );
-  if (result instanceof Node) el.appendChild(result);
-  else if (Array.isArray(result)) result.forEach(n => { if (n instanceof Node) el.appendChild(n); });
+  __app = __createApp(__component, __propsState);
+  __app.mount(el);
+}
+
+export function __unmount() {
+  if (__app) { __app.unmount(); __app = null; }
 }

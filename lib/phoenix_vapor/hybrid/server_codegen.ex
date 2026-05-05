@@ -183,7 +183,8 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
         ""
       end
 
-    wrapper_open = ~s(<div data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}>)
+    hook_id = if component_name, do: ~s( id="pv-#{component_name}"), else: ""
+    wrapper_open = ~s(<div#{hook_id} data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}>)
 
     case rest do
       [] ->

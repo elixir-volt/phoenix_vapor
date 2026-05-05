@@ -12,6 +12,7 @@
 export function createHybridHook(components) {
   return {
     mounted() {
+      console.error('[PV-BRIDGE] mounted() fired!')
       const el = this.el
       const componentName = el.dataset.pvClient
 
@@ -34,14 +35,11 @@ export function createHybridHook(components) {
       if (mod.__setBridge) mod.__setBridge(bridge)
 
       const initialProps = JSON.parse(el.dataset.pvProps || '{}')
-      console.log('[PV-bridge] applyProps with', Object.keys(initialProps), initialProps.contacts?.length, 'contacts')
       if (mod.__applyProps) mod.__applyProps(initialProps)
 
       if (mod.__mount) {
-        console.log('[PV-bridge] calling __mount')
         el.innerHTML = ''
         mod.__mount(el, bridge)
-        console.log('[PV-bridge] mount done, el children:', el.childElementCount, 'text:', el.innerText?.substring(0, 100))
       }
 
       this.__pvModule = mod

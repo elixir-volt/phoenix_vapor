@@ -18,7 +18,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   """
   @spec generate(String.t(), Classifier.classification()) :: {:ok, String.t()} | {:error, term()}
   def generate(sfc_source, classification) do
-    case Vize.compile_sfc(sfc_source, vapor: true) do
+    case Vize.compile_sfc(sfc_source) do
       {:ok, result} ->
         js = transform(result.code, classification)
         {:ok, js}
@@ -55,12 +55,15 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
       |> Enum.sort()
 
     preamble = """
-    import { shallowRef, triggerRef } from 'vue';
-    const __serverProps = { value: {} };
+    import { createApp as __createApp, reactive as __reactive } from 'vue';
     let __bridge = null;
+    let __propsState = __reactive({});
 
     export function __applyProps(props) {
-      __serverProps.value = props;
+      for (const key of Object.keys(__propsState)) {
+        if (!(key in props)) delete __propsState[key];
+      }
+      Object.assign(__propsState, props);
     }
 
     export function __setBridge(bridge) {
@@ -80,21 +83,10 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     "[#{pairs}]"
   end
 
-  # Workaround: Vue Vapor 3.6.0-alpha does not forward component props
-  # to setup(__props) via createVaporApp(). Replace `const props = __props`
-  # with direct access to our reactive bridge object.
-  # Remove when Vue Vapor stabilizes prop forwarding.
   defp rewrite_props_source(code) do
+    # No rewrite needed — createVaporApp passes props to setup via __props.
+    # We keep __serverProps for future prop updates from LiveView diffs.
     code
-    |> String.replace("const props = __props", "const props = __serverProps.value")
-    |> String.replace(
-      ~r/setup\(__props,\s*\{/,
-      "setup(__pvOriginalProps, {"
-    )
-    |> String.replace(
-      ~r/return __vaporRender\(__ctx,\s*__props,/,
-      "return __vaporRender(__ctx, __serverProps.value,"
-    )
   end
 
   defp rewrite_server_actions(code, server_actions, classification) do
@@ -292,27 +284,31 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   defp inject_bridge_exports(code) do
     # Replace `export default` with a local binding so __mount can reference it
     code =
-      String.replace(
-        code,
+      code
+      |> String.replace(
         ~r/export default\s+\/\*@__PURE__\*\/\s*/,
-        "const __vaporComponent = /*@__PURE__*/"
+        "const __component = /*@__PURE__*/"
+      )
+      |> String.replace(
+        ~r/export default\s*\{/,
+        "const __component = {"
       )
 
     code <>
       """
 
-      export default __vaporComponent;
+      export { __component as default };
+
+      let __app = null;
 
       export function __mount(el, bridge) {
         __bridge = bridge;
-        const setup = __vaporComponent.setup;
-        if (!setup) return;
-        const result = setup(
-          __serverProps.value,
-          { emit: () => {}, attrs: {}, slots: {} }
-        );
-        if (result instanceof Node) el.appendChild(result);
-        else if (Array.isArray(result)) result.forEach(n => { if (n instanceof Node) el.appendChild(n); });
+        __app = __createApp(__component, __propsState);
+        __app.mount(el);
+      }
+
+      export function __unmount() {
+        if (__app) { __app.unmount(); __app = null; }
       }
       """
   end

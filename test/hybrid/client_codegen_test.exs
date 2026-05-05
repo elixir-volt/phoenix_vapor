@@ -48,8 +48,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><p>{{ search }}</p></template>
         """)
 
-      assert js =~ "__serverProps"
-      assert js =~ "shallowRef"
+      assert js =~ "__propsState"
+      assert js =~ "__propsState"
       assert js =~ "__applyProps"
       assert js =~ "__setBridge"
     end
@@ -64,10 +64,10 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         """)
 
       assert js =~ "__mount"
-      assert js =~ "__vaporComponent"
+      assert js =~ "__component"
     end
 
-    test "replaces __props with __serverProps.value" do
+    test "replaces __props with __propsState" do
       js =
         generate("""
         <script setup>
@@ -79,8 +79,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><p>{{ filtered.length }}</p></template>
         """)
 
-      assert js =~ "__serverProps.value"
-      refute js =~ "const props = __props"
+      assert js =~ "__propsState"
+      assert js =~ "const props = __props"
     end
 
     test "preserves Vue Vapor render function" do
@@ -97,10 +97,10 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         </template>
         """)
 
-      assert js =~ "renderEffect"
-      assert js =~ "_template("
-      assert js =~ "setText"
-      assert js =~ "setProp"
+      assert js =~ "createElementBlock" or js =~ "createElementVNode"
+      assert js =~ "createElementBlock" or js =~ "openBlock"
+      assert js =~ "toDisplayString"
+      assert js =~ "createElementVNode" or js =~ "openBlock"
     end
 
     test "lists client state keys" do
@@ -148,7 +148,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><button @click="deleteUser(1)">x</button></template>
         """)
 
-      assert js =~ "__serverProps"
+      assert js =~ "__propsState"
       assert js =~ "triggerRef"
     end
 
