@@ -56,7 +56,7 @@ function increment() { count++ }
 ```elixir
 defmodule MyAppWeb.CounterLive do
   use MyAppWeb, :live_view
-  use PhoenixVapor.Reactive, file: "Counter.vue"
+  use PhoenixVapor, file: "Counter.vue", runtime: :reactive
 end
 ```
 
@@ -93,7 +93,7 @@ function deleteContact(id) {
 ```elixir
 defmodule MyAppWeb.ContactsLive do
   use MyAppWeb, :live_view
-  use PhoenixVapor.Hybrid, file: "Contacts.vue"
+  use PhoenixVapor, file: "Contacts.vue"
 
   def mount(_params, _session, socket) do
     {:ok, assign(socket, contacts: Repo.all(Contact))}
@@ -115,7 +115,7 @@ The hybrid module is a normal LiveView. The macro only generates `render/1` and 
 ```elixir
 defmodule MyAppWeb.ContactsLive do
   use MyAppWeb, :live_view
-  use PhoenixVapor.Hybrid, file: "Contacts.vue"
+  use PhoenixVapor, file: "Contacts.vue"
 
   # Standard LiveView callbacks — write whatever you need
   def mount(_params, _session, socket) do
@@ -174,7 +174,7 @@ function deleteContact(id) {
 ```elixir
 defmodule MyAppWeb.ContactsLive do
   use MyAppWeb, :live_view
-  use PhoenixVapor.Hybrid, file: "Contacts.vue"
+  use PhoenixVapor, file: "Contacts.vue"
 end
 ```
 

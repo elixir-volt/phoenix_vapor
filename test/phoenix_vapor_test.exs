@@ -919,7 +919,7 @@ defmodule PhoenixVaporTest do
   describe "Reactive macro" do
     defmodule ReactiveCounter do
       use Phoenix.LiveView
-      use PhoenixVapor.Reactive, file: "fixtures/Counter.vue"
+      use PhoenixVapor, file: "fixtures/Counter.vue", runtime: :reactive
     end
 
     test "generates mount with initial state" do

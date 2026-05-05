@@ -552,8 +552,8 @@ The hybrid mode is **additive** — existing PhoenixVapor modes continue to work
 | Mode | Client JS | Use case |
 |------|-----------|----------|
 | `~VUE` sigil | 0KB | Vue syntax as template DSL, zero JS |
-| `use PhoenixVapor.Reactive` | 0KB | Server-side reactivity (QuickBEAM) |
-| `use PhoenixVapor.Hybrid` | 12KB | Split reactivity, instant client UI |
+| `runtime: :reactive` | 0KB | Server-side reactivity (QuickBEAM) |
+| (auto when ref exists) | ~50KB | Split reactivity, instant client UI |
 
 Phases:
 1. Ship the bridge module (receive prop diffs into a `shallowRef`)

@@ -291,7 +291,7 @@ function deleteItem(id) {
 
 ```elixir
 defmodule MyApp.ItemsLive do
-  use PhoenixVapor.Hybrid, file: "Items.vue"
+  use PhoenixVapor, file: "Items.vue"
 
   def mount(_, _, socket), do: {:ok, assign(socket, items: Repo.all(Item))}
 

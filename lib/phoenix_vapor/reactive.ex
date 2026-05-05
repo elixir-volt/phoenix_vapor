@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.Reactive do
   @moduledoc """
-  Use Vue Single File Components as LiveView modules.
+  Server-side Vue reactivity via QuickBEAM.
+
+  Use via: `use PhoenixVapor, file: "X.vue", runtime: :reactive`
 
   Compiles `<script setup>` + `<template>` from a `.vue` file into a
   fully functional LiveView with auto-generated mount, render, and
@@ -15,7 +17,7 @@ defmodule PhoenixVapor.Reactive do
 
       defmodule MyAppWeb.CounterLive do
         use MyAppWeb, :live_view
-        use PhoenixVapor.Reactive, file: "Counter.vue"
+        use PhoenixVapor, file: "Counter.vue", runtime: :reactive
       end
 
   Given `Counter.vue`:

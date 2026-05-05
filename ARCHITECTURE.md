@@ -83,7 +83,7 @@ Initial render: server sends statics + dynamics + props JSON in `data-pv-props` 
 
 ### Custom Elixir Code
 
-A hybrid module is a standard LiveView. The `use PhoenixVapor.Hybrid` macro generates `render/1` and fallback `handle_event/3` stubs (via `@before_compile`) — everything else is yours to define. User-defined `handle_event` clauses take precedence over generated fallbacks.
+A hybrid module is a standard LiveView. The `use PhoenixVapor` macro generates `render/1` and fallback `handle_event/3` stubs (via `@before_compile`) — everything else is yours to define. User-defined `handle_event` clauses take precedence over generated fallbacks.
 
 The `"use server"` directive in the `.vue` file serves two purposes:
 1. Tells the client codegen to generate a `pushEvent` call for that function name
@@ -122,18 +122,18 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 - `PhoenixVapor.Vue` — `.vue` file loading
 
 ### Reactive
-- `PhoenixVapor.Reactive` — `use PhoenixVapor.Reactive, file: "X.vue"`
+- `PhoenixVapor.Reactive` — server-side reactivity implementation
 - `PhoenixVapor.Runtime` — QuickBEAM GenServer for reactive state
 - `PhoenixVapor.ScriptSetup` — `<script setup>` parsing
 
 ### Hybrid
-- `PhoenixVapor.Hybrid` — `use PhoenixVapor.Hybrid, file: "X.vue"`
+- `PhoenixVapor.Hybrid` — split reactivity implementation
 - `PhoenixVapor.Hybrid.Classifier` — binding classification via AST
 - `PhoenixVapor.Hybrid.ServerCodegen` — Elixir code generation
 - `PhoenixVapor.Hybrid.ClientCodegen` — Vue 3 JS generation
 
 ### Full Runtime
-- `PhoenixVapor.LiveVue` — `use PhoenixVapor.LiveVue, file: "X.vue", bundle: "..."`
+- `PhoenixVapor.LiveVue` — full Vue runtime (runtime: :full)
 - `PhoenixVapor.VueRuntime` — QuickBEAM GenServer for full Vue
 
 ### Client JS

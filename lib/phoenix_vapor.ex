@@ -76,6 +76,12 @@ defmodule PhoenixVapor do
     end
   end
 
+  defp do_use_file(file, :reactive, _opts, _caller) do
+    quote do
+      use PhoenixVapor.Reactive, file: unquote(file)
+    end
+  end
+
   defp do_use_file(file, _runtime, opts, caller) do
     caller_dir = caller.file |> Path.dirname()
     full_path = Path.expand(file, caller_dir)

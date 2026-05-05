@@ -3,7 +3,7 @@ defmodule PhoenixVapor.Hybrid.SingleFileTest do
 
   defmodule FruitsLive do
     use Phoenix.LiveView
-    use PhoenixVapor.Hybrid, file: "../fixtures/HybridSingleFile.vue"
+    use PhoenixVapor, file: "../fixtures/HybridSingleFile.vue"
   end
 
   describe "elixir block: mount" do

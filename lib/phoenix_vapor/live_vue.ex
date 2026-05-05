@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.LiveVue do
   @moduledoc """
-  Mount Vue SFC files as LiveView pages with full component runtime.
+  Full Vue component runtime in QuickBEAM.
+
+  Use via: `use PhoenixVapor, file: "X.vue", runtime: :full, bundle: "..."`
 
   Compiles `.vue` files with Vize, bundles with Volt (resolving component
   imports as externals against the pre-loaded bundle), then runs the result
@@ -10,8 +12,8 @@ defmodule PhoenixVapor.LiveVue do
 
       defmodule MyAppWeb.DialogLive do
         use MyAppWeb, :live_view
-        use PhoenixVapor.LiveVue,
-          file: "Dialog.vue",
+        use PhoenixVapor,
+          file: "Dialog.vue", runtime: :full,
           bundle: "priv/js/reka-dialog.js"
       end
   """

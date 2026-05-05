@@ -1,38 +1,17 @@
 defmodule PhoenixVapor.Hybrid do
   @moduledoc """
-  Use Vue SFCs as hybrid LiveView components with split reactivity.
+  Hybrid mode implementation — split reactivity between server and client.
 
-  Server-owned state (from `defineProps`) is managed by LiveView assigns.
-  Client-owned state (`ref()`) runs in the browser via Vue Vapor.
-  The compiler automatically classifies bindings and generates both sides.
+  Use via the unified API:
 
-  ## Usage
+      use PhoenixVapor, file: "Contacts.vue"
 
-      defmodule MyAppWeb.UsersLive do
-        use MyAppWeb, :live_view
-        use PhoenixVapor.Hybrid, file: "Users.vue"
-      end
+  ## How it works
 
-  Given `Users.vue`:
+  When a `.vue` file has `ref()` in `<script setup>`, the unified API
+  (`use PhoenixVapor, file: "X.vue"`) routes here automatically.
 
-      <script setup>
-      import { ref, computed } from "vue"
-      defineProps(["users"])
-      const search = ref("")
-      const filtered = computed(() => users.filter(u => u.name.includes(search.value)))
-      function deleteUser(id) { "use server"; users = users.filter(u => u.id !== id) }
-      </script>
-
-      <template>
-        <input v-model="search" />
-        <p>{{ filtered.length }} results</p>
-        <button @click="deleteUser(1)">Delete</button>
-      </template>
-
-  This generates:
-  - `render/1` — server-rendered HTML with props payload for client hydration
-  - `handle_event/3` — for each `"use server"` function
-  - A client JS module (Vue Vapor) — written to the build output directory
+  Generates `render/1`, `handle_event/3` stubs, and a client JS module.
   """
 
   alias PhoenixVapor.Hybrid.{Classifier, ServerCodegen, ClientCodegen}
