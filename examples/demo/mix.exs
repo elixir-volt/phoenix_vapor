@@ -1,9 +1,9 @@
-defmodule PhoenixVaporDemo.MixProject do
+defmodule VaporDemo.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :phoenix_vapor_demo,
+      app: :vapor_demo,
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -20,7 +20,7 @@ defmodule PhoenixVaporDemo.MixProject do
   # Type `mix help compile.app` for more information.
   def application do
     [
-      mod: {PhoenixVaporDemo.Application, []},
+      mod: {VaporDemo.Application, []},
       extra_applications: [:logger, :runtime_tools]
     ]
   end

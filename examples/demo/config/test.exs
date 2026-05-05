@@ -2,7 +2,7 @@ import Config
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
-config :phoenix_vapor_demo, PhoenixVaporDemoWeb.Endpoint,
+config :vapor_demo, VaporDemoWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
   secret_key_base: "gHHPjpIgBsbcU761ZFj0ocsApRFavdCHtLoYAHLe3btHkuRqfUFEtOLj7q1Qbs+J",
   server: false

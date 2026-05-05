@@ -7,18 +7,18 @@
 # General application configuration
 import Config
 
-config :phoenix_vapor_demo,
+config :vapor_demo,
   generators: [timestamp_type: :utc_datetime]
 
 # Configure the endpoint
-config :phoenix_vapor_demo, PhoenixVaporDemoWeb.Endpoint,
+config :vapor_demo, VaporDemoWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
-    formats: [html: PhoenixVaporDemoWeb.ErrorHTML, json: PhoenixVaporDemoWeb.ErrorJSON],
+    formats: [html: VaporDemoWeb.ErrorHTML, json: VaporDemoWeb.ErrorJSON],
     layout: false
   ],
-  pubsub_server: PhoenixVaporDemo.PubSub,
+  pubsub_server: VaporDemo.PubSub,
   live_view: [signing_salt: "qQeZE5Bm"]
 
 # Configure Volt (replaces esbuild + tailwind)
