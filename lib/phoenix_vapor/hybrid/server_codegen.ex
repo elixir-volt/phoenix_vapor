@@ -38,7 +38,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   - A `data-pv-props` attribute with JSON-encoded client-consumed props
   - Change tracking that skips client-owned slots when only client props changed
   """
-  def gen_render(split, classification, _props, computeds \\ %{}, component_name \\ nil) do
+  def gen_render(
+        split,
+        classification,
+        _props,
+        computeds \\ %{},
+        component_name \\ nil,
+        client_version \\ nil,
+        partial_props \\ false
+      ) do
     escaped_split = Macro.escape(split)
     client_props = Macro.escape(classification.client_props)
     slot_owners = classify_slots(split.slots, classification)
@@ -51,6 +59,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     escaped_computed_exprs = Macro.escape(computed_exprs)
 
     escaped_component_name = Macro.escape(component_name)
+    escaped_client_version = Macro.escape(client_version)
 
     quote do
       def render(var!(assigns)) do
@@ -61,7 +70,9 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
           unquote(escaped_slot_owners),
           unquote(escaped_ref_defaults),
           unquote(escaped_computed_exprs),
-          unquote(escaped_component_name)
+          unquote(escaped_component_name),
+          unquote(escaped_client_version),
+          unquote(partial_props)
         )
       end
     end
@@ -100,8 +111,26 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   - Change tracking: client-owned slots still re-evaluate when their
     underlying server prop changes (for LV diff correctness)
   """
-  def build_rendered(split, assigns, client_props, _slot_owners, ref_defaults, computed_exprs, component_name \\ nil) do
-    props_json = encode_client_props(assigns, client_props)
+  def build_rendered(
+        split,
+        assigns,
+        client_props,
+        _slot_owners,
+        ref_defaults,
+        computed_exprs,
+        component_name \\ nil,
+        client_version \\ nil,
+        partial_props \\ false
+      ) do
+    props_json =
+      assigns
+      |> PhoenixVapor.Hybrid.Props.build_envelope(client_props,
+        component: component_name,
+        client_version: client_version,
+        partial: partial_props
+      )
+      |> PhoenixVapor.Hybrid.Props.encode_envelope!()
+
     escaped_props = props_json |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 
     full_assigns =
@@ -110,7 +139,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       |> seed_props_alias(client_props)
       |> eval_computed_defaults(computed_exprs, ref_defaults)
 
-    wrapped_statics = wrap_statics(split.statics, escaped_props, component_name)
+    wrapped_statics = wrap_statics(split.statics, escaped_props, component_name, client_version)
     PhoenixVapor.Renderer.split_to_rendered(wrapped_statics, split.slots, full_assigns)
   end
 
@@ -155,6 +184,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
         |> Enum.filter(fn {k, _} -> is_atom(k) and k not in [:__changed__, :__components__] end)
         |> Map.new(fn {k, v} ->
           name = Atom.to_string(k)
+
           if MapSet.member?(ref_names, name) do
             {name, %{"value" => v}}
           else
@@ -189,16 +219,19 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     end
   end
 
-  defp wrap_statics([first | rest], escaped_props, component_name) do
+  defp wrap_statics([first | rest], escaped_props, component_name, client_version) do
     hook_attrs =
       if component_name do
-        ~s( phx-hook="PhoenixVaporHybrid" data-pv-client="#{component_name}")
+        version_attr = if client_version, do: ~s( data-pv-version="#{client_version}"), else: ""
+        ~s( phx-hook="PhoenixVaporHybrid" data-pv-client="#{component_name}"#{version_attr})
       else
         ""
       end
 
     hook_id = if component_name, do: ~s( id="pv-#{component_name}"), else: ""
-    wrapper_open = ~s(<div#{hook_id} data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}>)
+
+    wrapper_open =
+      ~s(<div#{hook_id} data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}>)
 
     case rest do
       [] ->
@@ -211,25 +244,16 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     end
   end
 
-  defp wrap_statics([], escaped_props, component_name) do
+  defp wrap_statics([], escaped_props, component_name, client_version) do
     hook_attrs =
       if component_name do
-        ~s( phx-hook="PhoenixVaporHybrid" data-pv-client="#{component_name}")
+        version_attr = if client_version, do: ~s( data-pv-version="#{client_version}"), else: ""
+        ~s( phx-hook="PhoenixVaporHybrid" data-pv-client="#{component_name}"#{version_attr})
       else
         ""
       end
 
     [~s(<div data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}></div>)]
-  end
-
-  defp encode_client_props(assigns, client_props) do
-    client_props
-    |> Map.new(fn prop ->
-      key = if is_atom(prop), do: prop, else: String.to_atom(prop)
-      value = Map.get(assigns, key, Map.get(assigns, prop))
-      {prop, value}
-    end)
-    |> Jason.encode!()
   end
 
   @doc """
@@ -241,15 +265,13 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       |> Enum.filter(fn {_name, kind} -> match?({:server_action, _}, kind) end)
       |> Enum.map(fn {name, _} -> name end)
 
-    if action_names == [] do
-      []
-    else
-      [quote do
+    [
+      quote do
         @__hybrid_server_actions__ unquote(action_names)
 
         @before_compile PhoenixVapor.Hybrid.ServerCodegen
-      end]
-    end
+      end
+    ]
   end
 
   defmacro __before_compile__(env) do
@@ -259,13 +281,23 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     if has_handle_event do
       []
     else
-      for name <- actions do
+      deferred_event =
         quote do
-          def handle_event(unquote(name), _params, socket) do
-            {:noreply, socket}
+          def handle_event("pv:deferred", %{"group" => group}, socket) do
+            {:noreply, PhoenixVapor.Hybrid.Props.resolve_deferred(socket, group)}
           end
         end
-      end
+
+      action_events =
+        for name <- actions do
+          quote do
+            def handle_event(unquote(name), _params, socket) do
+              {:noreply, socket}
+            end
+          end
+        end
+
+      [deferred_event | action_events]
     end
   end
 

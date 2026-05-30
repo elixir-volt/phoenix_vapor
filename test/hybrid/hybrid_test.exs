@@ -11,6 +11,11 @@ defmodule PhoenixVapor.HybridTest do
     use PhoenixVapor, file: "../fixtures/HybridContacts.vue"
   end
 
+  defmodule PartialContactsLive do
+    use Phoenix.LiveView
+    use PhoenixVapor, file: "../fixtures/HybridContacts.vue", partial_props: true
+  end
+
   @contacts [
     %{id: 1, name: "Alice Chen", email: "alice@test.com"},
     %{id: 2, name: "Bob Smith", email: "bob@test.com"},
@@ -53,23 +58,9 @@ defmodule PhoenixVapor.HybridTest do
   end
 
   defp extract_props_json(html) do
-    case String.split(html, ~s(data-pv-props="), parts: 2) do
-      [_, rest] ->
-        case String.split(rest, ~s("), parts: 2) do
-          [encoded, _] ->
-            encoded
-            |> String.replace("&quot;", ~s("))
-            |> String.replace("&amp;", "&")
-            |> String.replace("&lt;", "<")
-            |> String.replace("&gt;", ">")
-            |> Jason.decode!()
-
-          _ ->
-            nil
-        end
-
-      _ ->
-        nil
+    case PhoenixVapor.Testing.hybrid_envelope(html) do
+      %{"props" => props} -> props
+      props -> props
     end
   end
 
@@ -95,6 +86,32 @@ defmodule PhoenixVapor.HybridTest do
       html = ContactsLive.render(%{contacts: @contacts, title: "T"}) |> render_to_html()
       props = extract_props_json(html)
       assert is_map(props)
+    end
+
+    test "wrapper has structured prop envelope metadata" do
+      html = ContactsLive.render(%{contacts: @contacts, title: "T"}) |> render_to_html()
+      envelope = PhoenixVapor.Testing.hybrid_envelope(html)
+
+      assert envelope["version"] == 1
+      assert envelope["component"] == "HybridContacts"
+      assert envelope["full"] == true
+      assert is_binary(envelope["clientVersion"])
+      assert html =~ ~s(data-pv-version="#{envelope["clientVersion"]}")
+    end
+
+    test "partial props opt-in emits partial envelopes when LiveView reports changes" do
+      html =
+        PartialContactsLive.render(%{
+          contacts: @contacts,
+          title: "T",
+          __changed__: %{contacts: true}
+        })
+        |> render_to_html()
+
+      envelope = PhoenixVapor.Testing.hybrid_envelope(html)
+
+      assert envelope["full"] == false
+      assert Map.keys(envelope["props"]) == ["contacts"]
     end
   end
 
@@ -165,12 +182,16 @@ defmodule PhoenixVapor.HybridTest do
         dynamic
         |> List.flatten()
         |> Enum.any?(fn
-          %Phoenix.LiveView.Comprehension{} -> true
+          %Phoenix.LiveView.Comprehension{} ->
+            true
+
           %Phoenix.LiveView.Rendered{dynamic: d} ->
             d.(false)
             |> List.flatten()
             |> Enum.any?(&match?(%Phoenix.LiveView.Comprehension{}, &1))
-          _ -> false
+
+          _ ->
+            false
         end)
 
       assert has_comprehension

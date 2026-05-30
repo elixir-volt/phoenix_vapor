@@ -21,6 +21,15 @@ export function createHybridHook(components) {
       }
 
       const component = components[componentName]
+      const expectedVersion = el.dataset.pvVersion
+
+      if (expectedVersion && component.__pvVersion && component.__pvVersion !== expectedVersion) {
+        window.location.reload()
+        return
+      }
+
+      const initialProps = parseProps(el, "initial props")
+      if (initialProps) component.__applyProps(initialProps)
 
       const bridge = {
         pushEvent: (event, params, callback) => {
@@ -36,39 +45,49 @@ export function createHybridHook(components) {
 
       component.__mount(el, bridge)
       this.__pvComponent = component
+      requestDeferred.call(this, initialProps, componentName)
     },
 
     updated() {
       if (!this.__pvComponent) return
 
-      const propsAttr = this.el.dataset.pvProps
-      if (!propsAttr) return
-
-      try {
-        const props = JSON.parse(propsAttr)
+      const props = parseProps(this.el, "props update")
+      if (props) {
         this.__pvComponent.__applyProps(props)
-      } catch (e) {
-        console.warn("[PhoenixVapor] Failed to parse props update:", e)
+        requestDeferred.call(this, props, this.el.dataset.pvClient)
       }
     },
 
     reconnected() {
       if (!this.__pvComponent) return
 
-      const propsAttr = this.el.dataset.pvProps
-      if (!propsAttr) return
-
-      try {
-        const props = JSON.parse(propsAttr)
-        this.__pvComponent.__applyProps(props)
-      } catch (e) {
-        console.warn("[PhoenixVapor] Failed to parse props on reconnect:", e)
-      }
+      const props = parseProps(this.el, "props on reconnect")
+      if (props) this.__pvComponent.__applyProps(props)
     },
 
     destroyed() {
       this.__pvComponent = null
     }
+  }
+}
+
+function requestDeferred(payload, componentName) {
+  if (!payload || !payload.deferredProps) return
+
+  for (const group of Object.keys(payload.deferredProps)) {
+    this.pushEvent("pv:deferred", { component: componentName, group })
+  }
+}
+
+function parseProps(el, label) {
+  const propsAttr = el.dataset.pvProps
+  if (!propsAttr) return null
+
+  try {
+    return JSON.parse(propsAttr)
+  } catch (e) {
+    console.warn(`[PhoenixVapor] Failed to parse ${label}:`, e)
+    return null
   }
 }
 

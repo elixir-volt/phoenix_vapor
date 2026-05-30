@@ -45,11 +45,23 @@ defmodule PhoenixVapor.Hybrid do
     split = Vize.vapor_split!(template_content)
 
     component_name = Path.basename(file, ".vue")
-    render_ast = ServerCodegen.gen_render(split, classification, props, computeds, component_name)
     event_asts = ServerCodegen.gen_handle_events(classification)
 
     client_output_dir = Keyword.get(opts, :client_output, default_client_output(caller_dir))
-    client_js = generate_client_js(sfc_source, classification, full_path, client_output_dir)
+
+    {client_js, client_version} =
+      generate_client_js(sfc_source, classification, full_path, client_output_dir)
+
+    render_ast =
+      ServerCodegen.gen_render(
+        split,
+        classification,
+        props,
+        computeds,
+        component_name,
+        client_version,
+        Keyword.get(opts, :partial_props, false)
+      )
 
     elixir_block_ast = extract_elixir_block(desc, full_path)
 
@@ -76,20 +88,35 @@ defmodule PhoenixVapor.Hybrid do
   end
 
   defp generate_client_js(sfc_source, classification, full_path, output_dir) do
-    case ClientCodegen.generate(sfc_source, classification) do
-      {:ok, js} ->
-        if output_dir do
-          basename = Path.basename(full_path, ".vue")
-          output_path = Path.join(output_dir, "#{basename}.hybrid.js")
-          File.mkdir_p!(output_dir)
-          File.write!(output_path, js)
-        end
+    with {:ok, base_js} <- ClientCodegen.generate(sfc_source, classification) do
+      client_version = client_version(base_js, classification)
 
-        js
+      case ClientCodegen.generate(sfc_source, classification, client_version: client_version) do
+        {:ok, js} ->
+          if output_dir do
+            basename = Path.basename(full_path, ".vue")
+            output_path = Path.join(output_dir, "#{basename}.hybrid.js")
+            File.mkdir_p!(output_dir)
+            File.write!(output_path, js)
+          end
 
+          {js, client_version}
+
+        {:error, errors} ->
+          raise "Failed to compile client JS for #{full_path}: #{inspect(errors)}"
+      end
+    else
       {:error, errors} ->
         raise "Failed to compile client JS for #{full_path}: #{inspect(errors)}"
     end
+  end
+
+  defp client_version(client_js, classification) do
+    <<hash::binary-size(12), _rest::binary>> =
+      :crypto.hash(:sha256, :erlang.term_to_binary({client_js, classification}))
+      |> Base.encode16(case: :lower)
+
+    hash
   end
 
   defp default_client_output(_caller_dir) do
@@ -103,10 +130,15 @@ defmodule PhoenixVapor.Hybrid do
     case desc.script do
       %{lang: "elixir", content: content} when is_binary(content) ->
         case Code.string_to_quoted(content, file: file_path) do
-          {:ok, {:__block__, _, exprs}} -> exprs
-          {:ok, expr} -> [expr]
+          {:ok, {:__block__, _, exprs}} ->
+            exprs
+
+          {:ok, expr} ->
+            [expr]
+
           {:error, {meta, msg, token}} ->
             line = Keyword.get(List.wrap(meta), :line, 0)
+
             raise CompileError,
               file: file_path,
               line: line,

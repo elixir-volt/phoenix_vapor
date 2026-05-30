@@ -111,7 +111,14 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
+        ServerCodegen.build_rendered(
+          split,
+          assigns,
+          classification.client_props,
+          slot_owners,
+          %{},
+          %{}
+        )
 
       html = render_to_html(rendered)
       assert html =~ "data-pv"
@@ -134,7 +141,14 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
+        ServerCodegen.build_rendered(
+          split,
+          assigns,
+          classification.client_props,
+          slot_owners,
+          %{},
+          %{}
+        )
 
       html = render_to_html(rendered)
       assert html =~ "Alice"
@@ -152,7 +166,14 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
+        ServerCodegen.build_rendered(
+          split,
+          assigns,
+          classification.client_props,
+          slot_owners,
+          %{},
+          %{}
+        )
 
       assert %Phoenix.LiveView.Rendered{} = rendered
       assert is_list(rendered.static)
@@ -175,7 +196,14 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
+        ServerCodegen.build_rendered(
+          split,
+          assigns,
+          classification.client_props,
+          slot_owners,
+          %{},
+          %{}
+        )
 
       html = render_to_html(rendered)
       assert html =~ "3"
@@ -204,7 +232,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       assert Macro.to_string(ast) =~ "deleteUser"
     end
 
-    test "no events for client-only handlers" do
+    test "client-only handlers still register deferred prop support" do
       classification =
         Classifier.classify(
           %{"search" => ~s("")},
@@ -215,7 +243,8 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
         )
 
       events = ServerCodegen.gen_handle_events(classification)
-      assert events == []
+      assert length(events) == 1
+      assert Macro.to_string(hd(events)) =~ "@before_compile"
     end
   end
 

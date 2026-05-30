@@ -2,10 +2,17 @@ import { createApp as __createApp, reactive as __reactive } from 'vue';
 let __bridge = null;
 let __propsState = __reactive({});
 
-export function __applyProps(props) {
-  for (const key of Object.keys(__propsState)) {
-    if (!(key in props)) delete __propsState[key];
+export function __applyProps(payload) {
+  const envelope = payload && payload.version && payload.props ? payload : null;
+  const props = envelope ? envelope.props : payload;
+  if (!props) return;
+
+  if (!envelope || envelope.full !== false) {
+    for (const key of Object.keys(__propsState)) {
+      if (!(key in props)) delete __propsState[key];
+    }
   }
+
   Object.assign(__propsState, props);
 }
 
@@ -48,6 +55,7 @@ return (_ctx, _cache) => {
 
 }
 
+export const __pvVersion = "4316966b4bed";
 export { __component as default };
 
 let __app = null;

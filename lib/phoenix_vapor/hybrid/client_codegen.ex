@@ -16,13 +16,14 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   Takes the raw SFC source and classification, produces a self-contained
   JS module that can hydrate server-rendered HTML and manage client reactivity.
   """
-  @spec generate(String.t(), Classifier.classification()) :: {:ok, String.t()} | {:error, term()}
-  def generate(sfc_source, classification) do
+  @spec generate(String.t(), Classifier.classification(), keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def generate(sfc_source, classification, opts \\ []) do
     sfc_source = strip_elixir_block(sfc_source)
 
     case Vize.compile_sfc(sfc_source) do
       {:ok, result} ->
-        js = transform(result.code, classification)
+        js = transform(result.code, classification, opts)
         {:ok, js}
 
       {:error, errors} ->
@@ -38,15 +39,15 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   - Replaces server action function bodies
   - Adds bridge exports
   """
-  @spec transform(String.t(), Classifier.classification()) :: String.t()
-  def transform(vize_code, classification) do
+  @spec transform(String.t(), Classifier.classification(), keyword()) :: String.t()
+  def transform(vize_code, classification, opts \\ []) do
     server_actions = extract_server_actions(classification)
 
     vize_code
     |> inject_bridge_preamble(classification)
     |> rewrite_props_source()
     |> rewrite_server_actions(server_actions, classification)
-    |> inject_bridge_exports()
+    |> inject_bridge_exports(opts[:client_version])
   end
 
   defp inject_bridge_preamble(code, classification) do
@@ -61,10 +62,17 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     let __bridge = null;
     let __propsState = __reactive({});
 
-    export function __applyProps(props) {
-      for (const key of Object.keys(__propsState)) {
-        if (!(key in props)) delete __propsState[key];
+    export function __applyProps(payload) {
+      const envelope = payload && payload.version && payload.props ? payload : null;
+      const props = envelope ? envelope.props : payload;
+      if (!props) return;
+
+      if (!envelope || envelope.full !== false) {
+        for (const key of Object.keys(__propsState)) {
+          if (!(key in props)) delete __propsState[key];
+        }
       }
+
       Object.assign(__propsState, props);
     }
 
@@ -125,9 +133,14 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     prop_set = MapSet.new(classification.client_props ++ classification.server_only_props)
 
     OXC.collect(ast, fn
-      %{type: :expression_statement,
-        expression: %{type: :assignment_expression, operator: "=",
-                      left: %{type: :identifier, name: name}}} = stmt ->
+      %{
+        type: :expression_statement,
+        expression: %{
+          type: :assignment_expression,
+          operator: "=",
+          left: %{type: :identifier, name: name}
+        }
+      } = stmt ->
         if MapSet.member?(prop_set, name) do
           # Get the RHS source text — we reconstruct it from the expression
           {:keep, {name, reconstruct_rhs(stmt.expression.right)}}
@@ -171,11 +184,13 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   defp reconstruct_rhs(%{type: :literal, value: value}), do: to_string(value)
 
   defp reconstruct_rhs(%{type: :object_expression, properties: props}) do
-    pairs = Enum.map_join(props, ", ", fn p ->
-      key = reconstruct_rhs(p.key)
-      val = reconstruct_rhs(p.value)
-      if p[:shorthand], do: key, else: "#{key}: #{val}"
-    end)
+    pairs =
+      Enum.map_join(props, ", ", fn p ->
+        key = reconstruct_rhs(p.key)
+        val = reconstruct_rhs(p.value)
+        if p[:shorthand], do: key, else: "#{key}: #{val}"
+      end)
+
     "{ #{pairs} }"
   end
 
@@ -191,7 +206,9 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   defp generate_params_extraction(body, classification) do
     prop_names = MapSet.new(classification.client_props ++ classification.server_only_props)
-    reserved = MapSet.union(prop_names, MapSet.new(["props", "this", "console", "window", "document"]))
+
+    reserved =
+      MapSet.union(prop_names, MapSet.new(["props", "this", "console", "window", "document"]))
 
     params =
       body
@@ -275,22 +292,37 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   end
 
   defp skip_string(<<>>, _pos, _quote, _depth), do: nil
-  defp skip_string(<<?\\, _, rest::binary>>, pos, quote, depth), do: skip_string(rest, pos + 2, quote, depth)
-  defp skip_string(<<c, rest::binary>>, pos, c, depth), do: find_matching_close(rest, pos + 1, depth)
-  defp skip_string(<<_, rest::binary>>, pos, quote, depth), do: skip_string(rest, pos + 1, quote, depth)
+
+  defp skip_string(<<?\\, _, rest::binary>>, pos, quote, depth),
+    do: skip_string(rest, pos + 2, quote, depth)
+
+  defp skip_string(<<c, rest::binary>>, pos, c, depth),
+    do: find_matching_close(rest, pos + 1, depth)
+
+  defp skip_string(<<_, rest::binary>>, pos, quote, depth),
+    do: skip_string(rest, pos + 1, quote, depth)
 
   defp skip_template_literal(<<>>, _pos, _depth), do: nil
-  defp skip_template_literal(<<?\\, _, rest::binary>>, pos, depth), do: skip_template_literal(rest, pos + 2, depth)
-  defp skip_template_literal(<<?`, rest::binary>>, pos, depth), do: find_matching_close(rest, pos + 1, depth)
-  defp skip_template_literal(<<_, rest::binary>>, pos, depth), do: skip_template_literal(rest, pos + 1, depth)
 
-  defp inject_bridge_exports(code) do
+  defp skip_template_literal(<<?\\, _, rest::binary>>, pos, depth),
+    do: skip_template_literal(rest, pos + 2, depth)
+
+  defp skip_template_literal(<<?`, rest::binary>>, pos, depth),
+    do: find_matching_close(rest, pos + 1, depth)
+
+  defp skip_template_literal(<<_, rest::binary>>, pos, depth),
+    do: skip_template_literal(rest, pos + 1, depth)
+
+  defp inject_bridge_exports(code, client_version) do
     code = rewrite_default_export(code)
+
+    version_export =
+      if client_version, do: ~s(export const __pvVersion = "#{client_version}";\n), else: ""
 
     code <>
       """
 
-      export { __component as default };
+      #{version_export}export { __component as default };
 
       let __app = null;
 

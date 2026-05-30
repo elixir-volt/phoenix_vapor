@@ -128,8 +128,12 @@ defmodule PhoenixVapor do
       case desc.script do
         %{lang: "elixir", content: content} when is_binary(content) ->
           case Code.string_to_quoted(content, file: full_path) do
-            {:ok, {:__block__, _, exprs}} -> exprs
-            {:ok, expr} -> [expr]
+            {:ok, {:__block__, _, exprs}} ->
+              exprs
+
+            {:ok, expr} ->
+              [expr]
+
             {:error, {meta, msg, token}} ->
               line = Keyword.get(List.wrap(meta), :line, 0)
               raise CompileError, file: full_path, line: line, description: "#{msg}#{token}"
@@ -150,6 +154,40 @@ defmodule PhoenixVapor do
 
       unquote_splicing(elixir_block_ast)
     end
+  end
+
+  @doc """
+  Assigns an advanced hybrid prop under PhoenixVapor's reserved prop storage.
+
+  Values assigned this way take precedence over regular LiveView assigns when a
+  hybrid component serializes `defineProps` data.
+  """
+  @spec assign_prop(
+          Phoenix.LiveView.Socket.t(),
+          atom() | String.t() | PhoenixVapor.Prop.preserved_key(),
+          term()
+        ) ::
+          Phoenix.LiveView.Socket.t()
+  def assign_prop(socket, key, value) do
+    props = Map.get(socket.assigns, :__pv_props__, %{})
+    Phoenix.Component.assign(socket, :__pv_props__, Map.put(props, key, value))
+  end
+
+  @doc """
+  Assigns validation errors to a LiveView socket under `:errors`.
+  """
+  @spec assign_errors(Phoenix.LiveView.Socket.t(), term()) :: Phoenix.LiveView.Socket.t()
+  def assign_errors(socket, data) do
+    Phoenix.Component.assign(socket, :errors, PhoenixVapor.Errors.to_errors(data))
+  end
+
+  @doc """
+  Assigns validation errors using a custom changeset message function.
+  """
+  @spec assign_errors(Phoenix.LiveView.Socket.t(), term(), PhoenixVapor.Errors.msg_func()) ::
+          Phoenix.LiveView.Socket.t()
+  def assign_errors(socket, data, msg_func) when is_function(msg_func, 1) do
+    Phoenix.Component.assign(socket, :errors, PhoenixVapor.Errors.to_errors(data, msg_func))
   end
 
   @doc """
