@@ -211,6 +211,17 @@ All compilation runs through Rust NIFs and the BEAM — no Node.js required.
 - [Hologram Comparison](docs/comparisons/hologram.md) — PhoenixVapor vs Hologram
 - [examples/demo](examples/demo) — runnable Phoenix app with all modes
 
+## Part of Elixir Volt
+
+Phoenix Vapor compiles Vue single-file components to native LiveView — one source for both halves of the client/server split.
+
+It is part of a frontend stack that runs inside the BEAM — builds, JS
+runtimes, icons, and Vue-to-LiveView compilation as supervised parts of the
+application instead of external toolchain processes. See the
+[Elixir Volt](https://github.com/elixir-volt) organization for the rest, and
+[Building Blocks for the Future Web](https://github.com/elixir-vibe/building-blocks)
+for the thesis, architecture, and roadmap that tie them together.
+
 ## License
 
 MIT
