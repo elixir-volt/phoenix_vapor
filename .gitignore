@@ -29,3 +29,5 @@ live_vue_ext-*.tar
 /priv/js/reka-*.js
 /priv/js/vue-*.js
 /priv/js/manifest.json
+
+.unsafe-audit/
