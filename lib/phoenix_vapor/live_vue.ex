@@ -96,31 +96,28 @@ defmodule PhoenixVapor.LiveVue do
     # Bundle with Volt: resolve imports, rewrite externals to globals
     bundled = volt_bundle(patched, path)
 
-    # The bundled IIFE has `var _default` scoped inside.
-    # Replace with globalThis assignment so we can mount after.
+    # Capture the value returned by Volt's bundled IIFE so it can be mounted.
     setup_js =
       bundled
-      |> rewrite_var_default_to_global()
+      |> assign_bundle_result_to_global()
       |> Kernel.<>("\nVue.createApp(globalThis.__sfc_component).mount(document.body);\n")
 
     {setup_js, handlers}
   end
 
-  defp rewrite_var_default_to_global(code) do
+  defp assign_bundle_result_to_global(code) do
     case OXC.parse(code, "sfc.js") do
-      {:ok, ast} ->
-        patches =
-          OXC.collect(ast, fn
-            %{type: :variable_declaration,
-              declarations: [%{type: :variable_declarator, id: %{name: "_default"}, start: ds}],
-              start: s, kind: kind} when kind in [:var, "var"] ->
-              {:keep, %{start: s, end: ds, change: "globalThis.__sfc_component"}}
-
-            _ ->
-              :skip
-          end)
-
-        if patches == [], do: code, else: OXC.patch_string(code, patches)
+      {:ok,
+       %{
+         type: :program,
+         body: [
+           %{type: :expression_statement, expression: %{type: :call_expression, start: start}}
+           | _
+         ]
+       }} ->
+        OXC.patch_string(code, [
+          %{start: start, end: start, change: "globalThis.__sfc_component = "}
+        ])
 
       _ ->
         code
@@ -151,9 +148,13 @@ defmodule PhoenixVapor.LiveVue do
     # Find the setup FunctionExpression body span
     setup_spans =
       OXC.collect(ast, fn
-        %{type: :property, key: %{name: "setup"},
-          value: %{type: :function_expression, body: %{start: bs, end: be}}} ->
+        %{
+          type: :property,
+          key: %{name: "setup"},
+          value: %{type: :function_expression, body: %{start: bs, end: be}}
+        } ->
           {:keep, {bs, be}}
+
         _ ->
           :skip
       end)
