@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.3.1"
   @source_url "https://github.com/elixir-volt/phoenix_vapor"
 
   def project do
@@ -13,7 +13,8 @@ defmodule PhoenixVapor.MixProject do
       deps: deps(),
       elixirc_paths: elixirc_paths(Mix.env()),
       name: "PhoenixVapor",
-      description: "Vue templates as native Phoenix LiveView renders — compile Vue syntax to %Rendered{} via Vapor IR.",
+      description:
+        "Vue templates as native Phoenix LiveView renders — compile Vue syntax to %Rendered{} via Vapor IR.",
       source_url: @source_url,
       homepage_url: @source_url,
       package: package(),
@@ -35,7 +36,7 @@ defmodule PhoenixVapor.MixProject do
         "GitHub" => @source_url,
         "Volt" => "https://github.com/elixir-volt/volt"
       },
-      files: ~w(lib priv/js .formatter.exs mix.exs README.md ARCHITECTURE.md LICENSE)
+      files: ~w(lib priv/js .formatter.exs mix.exs README.md ARCHITECTURE.md CHANGELOG.md LICENSE)
     ]
   end
 
@@ -44,6 +45,7 @@ defmodule PhoenixVapor.MixProject do
       main: "PhoenixVapor",
       extras: [
         "README.md",
+        "CHANGELOG.md",
         "ARCHITECTURE.md",
         "docs/hybrid-architecture.md",
         "docs/comparisons/fronix-wire-protocol.md",
@@ -62,12 +64,12 @@ defmodule PhoenixVapor.MixProject do
 
   defp deps do
     [
-      {:phoenix_live_view, "~> 1.1"},
-      {:vize, "~> 0.10.0"},
-      {:oxc, "~> 0.11.0"},
-      {:quickbeam, "~> 0.10.8", optional: true},
-      {:volt, "~> 0.10.1", optional: true, runtime: false},
-      {:ex_doc, "~> 0.35", only: :dev, runtime: false}
+      {:phoenix_live_view, "~> 1.2"},
+      {:vize, "~> 0.14.1"},
+      {:oxc, "~> 0.17.8"},
+      {:quickbeam, "~> 0.10.20", optional: true},
+      {:volt, "~> 0.17.10", optional: true, runtime: false},
+      {:ex_doc, "~> 0.40.3", only: :dev, runtime: false}
     ]
   end
 end

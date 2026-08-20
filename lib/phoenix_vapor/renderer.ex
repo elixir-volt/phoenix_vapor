@@ -33,6 +33,7 @@ defmodule PhoenixVapor.Renderer do
 
   @doc false
   def split_to_rendered(statics, slots, assigns, opts \\ []) do
+    statics = normalize_text_slot_statics(statics, slots)
     fingerprint = compute_fingerprint(statics, slots)
 
     dynamic = fn track_changes? ->
@@ -112,7 +113,16 @@ defmodule PhoenixVapor.Renderer do
     end
   end
 
-  defp eval_slot(%{kind: :for_node, source: source, value: value_name, render: render_split, key_prop: key_prop}, assigns) do
+  defp eval_slot(
+         %{
+           kind: :for_node,
+           source: source,
+           value: value_name,
+           render: render_split,
+           key_prop: key_prop
+         },
+         assigns
+       ) do
     items = Expr.eval(source, assigns) || []
 
     dummy_assigns = build_item_assigns(assigns, value_name, %{})
@@ -200,6 +210,39 @@ defmodule PhoenixVapor.Renderer do
   end
 
   # ── Helpers ──
+
+  # Vize 0.14 includes the original text in both the static template and the
+  # values for a set_text slot. A LiveView slot replaces the element's complete
+  # text content, so remove that duplicate content around the dynamic hole.
+  defp normalize_text_slot_statics(statics, slots) when length(statics) == length(slots) + 1 do
+    slots
+    |> Enum.with_index()
+    |> Enum.reduce(statics, fn
+      {%{kind: :set_text}, index}, acc ->
+        acc
+        |> List.update_at(index, &remove_text_after_last_tag/1)
+        |> List.update_at(index + 1, &remove_text_before_next_tag/1)
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp normalize_text_slot_statics(statics, _slots), do: statics
+
+  defp remove_text_after_last_tag(static) do
+    case :binary.matches(static, ">") do
+      [] -> static
+      matches -> binary_part(static, 0, elem(List.last(matches), 0) + 1)
+    end
+  end
+
+  defp remove_text_before_next_tag(static) do
+    case :binary.match(static, "<") do
+      {position, _length} -> binary_part(static, position, byte_size(static) - position)
+      :nomatch -> static
+    end
+  end
 
   defp extract_key({:static_, name}), do: name
   defp extract_key(name) when is_binary(name), do: name
