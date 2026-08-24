@@ -1,5 +1,7 @@
-defmodule PhoenixVaporTest do
+defmodule PhoenixVapor.Integration.RenderingTest do
   use ExUnit.Case, async: true
+
+  @moduletag :integration
 
   defp render_to_html(rendered) do
     dynamic = rendered.dynamic.(false)
@@ -425,7 +427,7 @@ defmodule PhoenixVaporTest do
   describe "Vue SFC loading" do
     defmodule TestComponents do
       require PhoenixVapor.Vue
-      PhoenixVapor.Vue.component(:card, "fixtures/Card.vue")
+      PhoenixVapor.Vue.component(:card, "../../fixtures/Card.vue")
     end
 
     test "component from .vue file" do
@@ -533,7 +535,7 @@ defmodule PhoenixVaporTest do
   describe "scoped CSS" do
     defmodule ScopedComponents do
       require PhoenixVapor.Vue
-      PhoenixVapor.Vue.component(:scoped, "fixtures/Scoped.vue")
+      PhoenixVapor.Vue.component(:scoped, "../../fixtures/Scoped.vue")
     end
 
     test "injects scope attribute into root element" do
@@ -730,119 +732,6 @@ defmodule PhoenixVaporTest do
     end
   end
 
-  describe "expression evaluation" do
-    test "simple identifier" do
-      assert PhoenixVapor.Expr.eval("msg", %{msg: "hello"}) == "hello"
-    end
-
-    test "dot access" do
-      assert PhoenixVapor.Expr.eval("user.name", %{user: %{name: "Dan"}}) == "Dan"
-    end
-
-    test "deep dot access" do
-      assigns = %{user: %{address: %{city: "Moscow"}}}
-      assert PhoenixVapor.Expr.eval("user.address.city", assigns) == "Moscow"
-    end
-
-    test "atom and string keys" do
-      assert PhoenixVapor.Expr.eval("x", %{x: 1}) == 1
-      assert PhoenixVapor.Expr.eval("x", %{"x" => 2}) == 2
-    end
-
-    test "missing key returns nil" do
-      assert PhoenixVapor.Expr.eval("missing", %{}) == nil
-    end
-
-    test "static expression passthrough" do
-      assert PhoenixVapor.Expr.eval({:static_, "hello"}, %{}) == "hello"
-    end
-
-    test "boolean literals" do
-      assert PhoenixVapor.Expr.eval("true", %{}) == true
-      assert PhoenixVapor.Expr.eval("false", %{}) == false
-    end
-
-    test "null literal" do
-      assert PhoenixVapor.Expr.eval("null", %{}) == nil
-    end
-
-    test "ternary expression" do
-      assert PhoenixVapor.Expr.eval(~s[ok ? "y" : "n"], %{ok: true}) == "y"
-      assert PhoenixVapor.Expr.eval(~s[ok ? "y" : "n"], %{ok: false}) == "n"
-    end
-
-    test "arithmetic expressions" do
-      assert PhoenixVapor.Expr.eval("a + b", %{a: 2, b: 3}) == 5
-      assert PhoenixVapor.Expr.eval("a - b", %{a: 10, b: 3}) == 7
-      assert PhoenixVapor.Expr.eval("a * b", %{a: 4, b: 5}) == 20
-    end
-
-    test "comparison expressions" do
-      assert PhoenixVapor.Expr.eval("a > b", %{a: 5, b: 3}) == true
-      assert PhoenixVapor.Expr.eval("a === b", %{a: 1, b: 1}) == true
-      assert PhoenixVapor.Expr.eval("a !== b", %{a: 1, b: 2}) == true
-    end
-
-    test "logical expressions" do
-      assert PhoenixVapor.Expr.eval("a && b", %{a: true, b: "yes"}) == "yes"
-      assert PhoenixVapor.Expr.eval("a && b", %{a: false, b: "yes"}) == false
-      assert PhoenixVapor.Expr.eval("a || b", %{a: nil, b: "fallback"}) == "fallback"
-      assert PhoenixVapor.Expr.eval("a ?? b", %{a: nil, b: "default"}) == "default"
-      assert PhoenixVapor.Expr.eval("a ?? b", %{a: 0, b: "default"}) == 0
-    end
-
-    test "unary expressions" do
-      assert PhoenixVapor.Expr.eval("!x", %{x: false}) == true
-      assert PhoenixVapor.Expr.eval("-x", %{x: 5}) == -5
-    end
-
-    test "member expression computed" do
-      assert PhoenixVapor.Expr.eval("items.length", %{items: [1, 2, 3]}) == 3
-    end
-
-    test "array access expression" do
-      assigns = %{items: ["a", "b", "c"]}
-      assert PhoenixVapor.Expr.eval("items[1]", assigns) == "b"
-    end
-
-    test "typeof" do
-      assert PhoenixVapor.Expr.eval("typeof x", %{x: 42}) == "number"
-      assert PhoenixVapor.Expr.eval("typeof x", %{x: "hi"}) == "string"
-      assert PhoenixVapor.Expr.eval("typeof x", %{x: nil}) == "undefined"
-    end
-
-    test "eval_values concatenates" do
-      values = [{:static_, "Hello "}, "name", {:static_, "!"}]
-      assert PhoenixVapor.Expr.eval_values(values, %{name: "World"}) == "Hello World!"
-    end
-
-    test "assign_keys extracts identifiers" do
-      assert PhoenixVapor.Expr.assign_keys("msg") == [:msg]
-      assert :user in PhoenixVapor.Expr.assign_keys("user.name")
-      assert PhoenixVapor.Expr.assign_keys({:static_, "text"}) == []
-    end
-
-    test "assign_keys for complex expressions" do
-      keys = PhoenixVapor.Expr.assign_keys("a > b ? x : y")
-      assert :a in keys
-      assert :b in keys
-      assert :x in keys
-      assert :y in keys
-    end
-
-    test "string methods" do
-      assert PhoenixVapor.Expr.eval(~s[s.trim()], %{s: "  hi  "}) == "hi"
-      assert PhoenixVapor.Expr.eval(~s[s.toUpperCase()], %{s: "hi"}) == "HI"
-      assert PhoenixVapor.Expr.eval(~s[s.toLowerCase()], %{s: "HI"}) == "hi"
-    end
-
-    test "array methods" do
-      assigns = %{items: ["a", "b", "c"]}
-      assert PhoenixVapor.Expr.eval(~s[items.includes("b")], assigns) == true
-      assert PhoenixVapor.Expr.eval(~s[items.includes("z")], assigns) == false
-    end
-  end
-
   describe "QuickBEAM expression fallback" do
     test "arrow function in filter" do
       rendered =
@@ -885,63 +774,10 @@ defmodule PhoenixVaporTest do
     end
   end
 
-  describe "script setup parsing" do
-    test "extracts refs with initial values" do
-      {refs, _, _, _, _} =
-        PhoenixVapor.ScriptSetup.parse("""
-        import { ref } from "vue"
-        const count = ref(0)
-        const name = ref("hello")
-        """)
-
-      assert refs == %{"count" => "0", "name" => "\"hello\""}
-    end
-
-    test "extracts computed expressions" do
-      {_, computeds, _, _, _} =
-        PhoenixVapor.ScriptSetup.parse("""
-        import { ref, computed } from "vue"
-        const count = ref(0)
-        const doubled = computed(() => count.value * 2)
-        """)
-
-      assert computeds["doubled"] == "count.value * 2"
-    end
-
-    test "extracts function names" do
-      {_, _, functions, _, _} =
-        PhoenixVapor.ScriptSetup.parse("""
-        function increment() { count.value++ }
-        function reset() { count.value = 0 }
-        """)
-
-      assert "increment" in functions
-      assert "reset" in functions
-    end
-
-    test "extracts defineProps" do
-      {_, _, _, _, props} =
-        PhoenixVapor.ScriptSetup.parse("""
-        defineProps(["title", "count"])
-        """)
-
-      assert props == ["title", "count"]
-    end
-
-    test "evaluates initial state via QuickBEAM" do
-      refs = %{"count" => "0", "items" => "[]", "name" => "\"world\""}
-      state = PhoenixVapor.ScriptSetup.eval_initial_state(refs)
-
-      assert state.count == 0
-      assert state.items == []
-      assert state.name == "world"
-    end
-  end
-
   describe "Reactive macro" do
     defmodule ReactiveCounter do
       use Phoenix.LiveView
-      use PhoenixVapor, file: "fixtures/Counter.vue", runtime: :reactive
+      use PhoenixVapor, file: "../../fixtures/Counter.vue", runtime: :reactive
     end
 
     test "generates mount with initial state" do

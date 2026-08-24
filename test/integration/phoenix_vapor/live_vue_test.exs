@@ -1,5 +1,7 @@
-defmodule PhoenixVapor.LiveVueTest do
+defmodule PhoenixVapor.Integration.LiveVueTest do
   use ExUnit.Case, async: true
+
+  @moduletag :integration
 
   test "assigns the bundled component export before mounting" do
     {setup, handlers} =

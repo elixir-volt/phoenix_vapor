@@ -1,6 +1,9 @@
-defmodule PhoenixVapor.VueRuntimeTest do
+defmodule PhoenixVapor.E2E.VueRuntimeTest do
   use ExUnit.Case, async: false
+
   alias PhoenixVapor.VueRuntime
+
+  @moduletag :e2e
 
   @bundle_path Path.join(File.cwd!(), "priv/js/reka-dialog.js")
 

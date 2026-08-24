@@ -12,6 +12,7 @@ defmodule PhoenixVapor.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       elixirc_paths: elixirc_paths(Mix.env()),
+      aliases: aliases(),
       name: "PhoenixVapor",
       description:
         "Vue templates as native Phoenix LiveView renders — compile Vue syntax to %Rendered{} via Vapor IR.",
@@ -28,6 +29,19 @@ defmodule PhoenixVapor.MixProject do
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp aliases do
+    [
+      "test.unit": ["test test/phoenix_vapor"],
+      "test.integration": ["test test/integration"],
+      "test.e2e": ["test test/e2e --include e2e"],
+      ci: [
+        "cmd env MIX_ENV=test mix test.unit",
+        "cmd env MIX_ENV=test mix test.integration",
+        "cmd env MIX_ENV=test mix test.e2e"
+      ]
+    ]
+  end
 
   defp package do
     [

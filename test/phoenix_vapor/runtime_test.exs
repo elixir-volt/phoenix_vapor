@@ -76,7 +76,7 @@ defmodule PhoenixVapor.RuntimeTest do
       assert s["count"] == 1
       assert s["doubled"] == 2
 
-      {:ok, s} = Runtime.call_handler(rt, "increment")
+      {:ok, _state} = Runtime.call_handler(rt, "increment")
       {:ok, s} = Runtime.call_handler(rt, "increment")
       assert s["count"] == 3
       assert s["doubled"] == 6

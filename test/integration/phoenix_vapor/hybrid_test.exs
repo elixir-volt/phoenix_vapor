@@ -1,14 +1,16 @@
-defmodule PhoenixVapor.HybridTest do
+defmodule PhoenixVapor.Integration.HybridTest do
   use ExUnit.Case, async: true
+
+  @moduletag :integration
 
   defmodule SimpleLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../fixtures/Hybrid.vue"
+    use PhoenixVapor, file: "../../fixtures/Hybrid.vue"
   end
 
   defmodule ContactsLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../fixtures/HybridContacts.vue"
+    use PhoenixVapor, file: "../../fixtures/HybridContacts.vue"
   end
 
   @contacts [
