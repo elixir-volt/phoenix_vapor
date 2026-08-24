@@ -8,6 +8,22 @@ defmodule PhoenixVapor.LiveVue do
   imports as externals against the pre-loaded bundle), then runs the result
   in QuickBEAM with the full Vue runtime.
 
+  The generated LiveView callbacks are overridable. Host LiveViews can retain
+  their own lifecycle behavior and call `super/3`, `super/1`, or `super/2` to
+  compose it with the full Vue runtime:
+
+      def mount(params, session, socket) do
+        {:ok, socket} = super(params, session, socket)
+        {:ok, assign_async(socket, :account, &load_account/0)}
+      end
+
+      def handle_event("host-event", params, socket) do
+        # Handle host-owned events without dispatching them to Vue.
+        {:noreply, handle_host_event(params, socket)}
+      end
+
+      def handle_event(event, params, socket), do: super(event, params, socket)
+
   ## Usage
 
       defmodule MyAppWeb.DialogLive do
@@ -78,6 +94,8 @@ defmodule PhoenixVapor.LiveVue do
           PhoenixVapor.VueRuntime.stop(runtime)
         end
       end
+
+      defoverridable mount: 3, render: 1, handle_event: 3, terminate: 2
     end
   end
 
