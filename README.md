@@ -209,7 +209,7 @@ All compilation runs through Rust NIFs and the BEAM — no Node.js required.
 - [Hybrid Architecture](docs/hybrid-architecture.md) — the split-reactivity design
 - [Wire Protocol Comparison](docs/comparisons/fronix-wire-protocol.md) — PhoenixVapor vs Fronix/LiveVue
 - [Hologram Comparison](docs/comparisons/hologram.md) — PhoenixVapor vs Hologram
-- [examples/demo](examples/demo) — runnable Phoenix app with all modes
+- [examples/demo](https://github.com/elixir-volt/phoenix_vapor/tree/master/examples/demo) — runnable Phoenix app with all modes
 
 ## License
 

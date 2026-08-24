@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.3.2 - 2026-08-24
+
+### Added
+
+- Allow full-runtime LiveViews to override and compose generated lifecycle callbacks with `super`.
+
+### Fixed
+
+- Preserve document order when rendering nested property, text, and structural Vapor slots.
+- Capture the full-runtime SFC component export reliably before mounting it.
+- Resolve relative `.vue` imports from the source component directory in full-runtime mode.
+
 ## 0.3.1 - 2026-08-17
 
 ### Fixed
