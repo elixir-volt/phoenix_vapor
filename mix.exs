@@ -35,11 +35,7 @@ defmodule PhoenixVapor.MixProject do
       "test.unit": ["test test/phoenix_vapor"],
       "test.integration": ["test test/integration"],
       "test.e2e": ["test test/e2e --include e2e"],
-      ci: [
-        "cmd env MIX_ENV=test mix test.unit",
-        "cmd env MIX_ENV=test mix test.integration",
-        "cmd env MIX_ENV=test mix test.e2e"
-      ]
+      ci: ["test --include e2e"]
     ]
   end
 
