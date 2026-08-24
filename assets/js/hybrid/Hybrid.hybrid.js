@@ -17,9 +17,10 @@ export function __getClientState() {
   return ["search"];
 }
 
-import { openBlock as _openBlock, createElementBlock as _createElementBlock, createElementVNode as _createElementVNode, toDisplayString as _toDisplayString } from "vue"
+import { toDisplayString as _toDisplayString, createElementVNode as _createElementVNode, openBlock as _openBlock, createElementBlock as _createElementBlock } from "vue"
 
 import { ref, computed } from 'vue'
+
 
 const __component = {
   __name: 'anonymous',
@@ -37,17 +38,22 @@ function deleteUser(id) { Object.assign(__serverProps.value, { users: users.filt
 }
 
 return (_ctx, _cache) => {
-  return (_openBlock(), _createElementBlock("div", null, [ _createElementVNode("h1", null, _toDisplayString(__props.title), 1 /* TEXT */), _createElementVNode("input", {
-        value: search.value,
-        onInput: _cache[0] || (_cache[0] = $event => (search.value = $event.target.value))
-      }, null, 40 /* PROPS, NEED_HYDRATION */, ["value"]), _createElementVNode("p", null, _toDisplayString(filtered.value.length) + " results", 1 /* TEXT */), _createElementVNode("button", { onClick: clearSearch }, "Clear"), _createElementVNode("button", {
-        onClick: _cache[1] || (_cache[1] = $event => (deleteUser(1)))
-      }, "Delete") ]))
+  return (_openBlock(), _createElementBlock("div", null, [
+    _createElementVNode("h1", null, _toDisplayString(__props.title), 1 /* TEXT */),
+    _createElementVNode("input", {
+      value: search.value,
+      onInput: _cache[0] || (_cache[0] = $event => (search.value = $event.target.value))
+    }, null, 40 /* PROPS, NEED_HYDRATION */, ["value"]),
+    _createElementVNode("p", null, _toDisplayString(filtered.value.length) + " results", 1 /* TEXT */),
+    _createElementVNode("button", { onClick: clearSearch }, "Clear"),
+    _createElementVNode("button", {
+      onClick: _cache[1] || (_cache[1] = $event => (deleteUser(1)))
+    }, "Delete")
+  ]))
 }
 }
 
 }
-
 export { __component as default };
 
 let __app = null;

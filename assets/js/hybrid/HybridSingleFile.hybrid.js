@@ -17,9 +17,10 @@ export function __getClientState() {
   return ["search"];
 }
 
-import { Fragment as _Fragment, openBlock as _openBlock, createElementBlock as _createElementBlock, createElementVNode as _createElementVNode, createTextVNode as _createTextVNode, renderList as _renderList, toDisplayString as _toDisplayString } from "vue"
+import { toDisplayString as _toDisplayString, createElementVNode as _createElementVNode, openBlock as _openBlock, createElementBlock as _createElementBlock, Fragment as _Fragment, createTextVNode as _createTextVNode, renderList as _renderList } from "vue"
 
 import { ref, computed } from 'vue'
+
 
 const __component = {
   __name: 'anonymous',
@@ -36,23 +37,29 @@ function deleteItem(name) {
 }
 
 return (_ctx, _cache) => {
-  return (_openBlock(), _createElementBlock("div", null, [ _createElementVNode("h1", null, _toDisplayString(__props.title), 1 /* TEXT */), _createElementVNode("input", {
-        value: search.value,
-        onInput: _cache[0] || (_cache[0] = $event => (search.value = $event.target.value)),
-        placeholder: "Filter..."
-      }, null, 40 /* PROPS, NEED_HYDRATION */, ["value"]), _createElementVNode("p", null, _toDisplayString(filtered.value.length) + " items", 1 /* TEXT */), _createElementVNode("ul", null, [ (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(filtered.value, (item) => {
-          return (_openBlock(), _createElementBlock("li", { key: item }, [
-            _createTextVNode(_toDisplayString(item) + " ", 1 /* TEXT */),
-            _createElementVNode("button", {
-              onClick: $event => (deleteItem(item))
-            }, "×", 8 /* PROPS */, ["onClick"])
-          ]))
-        }), 128 /* KEYED_FRAGMENT */)) ]) ]))
+  return (_openBlock(), _createElementBlock("div", null, [
+    _createElementVNode("h1", null, _toDisplayString(__props.title), 1 /* TEXT */),
+    _createElementVNode("input", {
+      value: search.value,
+      onInput: _cache[0] || (_cache[0] = $event => (search.value = $event.target.value)),
+      placeholder: "Filter..."
+    }, null, 40 /* PROPS, NEED_HYDRATION */, ["value"]),
+    _createElementVNode("p", null, _toDisplayString(filtered.value.length) + " items", 1 /* TEXT */),
+    _createElementVNode("ul", null, [
+      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(filtered.value, (item) => {
+        return (_openBlock(), _createElementBlock("li", { key: item }, [
+          _createTextVNode(_toDisplayString(item) + " ", 1 /* TEXT */),
+          _createElementVNode("button", {
+            onClick: $event => (deleteItem(item))
+          }, "×", 8 /* PROPS */, ["onClick"])
+        ]))
+      }), 128 /* KEYED_FRAGMENT */))
+    ])
+  ]))
 }
 }
 
 }
-
 export { __component as default };
 
 let __app = null;
