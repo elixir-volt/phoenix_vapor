@@ -91,7 +91,10 @@ defmodule PhoenixVapor.LiveVue do
 
     # Inject handler registration into the compiled setup function via AST,
     # BEFORE bundling — so the code is still parseable ES modules
-    patched = inject_handler_registration(result.code, handlers)
+    patched =
+      result.code
+      |> inject_handler_registration(handlers)
+      |> resolve_relative_imports(path)
 
     # Bundle with Volt: resolve imports, rewrite externals to globals
     bundled = volt_bundle(patched, path)
@@ -174,6 +177,26 @@ defmodule PhoenixVapor.LiveVue do
     end
   end
 
+  defp resolve_relative_imports(compiled, sfc_path) do
+    source_dir = Path.dirname(sfc_path)
+
+    Volt.JS.Transforms.Imports.rewrite!(compiled, sfc_path, fn
+      "." <> _ = specifier -> {:rewrite, absolute_specifier(specifier, source_dir)}
+      _specifier -> :keep
+    end)
+  end
+
+  defp absolute_specifier(specifier, source_dir) do
+    uri = URI.parse(specifier)
+
+    path =
+      uri.path
+      |> Path.expand(source_dir)
+      |> String.replace("\\", "/")
+
+    URI.to_string(%{uri | path: path})
+  end
+
   defp volt_bundle(compiled, sfc_path) do
     tmp_dir = Path.join(System.tmp_dir!(), "pv_sfc_#{:erlang.phash2(sfc_path)}")
     File.mkdir_p!(tmp_dir)
@@ -181,22 +204,24 @@ defmodule PhoenixVapor.LiveVue do
     entry_path = Path.join(tmp_dir, "entry.js")
     File.write!(entry_path, compiled)
 
-    {:ok, build_result} =
-      Volt.Builder.build(
-        entry: entry_path,
-        outdir: tmp_dir,
-        node_modules: find_node_modules(Path.dirname(sfc_path)),
-        name: "sfc",
-        minify: false,
-        sourcemap: false,
-        hash: false,
-        code_splitting: false,
-        external: @external_map
-      )
+    try do
+      {:ok, build_result} =
+        Volt.Builder.build(
+          entry: entry_path,
+          outdir: tmp_dir,
+          node_modules: find_node_modules(Path.dirname(sfc_path)),
+          name: "sfc",
+          minify: false,
+          sourcemap: false,
+          hash: false,
+          code_splitting: false,
+          external: @external_map
+        )
 
-    bundled = File.read!(build_result.js.path)
-    File.rm_rf!(tmp_dir)
-    bundled
+      File.read!(build_result.js.path)
+    after
+      File.rm_rf!(tmp_dir)
+    end
   end
 
   defp extract_handlers(sfc_source) do
