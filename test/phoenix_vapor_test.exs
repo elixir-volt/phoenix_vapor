@@ -115,6 +115,28 @@ defmodule PhoenixVaporTest do
     end
   end
 
+  describe "slot document order" do
+    test "keeps nested property slots aligned with their elements" do
+      rendered =
+        PhoenixVapor.render(
+          ~s[<div :class="outer"><i :class="inner"></i></div>],
+          %{outer: "OUTER", inner: "INNER"}
+        )
+
+      assert render_to_html(rendered) == ~s[<div class="OUTER"><i class="INNER"></i></div>]
+    end
+
+    test "keeps structural and text slots aligned with their positions" do
+      rendered =
+        PhoenixVapor.render(
+          ~s[<div><section><b v-if="on">Y</b></section><span>{{ label }}</span></div>],
+          %{on: true, label: "L"}
+        )
+
+      assert render_to_html(rendered) == "<div><section><b>Y</b></section><span>L</span></div>"
+    end
+  end
+
   describe "v-if" do
     test "truthy condition" do
       rendered =
