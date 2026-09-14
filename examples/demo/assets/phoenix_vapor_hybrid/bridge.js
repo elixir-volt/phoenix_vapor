@@ -12,7 +12,6 @@
 export function createHybridHook(components) {
   return {
     mounted() {
-      console.error('[PV-BRIDGE] mounted() fired!')
       const el = this.el
       const componentName = el.dataset.pvClient
 
