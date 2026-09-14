@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Return JavaScript evaluation errors from full-runtime calls and event dispatches instead of reporting successful stale HTML.
+
 ### Compatibility
 
 - Support Volt 0.17.11 and the 0.18 series with QuickBEAM 0.11.1 or later in the 0.11 series, resolving the shared dependency conflict when adding PhoenixVapor to a current Volt application.
