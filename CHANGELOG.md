@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.3 - 2026-09-15
+
 ### Fixed
 
 - Return JavaScript evaluation errors from full-runtime calls and event dispatches instead of reporting successful stale HTML.
