@@ -5,7 +5,7 @@ defmodule VaporDemo.MixProject do
     [
       app: :vapor_demo,
       version: "0.1.0",
-      elixir: "~> 1.15",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -40,10 +40,10 @@ defmodule VaporDemo.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.8.4"},
+      {:phoenix, "~> 1.8.9"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 1.1.0"},
+      {:phoenix_live_view, "~> 1.2.9"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_test, "~> 0.5", only: :test, runtime: false},
       {:phoenix_test_playwright, "~> 0.14", only: :test, runtime: false},
@@ -58,10 +58,10 @@ defmodule VaporDemo.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"},
+      {:bandit, ">= 1.12.5 and < 2.0.0"},
       {:phoenix_vapor, path: "../.."},
-      {:quickbeam, "~> 0.10.8", override: true},
-      {:volt, "~> 0.10.1"}
+      {:quickbeam, "~> 0.11.1"},
+      {:volt, "~> 0.17.11 or ~> 0.18.0"}
     ]
   end
 
@@ -73,7 +73,12 @@ defmodule VaporDemo.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "assets.build"],
+      setup: [
+        "deps.get",
+        "npm.install",
+        "phoenix_vapor.bundle --name reka-dialog",
+        "assets.build"
+      ],
       "assets.build": ["volt.build --tailwind"],
       "assets.deploy": ["volt.build --tailwind", "phx.digest"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]

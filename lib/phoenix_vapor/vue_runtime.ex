@@ -23,11 +23,11 @@ defmodule PhoenixVapor.VueRuntime do
   @doc "Get the current DOM HTML."
   def render(runtime), do: GenServer.call(runtime, :render)
 
-  @doc "Dispatch a named event to __pv_handlers, return updated HTML."
+  @doc "Dispatch a named event to __pv_handlers, returning updated HTML or its evaluation error."
   def dispatch(runtime, event, params \\ %{}),
     do: GenServer.call(runtime, {:dispatch, event, params})
 
-  @doc "Evaluate arbitrary JS, flush Vue updates, return new HTML."
+  @doc "Evaluate arbitrary JS and return new HTML, or the evaluation error if execution fails."
   def call(runtime, js_code), do: GenServer.call(runtime, {:call, js_code})
 
   def stop(runtime), do: GenServer.stop(runtime)
@@ -59,13 +59,11 @@ defmodule PhoenixVapor.VueRuntime do
   end
 
   def handle_call({:dispatch, event, params}, _from, state) do
-    js_eval(state, dispatch_js(event, params))
-    {:reply, js_eval(state, "document.body.innerHTML"), state}
+    {:reply, eval_and_render(state, dispatch_js(event, params)), state}
   end
 
   def handle_call({:call, js_code}, _from, state) do
-    js_eval(state, js_code)
-    {:reply, js_eval(state, "document.body.innerHTML"), state}
+    {:reply, eval_and_render(state, js_code), state}
   end
 
   @impl true
@@ -73,6 +71,12 @@ defmodule PhoenixVapor.VueRuntime do
   def terminate(_reason, %{js: js, mode: :runtime}), do: QuickBEAM.stop(js)
 
   # ── Private ──
+
+  defp eval_and_render(state, code) do
+    with {:ok, _} <- js_eval(state, code) do
+      js_eval(state, "document.body.innerHTML")
+    end
+  end
 
   defp dispatch_js(event, params) do
     encoded = Jason.encode!(params)

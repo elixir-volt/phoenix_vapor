@@ -2,8 +2,6 @@ defmodule VaporDemoWeb.HybridContactsLive do
   use VaporDemoWeb, :live_view
   use PhoenixVapor, file: "HybridContacts.vue"
 
-  @colors ~w(bg-blue-500 bg-green-500 bg-purple-500 bg-orange-500 bg-pink-500 bg-teal-500 bg-indigo-500 bg-red-500 bg-cyan-500 bg-amber-500)
-
   @contacts [
     %{id: 1, name: "Alice Chen", email: "alice@acme.co", company: "Acme Corp", role: "Engineering Lead", color: "bg-blue-500"},
     %{id: 2, name: "Bob Smith", email: "bob@initech.com", company: "Initech", role: "Product Manager", color: "bg-green-500"},

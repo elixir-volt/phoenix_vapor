@@ -7,6 +7,21 @@ To start your Phoenix server:
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
+`mix setup` installs browser dependencies, builds the server-side Vue bundle used by `/dialog`, and builds browser assets.
+
+## Tests
+
+Install the browser test driver once, then run the suite:
+
+```sh
+mix setup
+npm --prefix assets ci
+(cd assets && npx playwright install chromium)
+mix test
+```
+
+The browser tests exercise `/search`, including filtering and clearing the search. Use the configured `localhost` host when testing manually so LiveView's origin check accepts the connection.
+
 Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
 
 ## Learn more

@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.MixProject do
   use Mix.Project
 
-  @version "0.3.2"
+  @version "0.3.3"
   @source_url "https://github.com/elixir-volt/phoenix_vapor"
 
   def project do
@@ -77,8 +77,8 @@ defmodule PhoenixVapor.MixProject do
       {:phoenix_live_view, "~> 1.2"},
       {:vize, "~> 0.14.2"},
       {:oxc, "~> 0.17.8"},
-      {:quickbeam, "~> 0.10.20", optional: true},
-      {:volt, "~> 0.17.10", optional: true, runtime: false},
+      {:quickbeam, "~> 0.11.1", optional: true},
+      {:volt, "~> 0.17.11 or ~> 0.18.0", optional: true, runtime: false},
       {:ex_doc, "~> 0.40.3", only: :dev, runtime: false}
     ]
   end
