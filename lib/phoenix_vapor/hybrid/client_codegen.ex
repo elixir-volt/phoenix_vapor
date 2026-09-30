@@ -2,10 +2,9 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   @moduledoc """
   Generates client-side JavaScript for hybrid components.
 
-  Takes the Vize Vue Vapor SFC compilation output and transforms it:
-  1. Replaces `__props` with a bridge-controlled reactive source
-  2. Replaces server action bodies with optimistic update + pushEvent stubs
-  3. Adds bridge initialization and props application exports
+  Takes Vize's compiled SFC output and:
+  1. Replaces server action bodies with optimistic prop updates and a `pushEvent`
+  2. Adds the bridge exports (`__mount`, `__applyProps`, `__setBridge`, ...)
   """
 
   alias PhoenixVapor.Hybrid.Classifier
@@ -31,35 +30,24 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   end
 
   @doc """
-  Transform Vize's Vue Vapor output for hybrid mode.
+  Transform Vize's compiled SFC output for hybrid mode.
 
-  Performs AST-based rewrites:
-  - Wraps `__props` access in a reactive bridge
-  - Replaces server action function bodies
-  - Adds bridge exports
+  Replaces server action bodies with optimistic prop updates followed by a
+  `pushEvent`, and wraps the component with the bridge exports.
   """
   @spec transform(String.t(), Classifier.classification()) :: String.t()
   def transform(vize_code, classification) do
-    server_actions = extract_server_actions(classification)
+    {:ok, ast} = OXC.parse(vize_code, "module.js")
+    patches = server_action_patches(ast, vize_code, classification) ++ default_export_patches(ast)
 
-    vize_code
-    |> inject_bridge_preamble(classification)
-    |> rewrite_props_source()
-    |> rewrite_server_actions(server_actions, classification)
-    |> inject_bridge_exports()
+    preamble(classification) <> "\n" <> OXC.patch_string(vize_code, patches) <> exports()
   end
 
-  defp inject_bridge_preamble(code, classification) do
-    client_refs =
-      classification.bindings
-      |> Enum.filter(fn {_, kind} -> match?({:client_ref, _}, kind) end)
-      |> Enum.map(fn {name, _} -> name end)
-      |> Enum.sort()
-
-    preamble = """
-    import { createApp as __createApp, reactive as __reactive } from 'vue';
+  defp preamble(classification) do
+    """
+    import { createApp as __createApp, h as __h, reactive as __reactive } from 'vue';
     let __bridge = null;
-    let __propsState = __reactive({});
+    const __propsState = __reactive({});
 
     export function __applyProps(props) {
       for (const key of Object.keys(__propsState)) {
@@ -73,64 +61,53 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     }
 
     export function __getClientState() {
-      return #{client_state_keys_json(client_refs)};
+      return #{Jason.encode!(client_refs(classification))};
     }
     """
-
-    preamble <> "\n" <> code
   end
 
-  defp client_state_keys_json(refs) do
-    pairs = Enum.map_join(refs, ", ", fn name -> ~s("#{name}") end)
-    "[#{pairs}]"
+  defp exports do
+    """
+
+    export { __component as default };
+
+    let __app = null;
+
+    export function __mount(el, bridge) {
+      if (bridge) __bridge = bridge;
+      // Rendering through h() reads __propsState inside the root render effect,
+      // so later __applyProps calls re-render. createApp(component, props) would
+      // copy the props once.
+      __app = __createApp({ render: () => __h(__component, __propsState) });
+      __app.mount(el);
+    }
+
+    export function __unmount() {
+      if (__app) { __app.unmount(); __app = null; }
+    }
+    """
   end
 
-  defp rewrite_props_source(code) do
-    # No rewrite needed — createVaporApp passes props to setup via __props.
-    # We keep __serverProps for future prop updates from LiveView diffs.
-    code
+  defp client_refs(classification) do
+    for {name, {:client_ref, _}} <- classification.bindings, do: name
   end
 
-  defp rewrite_server_actions(code, server_actions, classification) do
-    Enum.reduce(server_actions, code, fn {name, original_body}, acc ->
-      rewrite_single_action(acc, name, original_body, classification)
-    end)
+  defp client_values(classification) do
+    for {name, kind} <- classification.bindings,
+        match?({:client_ref, _}, kind) or kind == :client_computed or
+          match?({:mixed_computed, _, _}, kind),
+        into: MapSet.new(),
+        do: name
   end
 
-  defp rewrite_single_action(code, name, original_body, classification) do
-    optimistic_code = generate_optimistic_update(name, original_body, classification)
-    params = generate_params_extraction(original_body, classification)
-    push_code = ~s|__bridge.pushEvent("#{name}", #{params})|
-    new_body = "#{optimistic_code}\n    #{push_code}"
-
-    replace_function_body(code, name, new_body)
-  end
-
-  defp generate_optimistic_update(_name, body, classification) do
-    # Parse the body to find assignments to server props
-    case OXC.parse(body, "fn.js") do
-      {:ok, ast} ->
-        assignments = collect_prop_assignments(ast, classification)
-
-        Enum.map_join(assignments, "\n    ", fn {prop, expr} ->
-          "Object.assign(__serverProps.value, { #{prop}: #{expr} });\n    triggerRef(__serverProps);"
-        end)
-
-      _ ->
-        ""
-    end
-  end
-
-  defp collect_prop_assignments(ast, classification) do
-    prop_set = MapSet.new(classification.client_props ++ classification.server_only_props)
+  defp server_action_patches(ast, code, classification) do
+    actions =
+      for {name, {:server_action, _body}} <- classification.handlers, into: MapSet.new(), do: name
 
     OXC.collect(ast, fn
-      %{type: :expression_statement,
-        expression: %{type: :assignment_expression, operator: "=",
-                      left: %{type: :identifier, name: name}}} = stmt ->
-        if MapSet.member?(prop_set, name) do
-          # Get the RHS source text — we reconstruct it from the expression
-          {:keep, {name, reconstruct_rhs(stmt.expression.right)}}
+      %{type: :function_declaration, id: %{name: name}} = fun ->
+        if MapSet.member?(actions, name) do
+          {:keep, server_action_patch(fun, code, classification)}
         else
           :skip
         end
@@ -140,194 +117,90 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     end)
   end
 
-  defp reconstruct_rhs(%{type: :call_expression, callee: callee, arguments: args}) do
-    callee_str = reconstruct_rhs(callee)
-    args_str = Enum.map_join(args, ", ", &reconstruct_rhs/1)
-    "#{callee_str}(#{args_str})"
+  defp server_action_patch(%{id: %{name: name}, params: params, body: body}, code, classification) do
+    optimistic =
+      body.body
+      |> Enum.flat_map(&optimistic_update(&1, code, classification))
+      |> Enum.map(&("\n  " <> &1))
+
+    push =
+      "\n  __bridge.pushEvent(#{Jason.encode!(name)}, #{event_params(body, params, code, classification)});\n"
+
+    %{start: body.start + 1, end: body.end - 1, change: Enum.join(optimistic) <> push}
   end
 
-  defp reconstruct_rhs(%{type: :member_expression, object: obj, property: prop, computed: false}) do
-    "#{reconstruct_rhs(obj)}.#{prop.name}"
+  # `prop = expr` and `props.prop = expr` apply locally before the server confirms.
+  defp optimistic_update(
+         %{
+           type: :expression_statement,
+           expression: %{type: :assignment_expression, operator: "=", left: left, right: right}
+         },
+         code,
+         classification
+       ) do
+    case assigned_prop(left, classification) do
+      nil -> []
+      prop -> ["__propsState[#{Jason.encode!(prop)}] = #{slice(code, right)};"]
+    end
   end
 
-  defp reconstruct_rhs(%{type: :member_expression, object: obj, property: prop, computed: true}) do
-    "#{reconstruct_rhs(obj)}[#{reconstruct_rhs(prop)}]"
+  defp optimistic_update(_statement, _code, _classification), do: []
+
+  defp assigned_prop(%{type: :identifier, name: name}, classification) do
+    if name in all_props(classification), do: name
   end
 
-  defp reconstruct_rhs(%{type: :identifier, name: name}), do: name
-
-  defp reconstruct_rhs(%{type: :arrow_function_expression, params: params, body: body}) do
-    params_str = Enum.map_join(params, ", ", &reconstruct_rhs/1)
-    body_str = reconstruct_rhs(body)
-    "(#{params_str}) => #{body_str}"
+  defp assigned_prop(
+         %{
+           type: :member_expression,
+           computed: false,
+           object: %{type: :identifier, name: "props"},
+           property: %{name: name}
+         },
+         classification
+       ) do
+    if name in all_props(classification), do: name
   end
 
-  defp reconstruct_rhs(%{type: :binary_expression, left: l, operator: op, right: r}) do
-    "#{reconstruct_rhs(l)} #{op} #{reconstruct_rhs(r)}"
-  end
+  defp assigned_prop(_left, _classification), do: nil
 
-  defp reconstruct_rhs(%{type: :literal, raw: raw}), do: raw
-  defp reconstruct_rhs(%{type: :literal, value: value}) when is_binary(value), do: ~s("#{value}")
-  defp reconstruct_rhs(%{type: :literal, value: value}), do: to_string(value)
+  defp all_props(classification),
+    do: classification.client_props ++ classification.server_only_props
 
-  defp reconstruct_rhs(%{type: :object_expression, properties: props}) do
-    pairs = Enum.map_join(props, ", ", fn p ->
-      key = reconstruct_rhs(p.key)
-      val = reconstruct_rhs(p.value)
-      if p[:shorthand], do: key, else: "#{key}: #{val}"
-    end)
-    "{ #{pairs} }"
-  end
+  # Sends the action's arguments and the current value of each client ref or
+  # computed it reads.
+  defp event_params(body, params, code, classification) do
+    param_names =
+      for %{type: :identifier, name: name} <- params, do: name
 
-  defp reconstruct_rhs(%{type: :spread_element, argument: arg}) do
-    "...#{reconstruct_rhs(arg)}"
-  end
+    values = client_values(classification)
 
-  defp reconstruct_rhs(%{type: :array_expression, elements: elems}) do
-    "[#{Enum.map_join(elems, ", ", &reconstruct_rhs/1)}]"
-  end
-
-  defp reconstruct_rhs(_node), do: "undefined"
-
-  defp generate_params_extraction(body, classification) do
-    prop_names = MapSet.new(classification.client_props ++ classification.server_only_props)
-    reserved = MapSet.union(prop_names, MapSet.new(["props", "this", "console", "window", "document"]))
-
-    params =
-      body
+    pairs =
+      code
+      |> slice(body)
       |> Classifier.free_variables()
-      |> Enum.reject(&MapSet.member?(reserved, &1))
-
-    if params == [] do
-      "{}"
-    else
-      pairs = Enum.map_join(params, ", ", fn name -> "#{name}: #{name}" end)
-      "{ #{pairs} }"
-    end
-  end
-
-  defp replace_function_body(code, fn_name, new_body) do
-    # The function lives inside setup() which is inside an object expression.
-    # OXC may fail to parse the full hybrid output (it has module-level statements
-    # mixed with export default). Use a targeted approach: find the function
-    # declaration pattern and replace its body.
-    #
-    # Strategy: parse the setup body content in isolation to find the function span,
-    # then map the offsets back to the full code.
-    case find_function_in_code(code, fn_name) do
-      {body_start, body_end} ->
-        OXC.patch_string(code, [
-          %{start: body_start + 1, end: body_end - 1, change: " #{new_body} "}
-        ])
-
-      nil ->
-        code
-    end
-  end
-
-  defp find_function_in_code(code, target_name) do
-    # Find `function <name>(` pattern and then locate its body braces
-    pattern = "function #{target_name}("
-
-    case :binary.match(code, pattern) do
-      {start, _len} ->
-        # Find the opening brace of the function body
-        rest = binary_part(code, start, byte_size(code) - start)
-        find_balanced_braces(rest, start)
-
-      :nomatch ->
-        nil
-    end
-  end
-
-  defp find_balanced_braces(str, base_offset) do
-    case find_char(str, ?{, 0) do
-      nil ->
-        nil
-
-      open_pos ->
-        after_open = binary_part(str, open_pos + 1, byte_size(str) - open_pos - 1)
-        close_relative = find_matching_close(after_open, 0, 1)
-
-        if close_relative do
-          {base_offset + open_pos, base_offset + open_pos + 1 + close_relative}
+      |> Enum.flat_map(fn name ->
+        cond do
+          name in param_names -> ["#{Jason.encode!(name)}: #{name}"]
+          MapSet.member?(values, name) -> ["#{Jason.encode!(name)}: #{name}.value"]
+          true -> []
         end
-    end
+      end)
+
+    "{" <> Enum.join(pairs, ", ") <> "}"
   end
 
-  defp find_char(<<c, _rest::binary>>, c, pos), do: pos
-  defp find_char(<<_, rest::binary>>, c, pos), do: find_char(rest, c, pos + 1)
-  defp find_char(<<>>, _c, _pos), do: nil
-
-  defp find_matching_close(<<>>, _pos, _depth), do: nil
-  defp find_matching_close(_, _pos, depth) when depth < 0, do: nil
-
-  defp find_matching_close(<<c, rest::binary>>, pos, depth) do
-    cond do
-      c == ?} and depth == 1 -> pos
-      c == ?} -> find_matching_close(rest, pos + 1, depth - 1)
-      c == ?{ -> find_matching_close(rest, pos + 1, depth + 1)
-      c == ?\" -> skip_string(rest, pos + 1, ?\", depth)
-      c == ?' -> skip_string(rest, pos + 1, ?', depth)
-      c == ?` -> skip_template_literal(rest, pos + 1, depth)
-      true -> find_matching_close(rest, pos + 1, depth)
-    end
-  end
-
-  defp skip_string(<<>>, _pos, _quote, _depth), do: nil
-  defp skip_string(<<?\\, _, rest::binary>>, pos, quote, depth), do: skip_string(rest, pos + 2, quote, depth)
-  defp skip_string(<<c, rest::binary>>, pos, c, depth), do: find_matching_close(rest, pos + 1, depth)
-  defp skip_string(<<_, rest::binary>>, pos, quote, depth), do: skip_string(rest, pos + 1, quote, depth)
-
-  defp skip_template_literal(<<>>, _pos, _depth), do: nil
-  defp skip_template_literal(<<?\\, _, rest::binary>>, pos, depth), do: skip_template_literal(rest, pos + 2, depth)
-  defp skip_template_literal(<<?`, rest::binary>>, pos, depth), do: find_matching_close(rest, pos + 1, depth)
-  defp skip_template_literal(<<_, rest::binary>>, pos, depth), do: skip_template_literal(rest, pos + 1, depth)
-
-  defp inject_bridge_exports(code) do
-    code = rewrite_default_export(code)
-
-    code <>
-      """
-
-      export { __component as default };
-
-      let __app = null;
-
-      export function __mount(el, bridge) {
-        __bridge = bridge;
-        __app = __createApp(__component, __propsState);
-        __app.mount(el);
-      }
-
-      export function __unmount() {
-        if (__app) { __app.unmount(); __app = null; }
-      }
-      """
-  end
-
-  defp rewrite_default_export(code) do
-    case OXC.parse(code, "module.js") do
-      {:ok, ast} ->
-        patches =
-          OXC.collect(ast, fn
-            %{type: :export_default_declaration, start: s, declaration: %{start: ds}} ->
-              {:keep, %{start: s, end: ds, change: "const __component = "}}
-
-            _ ->
-              :skip
-          end)
-
-        if patches == [] do
-          code
-        else
-          OXC.patch_string(code, patches)
-        end
+  defp default_export_patches(ast) do
+    OXC.collect(ast, fn
+      %{type: :export_default_declaration, start: s, declaration: %{start: ds}} ->
+        {:keep, %{start: s, end: ds, change: "const __component = "}}
 
       _ ->
-        code
-    end
+        :skip
+    end)
   end
+
+  defp slice(code, %{start: s, end: e}), do: binary_part(code, s, e - s)
 
   defp strip_elixir_block(sfc_source) do
     case Vize.parse_sfc(sfc_source) do
@@ -359,11 +232,5 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
       {pos, len} -> pos + len
       :nomatch -> 0
     end
-  end
-
-  defp extract_server_actions(classification) do
-    classification.handlers
-    |> Enum.filter(fn {_, kind} -> match?({:server_action, _}, kind) end)
-    |> Enum.map(fn {name, {:server_action, body}} -> {name, body} end)
   end
 end

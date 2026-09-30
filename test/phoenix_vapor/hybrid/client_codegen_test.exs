@@ -148,8 +148,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><button @click="deleteUser(1)">x</button></template>
         """)
 
-      assert js =~ "__propsState"
-      assert js =~ "triggerRef"
+      assert js =~ ~s|__propsState["users"] = users.filter(u => u.id !== id);|
+      refute js =~ "__serverProps"
     end
 
     test "client handler is NOT rewritten" do
