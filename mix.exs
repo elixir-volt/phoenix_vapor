@@ -46,7 +46,8 @@ defmodule PhoenixVapor.MixProject do
         "GitHub" => @source_url,
         "Volt" => "https://github.com/elixir-volt/volt"
       },
-      files: ~w(lib priv/js .formatter.exs mix.exs README.md ARCHITECTURE.md CHANGELOG.md LICENSE)
+      files: ~w(lib priv/js/hybrid-bridge.js priv/js/runtime-setup.js priv/js/vue-reactivity.js
+                 .formatter.exs mix.exs README.md ARCHITECTURE.md CHANGELOG.md LICENSE)
     ]
   end
 

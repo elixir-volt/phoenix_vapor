@@ -5,6 +5,8 @@
 ### Fixed
 
 - Render `v-html`. Vize dropped the `set_html` slot, so the element rendered empty; vize 0.15.0 keeps it.
+- Publish only PhoenixVapor's own JavaScript files. The Hex package included all of `priv/js`, so a locally built bundle such as `reka-dialog.js` would have been published with it.
+- Point the README install snippet and the bundle task's error message at the current QuickBEAM and Volt versions.
 
 ### Compatibility
 

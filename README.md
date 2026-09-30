@@ -186,8 +186,8 @@ The `<script lang="elixir">` block is extracted and injected into the LiveView m
 def deps do
   [
     {:phoenix_vapor, "~> 0.3.3"},
-    {:quickbeam, "~> 0.10.0", optional: true},
-    {:volt, "~> 0.10.0", optional: true}
+    {:quickbeam, "~> 0.11.2", optional: true},
+    {:volt, "~> 0.19.0", optional: true}
   ]
 end
 ```

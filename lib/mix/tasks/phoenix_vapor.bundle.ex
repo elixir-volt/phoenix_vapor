@@ -22,7 +22,7 @@ defmodule Mix.Tasks.PhoenixVapor.Bundle do
   @impl true
   def run(args) do
     unless Code.ensure_loaded?(Volt.Builder) do
-      Mix.raise("Volt is required for bundling. Add {:volt, \"~> 0.2.0\"} to your deps.")
+      Mix.raise("Volt is required for bundling. Add {:volt, \"~> 0.19.0\"} to your deps.")
     end
 
     {parsed, _, _} =
