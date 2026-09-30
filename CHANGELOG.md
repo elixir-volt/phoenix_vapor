@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.4 - 2026-09-30
+
+### Compatibility
+
+- Support Volt 0.19, OXC 0.18, and Vize 0.15, alongside the versions supported before.
 
 ## 0.3.3 - 2026-09-15
 
