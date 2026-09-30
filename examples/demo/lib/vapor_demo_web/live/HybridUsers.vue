@@ -1,14 +1,14 @@
 <script setup>
 import { ref, computed } from "vue"
 
-defineProps(["users", "title"])
+const props = defineProps(["users", "title"])
 
 const search = ref("")
 const sortKey = ref("name")
 
 const filtered = computed(() => {
   const term = search.value.toLowerCase()
-  return users
+  return props.users
     .filter(u => u.name.toLowerCase().includes(term))
     .sort((a, b) => a[sortKey.value].localeCompare(b[sortKey.value]))
 })
@@ -19,7 +19,7 @@ function clearSearch() {
 
 function deleteUser(id) {
   "use server"
-  users = users.filter(u => u.id !== id)
+  props.users = props.users.filter(u => u.id !== id)
 }
 </script>
 

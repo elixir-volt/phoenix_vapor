@@ -40,12 +40,16 @@ defmodule PhoenixVapor.ScriptSetup do
     if Code.ensure_loaded?(QuickBEAM) do
       {:ok, rt} = QuickBEAM.start()
 
-      Enum.reduce(refs, assigns, fn {name, init_expr}, acc ->
-        case QuickBEAM.eval(rt, "(#{init_expr})") do
-          {:ok, value} -> Map.put(acc, String.to_atom(name), value)
-          _ -> Map.put(acc, String.to_atom(name), nil)
-        end
-      end)
+      try do
+        Enum.reduce(refs, assigns, fn {name, init_expr}, acc ->
+          case QuickBEAM.eval(rt, "(#{init_expr})") do
+            {:ok, value} -> Map.put(acc, String.to_atom(name), value)
+            _ -> Map.put(acc, String.to_atom(name), nil)
+          end
+        end)
+      after
+        QuickBEAM.stop(rt)
+      end
     else
       Enum.reduce(refs, assigns, fn {name, _}, acc ->
         Map.put(acc, String.to_atom(name), nil)
@@ -130,13 +134,18 @@ defmodule PhoenixVapor.ScriptSetup do
 
   defp extract_props(ast) do
     OXC.collect(ast, fn
-      %{type: :expression_statement,
-        expression: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}} ->
+      %{
+        type: :expression_statement,
+        expression: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}
+      } ->
         extract_props_from_args(args)
 
       %{type: :variable_declaration, declarations: decls} ->
         results =
-          for %{type: :variable_declarator, init: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}} <- decls,
+          for %{
+                type: :variable_declarator,
+                init: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}
+              } <- decls,
               result = extract_props_from_args(args),
               result != :skip do
             result

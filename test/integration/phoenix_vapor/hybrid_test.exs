@@ -339,7 +339,7 @@ defmodule PhoenixVapor.Integration.HybridTest do
 
     test "deleteContact sends id param" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ ~s(pushEvent("deleteContact", { id: id })
+      assert js =~ ~s|pushEvent("deleteContact", {"id": id})|
     end
 
     test "clearSearch does NOT have pushEvent" do

@@ -1,73 +1,61 @@
 /**
  * PhoenixVapor Hybrid Bridge
  *
- * Connects LiveView's diff protocol to the Vue Vapor reactive system.
- * Registers a LiveView hook that:
- * - On mount: reads initial props from data-pv-props, initializes the component
- * - On update: parses new props from the diff, feeds them to __applyProps
- * - On reconnect: re-syncs full props from the server
- * - Provides pushEvent for server actions
+ * LiveView hook for hybrid components. The server renders the component
+ * inside a `phx-update="ignore"` wrapper whose `data-pv-props` attribute holds
+ * the client props as JSON. LiveView keeps merging `data-*` attributes into an
+ * ignored element, so `updated()` receives every props change.
  */
+
+function readProps(el) {
+  try {
+    return JSON.parse(el.dataset.pvProps || "{}")
+  } catch (e) {
+    console.warn("[PhoenixVapor] Failed to parse data-pv-props:", e)
+    return null
+  }
+}
 
 export function createHybridHook(components) {
   return {
     mounted() {
-      const el = this.el
-      const componentName = el.dataset.pvClient
+      const name = this.el.dataset.pvClient
+      const component = name && components[name]
 
-      if (!componentName || !components[componentName]) {
-        console.warn(`[PhoenixVapor] Component "${componentName}" not found in registry`)
+      if (!component) {
+        console.warn(`[PhoenixVapor] Component "${name}" not found in registry`)
         return
       }
 
-      const component = components[componentName]
-
       const bridge = {
-        pushEvent: (event, params, callback) => {
-          this.pushEvent(event, params, callback)
-        },
-        pushEventTo: (selector, event, params, callback) => {
-          this.pushEventTo(selector, event, params, callback)
-        },
-        handleEvent: (event, callback) => {
-          this.handleEvent(event, callback)
-        }
+        pushEvent: (event, params, callback) => this.pushEvent(event, params, callback),
+        pushEventTo: (selector, event, params, callback) =>
+          this.pushEventTo(selector, event, params, callback),
+        handleEvent: (event, callback) => this.handleEvent(event, callback)
       }
 
-      component.__mount(el, bridge)
+      component.__applyProps(readProps(this.el) || {})
+      component.__mount(this.el, bridge)
       this.__pvComponent = component
     },
 
     updated() {
-      if (!this.__pvComponent) return
-
-      const propsAttr = this.el.dataset.pvProps
-      if (!propsAttr) return
-
-      try {
-        const props = JSON.parse(propsAttr)
-        this.__pvComponent.__applyProps(props)
-      } catch (e) {
-        console.warn("[PhoenixVapor] Failed to parse props update:", e)
-      }
+      this.applyProps()
     },
 
     reconnected() {
-      if (!this.__pvComponent) return
-
-      const propsAttr = this.el.dataset.pvProps
-      if (!propsAttr) return
-
-      try {
-        const props = JSON.parse(propsAttr)
-        this.__pvComponent.__applyProps(props)
-      } catch (e) {
-        console.warn("[PhoenixVapor] Failed to parse props on reconnect:", e)
-      }
+      this.applyProps()
     },
 
     destroyed() {
+      if (this.__pvComponent) this.__pvComponent.__unmount()
       this.__pvComponent = null
+    },
+
+    applyProps() {
+      if (!this.__pvComponent) return
+      const props = readProps(this.el)
+      if (props) this.__pvComponent.__applyProps(props)
     }
   }
 }

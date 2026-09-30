@@ -5,10 +5,14 @@ import topbar from "../vendor/topbar"
 import {patchLiveSocket} from "../phoenix_vapor/index.js"
 import {getHybridHooks} from "../phoenix_vapor_hybrid/bridge.js"
 
+import * as HybridContacts from "./hybrid/HybridContacts.hybrid.js"
 import * as HybridSearch from "./hybrid/HybridSearch.hybrid.js"
+import * as HybridUsers from "./hybrid/HybridUsers.hybrid.js"
 
 const hybridHooks = getHybridHooks({
+  HybridContacts,
   HybridSearch,
+  HybridUsers,
 })
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
