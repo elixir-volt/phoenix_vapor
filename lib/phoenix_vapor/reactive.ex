@@ -66,14 +66,17 @@ defmodule PhoenixVapor.Reactive do
     split = Vize.vapor_split!(template_content)
     escaped_split = Macro.escape(split)
 
-    {refs, computeds, functions, function_bodies, props} =
+    {refs, computeds, functions, function_bodies, _props} =
       if script_content do
         PhoenixVapor.ScriptSetup.parse(script_content)
       else
         {%{}, %{}, [], %{}, []}
       end
 
-    mount_ast = gen_mount(refs, computeds, functions, function_bodies, props)
+    # Only URL params the template reads become assigns, so a request can't
+    # create atoms.
+    param_keys = PhoenixVapor.Renderer.assign_keys(split)
+    mount_ast = gen_mount(refs, computeds, functions, function_bodies, param_keys)
     render_ast = gen_render(escaped_split)
     event_asts = gen_events(functions)
 
@@ -86,7 +89,7 @@ defmodule PhoenixVapor.Reactive do
     end
   end
 
-  defp gen_mount(refs, computeds, functions, function_bodies, _props) do
+  defp gen_mount(refs, computeds, functions, function_bodies, param_keys) do
     escaped_refs = Macro.escape(refs)
     escaped_computeds = Macro.escape(computeds)
     escaped_functions = Macro.escape(functions)
@@ -105,10 +108,7 @@ defmodule PhoenixVapor.Reactive do
         {:ok, state} = PhoenixVapor.Runtime.get_state(runtime)
         assigns = PhoenixVapor.Reactive.state_to_assigns(state)
 
-        param_assigns =
-          Enum.reduce(params, %{}, fn {k, v}, acc ->
-            Map.put(acc, String.to_atom(k), v)
-          end)
+        param_assigns = PhoenixVapor.Reactive.param_assigns(params, unquote(param_keys))
 
         socket =
           socket
@@ -148,6 +148,15 @@ defmodule PhoenixVapor.Reactive do
       end
     end)
   end
+
+  @doc false
+  def param_assigns(params, keys) when is_map(params) do
+    for key <- keys, {:ok, value} <- [Map.fetch(params, Atom.to_string(key))], into: %{} do
+      {key, value}
+    end
+  end
+
+  def param_assigns(_not_mounted_at_router, _keys), do: %{}
 
   @doc false
   def state_to_assigns(state) when is_map(state) do

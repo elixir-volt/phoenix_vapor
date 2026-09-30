@@ -26,13 +26,24 @@
       refs[name] = ref(new Function("return " + initExpr)());
     }
 
+    // Computeds are lazy and read their dependencies through a scope, so a
+    // computed may use one declared after it and only tracks the names its
+    // expression actually reads.
+    const scope = new Proxy(
+      {},
+      {
+        has: (_, key) => key in refs || key in computedRefs,
+        get: (_, key) =>
+          typeof key === "string" ? (refs[key] || computedRefs[key]).value : undefined,
+      }
+    );
+
     for (const [name, expr] of Object.entries(config.computeds || {})) {
-      const allRefs = { ...refs, ...computedRefs };
-      const paramNames = Object.keys(allRefs);
-      const getter = new Function(...paramNames, "return " + expr);
-      computedRefs[name] = computed(() =>
-        getter(...paramNames.map((n) => allRefs[n].value))
-      );
+      const source = expr.trim();
+      // `computed(() => { ... })` arrives as its block body.
+      const body = source.startsWith("{") ? source : "return (" + source + ")";
+      const getter = new Function("__scope", "with (__scope) { " + body + " }");
+      computedRefs[name] = computed(() => getter(scope));
     }
 
     // Handler bodies use bare ref names (count++, items.push(...)).

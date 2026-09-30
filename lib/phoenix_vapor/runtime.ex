@@ -67,7 +67,7 @@ defmodule PhoenixVapor.Runtime do
 
     config = %{
       refs: Keyword.get(opts, :refs, %{}),
-      computeds: topo_sort_computeds(Keyword.get(opts, :computeds, %{})),
+      computeds: Keyword.get(opts, :computeds, %{}),
       functions: build_functions_map(opts)
     }
 
@@ -143,42 +143,5 @@ defmodule PhoenixVapor.Runtime do
 
     Keyword.get(opts, :functions, [])
     |> Map.new(fn name -> {name, Map.get(bodies, name, "")} end)
-  end
-
-  defp topo_sort_computeds(computeds) when map_size(computeds) <= 1, do: computeds
-
-  defp topo_sort_computeds(computeds) do
-    names = Map.keys(computeds)
-
-    deps =
-      Map.new(computeds, fn {name, expr} ->
-        free = free_vars_in_expr(expr)
-        referenced = Enum.filter(names, &(&1 != name && &1 in free))
-        {name, referenced}
-      end)
-
-    {sorted, _} =
-      Enum.reduce(names, {[], MapSet.new()}, fn _, {acc, visited} ->
-        case Enum.find(names, fn n -> n not in visited && Enum.all?(deps[n] || [], &(&1 in visited)) end) do
-          nil -> {acc, visited}
-          name -> {acc ++ [{name, computeds[name]}], MapSet.put(visited, name)}
-        end
-      end)
-
-    Map.new(sorted)
-  end
-
-  defp free_vars_in_expr(expr) do
-    case OXC.parse(expr, "e.js") do
-      {:ok, ast} ->
-        OXC.collect(ast, fn
-          %{type: :identifier, name: name} -> {:keep, name}
-          _ -> :skip
-        end)
-        |> MapSet.new()
-
-      _ ->
-        MapSet.new()
-    end
   end
 end

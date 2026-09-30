@@ -67,6 +67,35 @@ defmodule PhoenixVapor.Renderer do
     }
   end
 
+  @doc false
+  # Every root assign key a split's expressions read, for callers that need the
+  # set at compile time.
+  @spec assign_keys(map()) :: [atom()]
+  def assign_keys(%{slots: slots}) do
+    slots |> Enum.flat_map(&slot_assign_keys/1) |> Enum.uniq()
+  end
+
+  defp slot_assign_keys(%{kind: kind, values: values}) when kind in [:set_text, :set_prop],
+    do: Expr.values_assign_keys(values)
+
+  defp slot_assign_keys(%{kind: kind, value: expr}) when kind in [:set_html, :v_show, :v_model],
+    do: Expr.assign_keys(expr)
+
+  defp slot_assign_keys(%{kind: :if_node, condition: expr, positive: pos, negative: neg}) do
+    Expr.assign_keys(expr) ++ assign_keys(pos) ++ if(neg, do: slot_or_split_keys(neg), else: [])
+  end
+
+  defp slot_assign_keys(%{kind: :for_node, source: source, render: render}),
+    do: Expr.assign_keys(source) ++ assign_keys(render)
+
+  defp slot_assign_keys(%{kind: :create_component, props: props}),
+    do: Enum.flat_map(props, &Expr.values_assign_keys(&1.values))
+
+  defp slot_assign_keys(_slot), do: []
+
+  defp slot_or_split_keys(%{kind: _} = slot), do: slot_assign_keys(slot)
+  defp slot_or_split_keys(split), do: assign_keys(split)
+
   # ── Slot evaluation ──
 
   defp eval_slot(%{kind: :set_text, values: values}, assigns) do
