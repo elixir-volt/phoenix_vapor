@@ -5,6 +5,14 @@
 ### Fixed
 
 - Render `v-html`. Vize dropped the `set_html` slot, so the element rendered empty; vize 0.15.0 keeps it.
+- Hybrid server actions no longer throw in the browser. They referenced `__serverProps` and `triggerRef`, which the generated module never defined.
+- Re-render hybrid components when LiveView sends new props. Only the first render used them.
+- Keep hybrid components working across server updates. The wrapper is now `phx-update="ignore"`, and the props JSON is a dynamic instead of part of the statics, so a prop change no longer resends the whole tree.
+- Send the values of refs and computeds in server action params, instead of serialized `Ref` objects.
+- The bundled hybrid bridge applies the initial props before mounting and unmounts the component when the hook is destroyed.
+- Stop leaking a QuickBEAM runtime on every hybrid render.
+- Reactive `mount/3` no longer creates atoms from URL params. Only params the template reads become assigns.
+- Computeds may read computeds declared after them, and block-bodied computeds work in Reactive mode.
 - Publish only PhoenixVapor's own JavaScript files. The Hex package included all of `priv/js`, so a locally built bundle such as `reka-dialog.js` would have been published with it.
 - Point the README install snippet and the bundle task's error message at the current QuickBEAM and Volt versions.
 
