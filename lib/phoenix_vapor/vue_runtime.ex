@@ -46,7 +46,9 @@ defmodule PhoenixVapor.VueRuntime do
     combined = read_bundle(bundle) <> "\n;\n(function(){\n" <> setup <> "\n})();"
 
     case js_eval(state, combined) do
-      {:ok, _} -> {:ok, state}
+      {:ok, _} ->
+        {:ok, state}
+
       {:error, err} ->
         stop_js(js, mode)
         {:stop, err}
@@ -102,7 +104,9 @@ defmodule PhoenixVapor.VueRuntime do
 
   defp start_js(pool) do
     if Code.ensure_loaded?(QuickBEAM.Context) do
-      {:ok, ctx} = QuickBEAM.Context.start_link(pool: pool, apis: [:browser], max_stack_size: @stack_size)
+      {:ok, ctx} =
+        QuickBEAM.Context.start_link(pool: pool, apis: [:browser], max_stack_size: @stack_size)
+
       {ctx, :context}
     else
       start_js(nil)

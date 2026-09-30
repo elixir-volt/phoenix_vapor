@@ -103,10 +103,15 @@ defmodule PhoenixVapor.Hybrid do
     case desc.script do
       %{lang: "elixir", content: content} when is_binary(content) ->
         case Code.string_to_quoted(content, file: file_path) do
-          {:ok, {:__block__, _, exprs}} -> exprs
-          {:ok, expr} -> [expr]
+          {:ok, {:__block__, _, exprs}} ->
+            exprs
+
+          {:ok, expr} ->
+            [expr]
+
           {:error, {meta, msg, token}} ->
             line = Keyword.get(List.wrap(meta), :line, 0)
+
             raise CompileError,
               file: file_path,
               line: line,

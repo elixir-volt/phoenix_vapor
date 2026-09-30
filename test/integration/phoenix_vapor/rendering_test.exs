@@ -46,7 +46,9 @@ defmodule PhoenixVapor.Integration.RenderingTest do
     end
 
     test "multiple interpolations in one text node" do
-      rendered = PhoenixVapor.render("<span>{{ first }} {{ last }}</span>", %{first: "John", last: "Doe"})
+      rendered =
+        PhoenixVapor.render("<span>{{ first }} {{ last }}</span>", %{first: "John", last: "Doe"})
+
       assert render_to_html(rendered) == "<span>John Doe</span>"
     end
 
@@ -88,7 +90,9 @@ defmodule PhoenixVapor.Integration.RenderingTest do
 
   describe "dynamic attributes" do
     test "single :class binding" do
-      rendered = PhoenixVapor.render(~s[<div :class="cls">{{ msg }}</div>], %{cls: "active", msg: "Hi"})
+      rendered =
+        PhoenixVapor.render(~s[<div :class="cls">{{ msg }}</div>], %{cls: "active", msg: "Hi"})
+
       assert render_to_html(rendered) == ~s[<div class="active">Hi</div>]
     end
 
@@ -399,7 +403,11 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       rendered =
         PhoenixVapor.render(
           ~s[<div :class="status"><h1>{{ title }}</h1><ul><li v-for="item in items">{{ item.name }}</li></ul></div>],
-          %{status: "active", title: "Dashboard", items: [%{"name" => "Alice"}, %{"name" => "Bob"}]}
+          %{
+            status: "active",
+            title: "Dashboard",
+            items: [%{"name" => "Alice"}, %{"name" => "Bob"}]
+          }
         )
 
       html = render_to_html(rendered)
@@ -443,9 +451,9 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       assigns = %{msg: "Hi"}
 
       rendered =
-        vue ~VUE"""
+        vue(~VUE"""
         <span>{{ msg }}</span>
-        """
+        """)
 
       assert %Phoenix.LiveView.Rendered{} = rendered
       assert render_to_html(rendered) == "<span>Hi</span>"

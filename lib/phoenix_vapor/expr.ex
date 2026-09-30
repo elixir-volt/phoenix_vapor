@@ -102,7 +102,10 @@ defmodule PhoenixVapor.Expr do
       Enum.with_index(quasis)
       |> Enum.flat_map(fn {quasi, i} ->
         cooked = quasi[:cooked] || quasi[:raw] || ""
-        expr_val = if i < length(expressions), do: [eval_node(Enum.at(expressions, i), assigns)], else: []
+
+        expr_val =
+          if i < length(expressions), do: [eval_node(Enum.at(expressions, i), assigns)], else: []
+
         [cooked | expr_val]
       end)
 
@@ -122,7 +125,10 @@ defmodule PhoenixVapor.Expr do
     end
   end
 
-  defp eval_node(%{type: :conditional_expression, test: test, consequent: cons, alternate: alt}, assigns) do
+  defp eval_node(
+         %{type: :conditional_expression, test: test, consequent: cons, alternate: alt},
+         assigns
+       ) do
     if eval_node(test, assigns), do: eval_node(cons, assigns), else: eval_node(alt, assigns)
   end
 
@@ -221,9 +227,17 @@ defmodule PhoenixVapor.Expr do
   end
 
   defp eval_node(%{type: type}, _assigns)
-       when type in [:arrow_function_expression, :function_expression, :sequence_expression,
-                      :assignment_expression, :update_expression, :new_expression,
-                      :tagged_template_expression, :yield_expression, :await_expression] do
+       when type in [
+              :arrow_function_expression,
+              :function_expression,
+              :sequence_expression,
+              :assignment_expression,
+              :update_expression,
+              :new_expression,
+              :tagged_template_expression,
+              :yield_expression,
+              :await_expression
+            ] do
     throw(:unsupported_node)
   end
 
@@ -231,10 +245,18 @@ defmodule PhoenixVapor.Expr do
 
   defp get_assign(assigns, name) do
     case name do
-      "true" -> true
-      "false" -> false
-      "null" -> nil
-      "undefined" -> nil
+      "true" ->
+        true
+
+      "false" ->
+        false
+
+      "null" ->
+        nil
+
+      "undefined" ->
+        nil
+
       _ ->
         atom_key = String.to_existing_atom(name)
         Map.get(assigns, atom_key, Map.get(assigns, name))
@@ -280,24 +302,35 @@ defmodule PhoenixVapor.Expr do
   defp call_method(str, "trim", []) when is_binary(str), do: String.trim(str)
   defp call_method(str, "toUpperCase", []) when is_binary(str), do: String.upcase(str)
   defp call_method(str, "toLowerCase", []) when is_binary(str), do: String.downcase(str)
-  defp call_method(str, "includes", [sub]) when is_binary(str), do: String.contains?(str, to_string(sub))
-  defp call_method(str, "startsWith", [pre]) when is_binary(str), do: String.starts_with?(str, to_string(pre))
-  defp call_method(str, "endsWith", [suf]) when is_binary(str), do: String.ends_with?(str, to_string(suf))
+
+  defp call_method(str, "includes", [sub]) when is_binary(str),
+    do: String.contains?(str, to_string(sub))
+
+  defp call_method(str, "startsWith", [pre]) when is_binary(str),
+    do: String.starts_with?(str, to_string(pre))
+
+  defp call_method(str, "endsWith", [suf]) when is_binary(str),
+    do: String.ends_with?(str, to_string(suf))
+
   defp call_method(_, _, _), do: nil
 
-  defp numeric_or_string_add(l, r) when is_binary(l) or is_binary(r), do: to_string(l) <> to_string(r)
+  defp numeric_or_string_add(l, r) when is_binary(l) or is_binary(r),
+    do: to_string(l) <> to_string(r)
+
   defp numeric_or_string_add(l, r), do: to_number(l) + to_number(r)
 
   defp to_number(n) when is_number(n), do: n
   defp to_number(true), do: 1
   defp to_number(false), do: 0
   defp to_number(nil), do: 0
+
   defp to_number(s) when is_binary(s) do
     case Float.parse(s) do
       {n, ""} -> n
       _ -> 0
     end
   end
+
   defp to_number(_), do: 0
 
   defp safe_div(_, 0), do: nil

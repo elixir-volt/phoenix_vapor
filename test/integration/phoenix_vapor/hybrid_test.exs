@@ -167,12 +167,16 @@ defmodule PhoenixVapor.Integration.HybridTest do
         dynamic
         |> List.flatten()
         |> Enum.any?(fn
-          %Phoenix.LiveView.Comprehension{} -> true
+          %Phoenix.LiveView.Comprehension{} ->
+            true
+
           %Phoenix.LiveView.Rendered{dynamic: d} ->
             d.(false)
             |> List.flatten()
             |> Enum.any?(&match?(%Phoenix.LiveView.Comprehension{}, &1))
-          _ -> false
+
+          _ ->
+            false
         end)
 
       assert has_comprehension
