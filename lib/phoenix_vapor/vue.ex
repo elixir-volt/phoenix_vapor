@@ -53,16 +53,14 @@ defmodule PhoenixVapor.Vue do
     end
   end
 
-  @doc false
-  def extract_template(sfc_source) do
+  defp extract_template(sfc_source) do
     case Vize.parse_sfc(sfc_source) do
       {:ok, %{template: %{content: content}}} -> String.trim(content)
       _ -> sfc_source
     end
   end
 
-  @doc false
-  def extract_scoped_css(sfc_source) do
+  defp extract_scoped_css(sfc_source) do
     result = Vize.compile_sfc!(sfc_source)
     css = result.css
 

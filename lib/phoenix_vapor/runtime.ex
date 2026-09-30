@@ -40,6 +40,8 @@ defmodule PhoenixVapor.Runtime do
 
   use GenServer
 
+  alias PhoenixVapor.JS
+
   @reactivity_js_path Path.join(:code.priv_dir(:phoenix_vapor), "js/vue-reactivity.js")
   @setup_js_path Path.join(:code.priv_dir(:phoenix_vapor), "js/runtime-setup.js")
   @external_resource @reactivity_js_path
@@ -72,69 +74,42 @@ defmodule PhoenixVapor.Runtime do
     }
 
     case setup_runtime(config, pool) do
-      {:ok, js, mode} -> {:ok, %{js: js, mode: mode}}
+      {:ok, js} -> {:ok, %{js: js}}
       {:error, reason} -> {:stop, reason}
     end
   end
 
   @impl true
   def handle_call(:get_state, _from, state) do
-    {:reply, js_call(state, "__pv_getState", []), state}
+    {:reply, JS.call(state.js, "__pv_getState", []), state}
   end
 
   def handle_call({:call_handler, name, params}, _from, state) do
-    {:reply, js_call(state, "__pv_callHandler", [name, params]), state}
+    {:reply, JS.call(state.js, "__pv_callHandler", [name, params]), state}
   end
 
   def handle_call({:set_state, updates}, _from, state) do
-    {:reply, js_call(state, "__pv_setState", [updates]), state}
+    {:reply, JS.call(state.js, "__pv_setState", [updates]), state}
   end
 
   @impl true
-  def terminate(_reason, %{js: js, mode: :context}), do: QuickBEAM.Context.stop(js)
-  def terminate(_reason, %{js: js, mode: :runtime}), do: QuickBEAM.stop(js)
-
-  # ── JS dispatch ──
-
-  defp js_eval(%{js: js, mode: :context}, code), do: QuickBEAM.Context.eval(js, code)
-  defp js_eval(%{js: js, mode: :runtime}, code), do: QuickBEAM.eval(js, code)
-
-  defp js_call(%{js: js, mode: :context}, f, a), do: QuickBEAM.Context.call(js, f, a)
-  defp js_call(%{js: js, mode: :runtime}, f, a), do: QuickBEAM.call(js, f, a)
+  def terminate(_reason, %{js: js}), do: JS.stop(js)
 
   # ── Setup ──
 
   defp setup_runtime(config, pool) do
-    {js, mode} = start_js(pool)
-    state = %{js: js, mode: mode}
-
-    with {:ok, _} <- js_eval(state, @reactivity_js),
-         {:ok, _} <- js_eval(state, @setup_js),
-         {:ok, _} <- js_call(state, "__pv_setup", [config]) do
-      {:ok, js, mode}
-    else
-      {:error, err} ->
-        stop_js(js, mode)
-        {:error, err}
+    with {:ok, js} <- JS.start(pool, apis: false) do
+      with {:ok, _} <- JS.eval(js, @reactivity_js),
+           {:ok, _} <- JS.eval(js, @setup_js),
+           {:ok, _} <- JS.call(js, "__pv_setup", [config]) do
+        {:ok, js}
+      else
+        {:error, _} = error ->
+          JS.stop(js)
+          error
+      end
     end
   end
-
-  defp start_js(nil) do
-    {:ok, rt} = QuickBEAM.start()
-    {rt, :runtime}
-  end
-
-  defp start_js(pool) do
-    if Code.ensure_loaded?(QuickBEAM.Context) do
-      {:ok, ctx} = QuickBEAM.Context.start_link(pool: pool, apis: false)
-      {ctx, :context}
-    else
-      start_js(nil)
-    end
-  end
-
-  defp stop_js(js, :context), do: QuickBEAM.Context.stop(js)
-  defp stop_js(js, :runtime), do: QuickBEAM.stop(js)
 
   # ── Config helpers ──
 

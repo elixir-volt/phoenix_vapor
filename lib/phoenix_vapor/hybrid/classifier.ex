@@ -269,14 +269,7 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   end
 
   defp walk(%{type: :variable_declaration, declarations: decls}, bound) do
-    {free, _bound} =
-      Enum.reduce(decls, {MapSet.new(), bound}, fn decl, {acc_free, acc_bound} ->
-        name = get_in(decl, [:id, :name])
-        new_bound = if name, do: MapSet.put(acc_bound, name), else: acc_bound
-        init_free = if decl[:init], do: walk(decl[:init], new_bound), else: MapSet.new()
-        {MapSet.union(acc_free, init_free), new_bound}
-      end)
-
+    {free, _bound} = walk_declarations(decls, bound)
     free
   end
 
@@ -410,19 +403,23 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   defp walk(nil, _bound), do: MapSet.new()
   defp walk(_, _bound), do: MapSet.new()
 
+  # Returns the free variables of the initializers and the scope after the
+  # declared names are bound.
+  defp walk_declarations(decls, bound) do
+    Enum.reduce(decls, {MapSet.new(), bound}, fn decl, {free, bound} ->
+      name = get_in(decl, [:id, :name])
+      bound = if name, do: MapSet.put(bound, name), else: bound
+      init_free = if decl[:init], do: walk(decl[:init], bound), else: MapSet.new()
+      {MapSet.union(free, init_free), bound}
+    end)
+  end
+
   defp walk_block(stmts, bound) when is_list(stmts) do
     {free, _} =
       Enum.reduce(stmts, {MapSet.new(), bound}, fn stmt, {acc_free, acc_bound} ->
         case stmt do
           %{type: :variable_declaration, declarations: decls} ->
-            {decl_free, new_bound} =
-              Enum.reduce(decls, {MapSet.new(), acc_bound}, fn decl, {df, db} ->
-                name = get_in(decl, [:id, :name])
-                new_db = if name, do: MapSet.put(db, name), else: db
-                init_free = if decl[:init], do: walk(decl[:init], new_db), else: MapSet.new()
-                {MapSet.union(df, init_free), new_db}
-              end)
-
+            {decl_free, new_bound} = walk_declarations(decls, acc_bound)
             {MapSet.union(acc_free, decl_free), new_bound}
 
           _ ->

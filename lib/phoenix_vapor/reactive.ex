@@ -149,7 +149,13 @@ defmodule PhoenixVapor.Reactive do
     end)
   end
 
-  @doc false
+  @doc """
+  Picks the URL params named by `keys` and returns them as assigns.
+
+  Generated `mount/3` callbacks pass the assign keys their template reads, so
+  a param never creates an atom.
+  """
+  @spec param_assigns(map() | :not_mounted_at_router, [atom()]) :: map()
   def param_assigns(params, keys) when is_map(params) do
     for key <- keys, {:ok, value} <- [Map.fetch(params, Atom.to_string(key))], into: %{} do
       {key, value}
@@ -158,7 +164,12 @@ defmodule PhoenixVapor.Reactive do
 
   def param_assigns(_not_mounted_at_router, _keys), do: %{}
 
-  @doc false
+  @doc """
+  Converts the state a `PhoenixVapor.Runtime` returns into assigns.
+
+  The keys are the ref and computed names declared in the component.
+  """
+  @spec state_to_assigns(map()) :: map()
   def state_to_assigns(state) when is_map(state) do
     Enum.reduce(state, %{}, fn {k, v}, acc ->
       Map.put(acc, String.to_atom(k), v)

@@ -118,15 +118,13 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   end
 
   defp server_action_patch(%{id: %{name: name}, params: params, body: body}, code, classification) do
-    optimistic =
-      body.body
-      |> Enum.flat_map(&optimistic_update(&1, code, classification))
-      |> Enum.map(&("\n  " <> &1))
-
     push =
-      "\n  __bridge.pushEvent(#{Jason.encode!(name)}, #{event_params(body, params, code, classification)});\n"
+      "__bridge.pushEvent(#{Jason.encode!(name)}, #{event_params(body, params, code, classification)});"
 
-    %{start: body.start + 1, end: body.end - 1, change: Enum.join(optimistic) <> push}
+    statements = Enum.flat_map(body.body, &optimistic_update(&1, code, classification)) ++ [push]
+    change = IO.iodata_to_binary([Enum.map(statements, &["\n  ", &1]), "\n"])
+
+    %{start: body.start + 1, end: body.end - 1, change: change}
   end
 
   # `prop = expr` and `props.prop = expr` apply locally before the server confirms.
@@ -187,7 +185,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
         end
       end)
 
-    "{" <> Enum.join(pairs, ", ") <> "}"
+    IO.iodata_to_binary(["{", Enum.intersperse(pairs, ", "), "}"])
   end
 
   defp default_export_patches(ast) do

@@ -57,7 +57,8 @@ defmodule PhoenixVapor.Expr do
         |> Enum.uniq()
 
       _ ->
-        root = expr |> String.split(".") |> hd() |> String.trim()
+        [root | _] = String.split(expr, ".", parts: 2)
+        root = String.trim(root)
         if root == "", do: [], else: [String.to_atom(root)]
     end
   end
@@ -98,18 +99,13 @@ defmodule PhoenixVapor.Expr do
     quasis = node.quasis || []
     expressions = node.expressions || []
 
-    parts =
-      Enum.with_index(quasis)
-      |> Enum.flat_map(fn {quasi, i} ->
-        cooked = quasi[:cooked] || quasi[:raw] || ""
+    # A template literal has one more quasi than it has expressions.
+    values = Enum.map(expressions, &eval_node(&1, assigns)) ++ [""]
 
-        expr_val =
-          if i < length(expressions), do: [eval_node(Enum.at(expressions, i), assigns)], else: []
-
-        [cooked | expr_val]
-      end)
-
-    parts |> Enum.map(&to_string/1) |> IO.iodata_to_binary()
+    quasis
+    |> Enum.zip(values)
+    |> Enum.map(fn {quasi, value} -> [quasi[:cooked] || quasi[:raw] || "", to_string(value)] end)
+    |> IO.iodata_to_binary()
   end
 
   defp eval_node(%{type: :member_expression, object: obj, property: prop} = node, assigns) do
@@ -355,13 +351,10 @@ defmodule PhoenixVapor.Expr do
     Enum.reduce_while(parts, assigns, fn part, acc ->
       part = String.trim(part)
 
-      cond do
-        is_map(acc) ->
-          value = Map.get(acc, part) || Map.get(acc, String.to_existing_atom(part))
-          {:cont, value}
-
-        true ->
-          {:halt, nil}
+      if is_map(acc) do
+        {:cont, Map.get(acc, part) || Map.get(acc, String.to_existing_atom(part))}
+      else
+        {:halt, nil}
       end
     end)
   rescue

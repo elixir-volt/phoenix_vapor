@@ -124,24 +124,7 @@ defmodule PhoenixVapor do
     split = Vize.vapor_split!(template_content)
     escaped_split = Macro.escape(split)
 
-    elixir_block_ast =
-      case desc.script do
-        %{lang: "elixir", content: content} when is_binary(content) ->
-          case Code.string_to_quoted(content, file: full_path) do
-            {:ok, {:__block__, _, exprs}} ->
-              exprs
-
-            {:ok, expr} ->
-              [expr]
-
-            {:error, {meta, msg, token}} ->
-              line = Keyword.get(List.wrap(meta), :line, 0)
-              raise CompileError, file: full_path, line: line, description: "#{msg}#{token}"
-          end
-
-        _ ->
-          []
-      end
+    elixir_block_ast = PhoenixVapor.SFC.elixir_block(desc, full_path)
 
     quote do
       import PhoenixVapor.Sigil
