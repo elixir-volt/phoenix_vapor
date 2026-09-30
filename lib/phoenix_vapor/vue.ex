@@ -11,12 +11,12 @@ defmodule PhoenixVapor.Vue do
         PhoenixVapor.Vue.component :dashboard, "assets/vue/Dashboard.vue"
       end
 
-  This compiles the Vue template at compile time via `Vize.vapor_ir!/1`
-  and generates a function component that renders the IR against assigns.
+  This compiles the Vue template at compile time via `Vize.vapor_split!/1`
+  and generates a function component that renders it against assigns.
 
-  The SFC's `<template>` block is extracted and compiled. `<script>` and
-  `<style>` blocks are currently ignored (see PhoenixVapor roadmap for
-  QuickBEAM integration plans).
+  The SFC's `<template>` block becomes the component. A `<style scoped>`
+  block is compiled and exposed as `__vue_css_<name>__/0`, and the root
+  element gets its scope attribute. `<script>` blocks are ignored.
   """
 
   @doc """

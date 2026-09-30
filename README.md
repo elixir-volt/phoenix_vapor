@@ -135,7 +135,7 @@ defmodule MyAppWeb.ContactsLive do
 end
 ```
 
-The `"use server"` directive in the `.vue` file only defines which event names the client can push and generates `pushEvent` stubs in the client JS. The actual server logic is Elixir you write yourself. If you don't write a `handle_event` for a given name, a no-op fallback is generated.
+The `"use server"` directive in the `.vue` file only defines which event names the client can push and generates `pushEvent` stubs in the client JS. The actual server logic is Elixir you write yourself. If the module defines no `handle_event/3` at all, no-op handlers are generated for the server actions; once you define one, handle every action it can receive.
 
 ### Single-File Mode (`<script lang="elixir">`)
 

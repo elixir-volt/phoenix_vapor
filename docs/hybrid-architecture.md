@@ -1,5 +1,7 @@
 # PhoenixVapor Hybrid Architecture
 
+> **Design document.** This describes the design hybrid mode is working toward, not the current implementation. Where they differ (the generated client uses Vue's VDOM runtime, the server side still uses QuickBEAM for ref defaults and computeds, and `"use server"` bodies are not translated to Elixir), see [ARCHITECTURE.md](../ARCHITECTURE.md).
+
 One `.vue` file. The compiler decides what runs where. No LiveView leakage. Instant local UI. Server-authoritative domain state.
 
 ---

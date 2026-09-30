@@ -24,7 +24,7 @@ Template expressions are evaluated against LiveView assigns:
 
 - Simple (`{{ count }}`, `item.name`) → Elixir map access via OXC AST
 - Complex (`.filter()`, `.map()`, arrow functions) → QuickBEAM JS eval
-- Change tracking: each slot knows which assigns it depends on (compile-time AST analysis)
+- Change tracking: on each render, a slot is re-evaluated only when an assign its expression reads is in `__changed__`
 
 ## Mode 1: `~VUE` Sigil
 
@@ -53,9 +53,9 @@ Split reactivity — server owns data, client owns UI state.
 
 ```
 SFC → Classifier (AST analysis)
-    → Server: mount/render/handle_event (Elixir)
-    → Client: Vue 3 component (JS, ~50KB)
-    → Bridge: LiveView hook syncs props via data attributes
+    → Server: render/1 and fallback handle_event/3 (Elixir); mount/3 is yours
+    → Client: Vue 3 component module (<Name>.hybrid.js)
+    → Bridge: LiveView hook syncs props via data-pv-props
 ```
 
 The compiler analyzes `<script setup>` and classifies each binding:
@@ -69,11 +69,11 @@ The compiler analyzes `<script setup>` and classifies each binding:
 | Function writing to a prop | Server action (auto-detected) |
 | Function writing only to refs | Client handler |
 
-Server renders full HTML for first paint (SEO). Client hydrates with Vue 3 `createApp`, taking over reactive slots. Client interactions (search, sort, select) are instant — zero network. Server actions send events over the existing LiveView WebSocket.
+Server renders full HTML for first paint (SEO). The hook then mounts the Vue component with `createApp` in place of that HTML; the wrapper is `phx-update="ignore"`, so later server renders don't touch the DOM Vue owns. Client interactions (search, sort, select) are instant — zero network. Server actions send events over the existing LiveView WebSocket.
 
 ### Wire Protocol
 
-Initial render: server sends statics + dynamics + props JSON in `data-pv-props` attribute. Updates: only changed server slots + updated props JSON travel the wire. Client-only changes (typing in search) produce zero wire traffic.
+Initial render: server sends statics + dynamics, with the props JSON as the wrapper's `data-pv-props` dynamic. Updates: the props JSON travels only when a client prop changed. Client-only changes (typing in search) produce zero wire traffic.
 
 ### State Sync
 

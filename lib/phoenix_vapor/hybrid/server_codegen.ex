@@ -3,9 +3,9 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   Generates Elixir code (AST) for the server side of a hybrid component.
 
   Produces:
-  - `mount/3` — initializes LiveView assigns
   - `render/1` — produces `%Rendered{}` with server slots + props payload
-  - `handle_event/3` — one clause per server action
+  - `handle_event/3` — no-op fallbacks for server actions, when the module
+    defines no `handle_event/3` of its own
   """
 
   alias PhoenixVapor.Hybrid.Classifier
