@@ -137,6 +137,34 @@ defmodule PhoenixVapor.Integration.RenderingTest do
 
       assert render_to_html(rendered) == "<div><section><b>Y</b></section><span>L</span></div>"
     end
+
+    test "keeps a structural slot before a sibling text slot" do
+      rendered =
+        PhoenixVapor.render(
+          ~s[<div><b v-if="on">Y</b><span>{{ label }}</span></div>],
+          %{on: true, label: "L"}
+        )
+
+      assert render_to_html(rendered) == "<div><b>Y</b><span>L</span></div>"
+    end
+  end
+
+  describe "v-html" do
+    test "renders raw HTML inside its element" do
+      rendered = PhoenixVapor.render(~s[<div v-html="raw"></div>], %{raw: "<b>bold</b>"})
+
+      assert render_to_html(rendered) == "<div><b>bold</b></div>"
+    end
+
+    test "keeps sibling slots aligned" do
+      rendered =
+        PhoenixVapor.render(
+          ~s[<section><p v-html="raw"></p><b>{{ label }}</b></section>],
+          %{raw: "<i>x</i>", label: "L"}
+        )
+
+      assert render_to_html(rendered) == "<section><p><i>x</i></p><b>L</b></section>"
+    end
   end
 
   describe "v-if" do

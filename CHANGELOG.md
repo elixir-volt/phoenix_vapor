@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- Render `v-html`. Vize dropped the `set_html` slot, so the element rendered empty; vize 0.15.0 keeps it.
+
+### Compatibility
+
+- Require vize 0.15.0, OXC 0.18.1, and QuickBEAM 0.11.2 or later in the 0.11 series, and support Volt 0.19, matching the dependencies Volt 0.19 resolves. Building vize from source now requires Rust 1.95.
+
 ## 0.3.3 - 2026-09-15
 
 ### Fixed
