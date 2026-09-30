@@ -13,12 +13,15 @@ defmodule PhoenixVapor.Renderer do
     end
   end
 
+  # A tag name ends at whitespace, "/" or ">", so the attribute goes right
+  # after it; attribute values may contain ">".
   defp inject_attr_into_first_tag(html, attr) do
-    case :binary.match(html, ">") do
-      {pos, 1} ->
-        binary_part(html, 0, pos) <> " #{attr}" <> binary_part(html, pos, byte_size(html) - pos)
+    case Regex.run(~r{\A\s*<[a-zA-Z][^\s/>]*}, html) do
+      [open] ->
+        open <>
+          " " <> attr <> binary_part(html, byte_size(open), byte_size(html) - byte_size(open))
 
-      :nomatch ->
+      nil ->
         html
     end
   end
@@ -248,7 +251,7 @@ defmodule PhoenixVapor.Renderer do
       statics_json = Jason.encode!([first | rest])
 
       attr =
-        ~s( data-vapor data-vapor-statics="#{Phoenix.HTML.Engine.html_escape(statics_json)}")
+        ~s(data-vapor data-vapor-statics="#{Phoenix.HTML.Engine.html_escape(statics_json)}")
 
       [inject_attr_into_first_tag(first, attr) | rest]
     else

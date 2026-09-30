@@ -58,13 +58,12 @@ defmodule PhoenixVapor.LiveVue do
       @external_resource unquote(full_path)
 
       def mount(_params, _session, socket) do
-        {:ok, runtime} =
-          PhoenixVapor.VueRuntime.start_link(
-            bundle: @__vue_bundle__,
-            setup: @__vue_setup__
+        runtime =
+          PhoenixVapor.LiveVue.unwrap!(
+            PhoenixVapor.VueRuntime.start_link(bundle: @__vue_bundle__, setup: @__vue_setup__)
           )
 
-        {:ok, html} = PhoenixVapor.VueRuntime.render(runtime)
+        html = PhoenixVapor.LiveVue.unwrap!(PhoenixVapor.VueRuntime.render(runtime))
 
         socket =
           socket
@@ -85,7 +84,10 @@ defmodule PhoenixVapor.LiveVue do
 
       def handle_event(event, params, socket) do
         runtime = socket.assigns.__vue_runtime__
-        {:ok, html} = PhoenixVapor.VueRuntime.dispatch(runtime, event, params)
+
+        html =
+          PhoenixVapor.LiveVue.unwrap!(PhoenixVapor.VueRuntime.dispatch(runtime, event, params))
+
         {:noreply, Phoenix.Component.assign(socket, :__vue_html__, html)}
       end
 
@@ -98,6 +100,16 @@ defmodule PhoenixVapor.LiveVue do
       defoverridable mount: 3, render: 1, handle_event: 3, terminate: 2
     end
   end
+
+  @doc """
+  Returns the value of a `PhoenixVapor.VueRuntime` result, or raises its
+  error. Generated callbacks use it so a JavaScript exception surfaces as
+  itself rather than as a `MatchError`.
+  """
+  @spec unwrap!({:ok, value} | {:error, term()}) :: value when value: term()
+  def unwrap!({:ok, value}), do: value
+  def unwrap!({:error, error}) when is_exception(error), do: raise(error)
+  def unwrap!({:error, reason}), do: raise("PhoenixVapor.VueRuntime failed: #{inspect(reason)}")
 
   @doc false
   def compile_sfc(path) do

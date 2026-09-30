@@ -34,7 +34,7 @@ defmodule PhoenixVapor.Vue do
     split = Vize.vapor_split!(template)
     escaped_split = Macro.escape(split)
 
-    {scope_id, scoped_css} = extract_scoped_css(source)
+    {scope_id, scoped_css} = scoped_css(source, full_path)
 
     css_fn_name = :"__vue_css_#{name}__"
 
@@ -60,33 +60,15 @@ defmodule PhoenixVapor.Vue do
     end
   end
 
-  defp extract_scoped_css(sfc_source) do
-    result = Vize.compile_sfc!(sfc_source)
-    css = result.css
-
-    if css && css != "" do
-      # Scope ID is embedded in the CSS by Vize's scoped style compiler
-      case extract_scope_id_from_css(css) do
-        {:ok, hash} -> {"data-v-#{hash}", css}
-        :error -> {nil, css}
-      end
+  # Vize scopes the CSS with the id it is given, so the same id goes on the
+  # root element.
+  defp scoped_css(sfc_source, path) do
+    if Enum.any?(Vize.parse_sfc!(sfc_source).styles, & &1.scoped) do
+      id = :crypto.hash(:sha256, Path.relative_to_cwd(path)) |> Base.encode16(case: :lower)
+      id = binary_part(id, 0, 8)
+      {"data-v-#{id}", Vize.compile_sfc!(sfc_source, scope_id: id).css}
     else
       {nil, nil}
-    end
-  end
-
-  defp extract_scope_id_from_css(css) do
-    # Vize embeds scope IDs as [data-v-HASH] in compiled scoped CSS.
-    # The hash comes from Vize.compile_sfc result's style_hash.
-    case String.split(css, "[data-v-", parts: 2) do
-      [_, rest] ->
-        case String.split(rest, "]", parts: 2) do
-          [hash, _] when byte_size(hash) > 0 -> {:ok, hash}
-          _ -> :error
-        end
-
-      _ ->
-        :error
     end
   end
 end

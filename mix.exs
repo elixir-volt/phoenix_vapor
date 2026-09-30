@@ -92,6 +92,7 @@ defmodule PhoenixVapor.MixProject do
       {:phoenix_live_view, "~> 1.2"},
       {:vize, "~> 0.15.0"},
       {:oxc, "~> 0.18.1"},
+      {:jason, "~> 1.4"},
       {:quickbeam, "~> 0.11.2", optional: true},
       {:volt, "~> 0.19.0", runtime: false},
       {:ex_doc, "~> 0.40.3", only: :dev, runtime: false},

@@ -200,35 +200,15 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   defp slice(code, %{start: s, end: e}), do: binary_part(code, s, e - s)
 
+  # Vize would copy a `<script lang="elixir">` block into the module, so drop
+  # its content, using the range the SFC parser reports.
   defp strip_elixir_block(sfc_source) do
     case Vize.parse_sfc(sfc_source) do
       {:ok, %{script: %{lang: "elixir", loc: %{start: s, end: e}}}} ->
-        tag_start = find_script_open_tag(sfc_source, s)
-        suffix = binary_part(sfc_source, e, byte_size(sfc_source) - e)
-
-        close_end = find_close_script_end(suffix)
-        remaining = binary_part(suffix, close_end, byte_size(suffix) - close_end)
-
-        binary_part(sfc_source, 0, tag_start) <> remaining
+        binary_part(sfc_source, 0, s) <> binary_part(sfc_source, e, byte_size(sfc_source) - e)
 
       _ ->
         sfc_source
-    end
-  end
-
-  defp find_script_open_tag(source, content_start) do
-    prefix = binary_part(source, 0, content_start)
-
-    case :binary.match(prefix, "<script") do
-      {pos, _} -> pos
-      :nomatch -> content_start
-    end
-  end
-
-  defp find_close_script_end(suffix) do
-    case :binary.match(suffix, "</script>") do
-      {pos, len} -> pos + len
-      :nomatch -> 0
     end
   end
 end

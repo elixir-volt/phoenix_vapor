@@ -82,7 +82,13 @@ defmodule PhoenixVapor do
     end
   end
 
-  defp do_use_file(file, _runtime, opts, caller) do
+  defp do_use_file(_file, runtime, _opts, _caller) when runtime != nil do
+    raise ArgumentError,
+          "unknown :runtime #{inspect(runtime)}; use :reactive or :full, or leave it out " <>
+            "to choose between server-only and hybrid from the component"
+  end
+
+  defp do_use_file(file, nil, opts, caller) do
     caller_dir = caller.file |> Path.dirname()
     full_path = Path.expand(file, caller_dir)
     sfc_source = File.read!(full_path)

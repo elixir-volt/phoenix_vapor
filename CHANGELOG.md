@@ -13,6 +13,11 @@
 - Stop leaking a QuickBEAM runtime on every hybrid render.
 - Reactive `mount/3` no longer creates atoms from URL params. Only params the template reads become assigns.
 - Computeds may read computeds declared after them, and block-bodied computeds work in Reactive mode.
+- Put scope and Vapor metadata attributes after the root tag's name. They were inserted before the first `>`, which landed inside an attribute value such as `title="a > b"`.
+- Scoped CSS uses a scope id PhoenixVapor chooses and passes to Vize, instead of one read back out of the compiled CSS.
+- Leave a `<script lang="elixir">` block out of the hybrid client module when it follows `<script setup>`. The block was cut from the first `<script` tag.
+- Full-runtime LiveViews raise the JavaScript error from mount and events instead of a `MatchError`.
+- An unknown `:runtime` option is a compile error. It used to fall back to detecting the mode.
 - Publish only PhoenixVapor's own JavaScript files. The Hex package included all of `priv/js`, so a locally built bundle such as `reka-dialog.js` would have been published with it.
 - Point the README install snippet and the bundle task's error message at the current QuickBEAM and Volt versions.
 
