@@ -30,7 +30,7 @@ defmodule PhoenixVapor.Integration.UnifiedAPITest do
   # Mode 4: hybrid SFC (has ref() = client JS generated)
   defmodule HybridLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/Hybrid.vue"
+    use PhoenixVapor, file: "../../fixtures/Hybrid.vue", client_output: nil
   end
 
   defp render_to_html(rendered) do

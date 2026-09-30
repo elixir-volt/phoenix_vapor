@@ -5,12 +5,12 @@ defmodule PhoenixVapor.Integration.HybridTest do
 
   defmodule SimpleLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/Hybrid.vue"
+    use PhoenixVapor, file: "../../fixtures/Hybrid.vue", client_output: nil
   end
 
   defmodule ContactsLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/HybridContacts.vue"
+    use PhoenixVapor, file: "../../fixtures/HybridContacts.vue", client_output: nil
   end
 
   @contacts [
