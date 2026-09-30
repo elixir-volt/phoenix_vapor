@@ -18,11 +18,17 @@
 - Leave a `<script lang="elixir">` block out of the hybrid client module when it follows `<script setup>`. The block was cut from the first `<script` tag.
 - Full-runtime LiveViews raise the JavaScript error from mount and events instead of a `MatchError`.
 - An unknown `:runtime` option is a compile error. It used to fall back to detecting the mode.
+- Hybrid components get every prop the template or client-side code reads. Props used only in the template were left out of `data-pv-props`, so the client rendered them empty once it mounted.
+- Read `defineProps` in its object and TypeScript forms, not only as an array, using Vize's script analysis.
+- A page can mount the same hybrid component several times. Each mount has its own props and bridge.
 - Publish only PhoenixVapor's own JavaScript files. The Hex package included all of `priv/js`, so a locally built bundle such as `reka-dialog.js` would have been published with it.
 - Point the README install snippet and the bundle task's error message at the current QuickBEAM and Volt versions.
 
 ### Changed
 
+- Templates compiled into a module parse their expressions and compute fingerprints at compile time. Rendering a 500-row `v-for` went from 55 ms to 0.5 ms.
+- Scoped CSS ids come from `Vize.SFC.scope_id/2`, the id Vize's bundler integrations use.
+- A hybrid module exports `__mount(el, bridge, props)`, which returns `applyProps/1` and `unmount/0` for that instance, in place of the module-level `__applyProps`, `__setBridge` and `__unmount`. The bundled bridge uses it.
 - The browser and QuickBEAM code is TypeScript in `priv/ts`, built with Volt. Import it as `phoenix_vapor` (`patchLiveSocket`), `phoenix_vapor/hybrid` (`getHybridHooks`) and `phoenix_vapor/vapor-patch`. `patchLiveSocket` was not in the Hex package before.
 - `@vue/reactivity` for reactive mode is pinned in `priv/ts/package.json` and vendored by `mix volt.priv.vendor`, replacing a hand-copied build of 3.5.30.
 - Slot positions for direct DOM patching come from the browser's HTML parser instead of a hand-written one, which mishandled `>` inside attribute values.

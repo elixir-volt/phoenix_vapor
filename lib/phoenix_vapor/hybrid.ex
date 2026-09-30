@@ -39,10 +39,11 @@ defmodule PhoenixVapor.Hybrid do
     {refs, computeds, functions, function_bodies, props} =
       PhoenixVapor.ScriptSetup.parse(script_content)
 
-    classification =
-      Classifier.classify(refs, computeds, functions, function_bodies, props)
+    split = template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+    template_names = split |> PhoenixVapor.Renderer.assign_keys() |> Enum.map(&Atom.to_string/1)
 
-    split = Vize.vapor_split!(template_content)
+    classification =
+      Classifier.classify(refs, computeds, functions, function_bodies, props, template_names)
 
     component_name = Path.basename(file, ".vue")
     render_ast = ServerCodegen.gen_render(split, classification, props, computeds, component_name)

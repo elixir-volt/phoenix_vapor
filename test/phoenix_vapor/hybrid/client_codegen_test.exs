@@ -37,7 +37,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
       assert {:ok, _} = OXC.parse(js, "output.js")
     end
 
-    test "includes bridge preamble" do
+    test "includes the client state list and the instance context" do
       js =
         generate("""
         <script setup>
@@ -48,10 +48,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><p>{{ search }}</p></template>
         """)
 
-      assert js =~ "__propsState"
-      assert js =~ "__propsState"
-      assert js =~ "__applyProps"
-      assert js =~ "__setBridge"
+      assert js =~ ~s|export function __getClientState() {\n  return ["search"];|
+      assert js =~ ~s|const __pv = __inject("__pv");|
     end
 
     test "includes mount export" do
@@ -67,7 +65,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
       assert js =~ "__component"
     end
 
-    test "replaces __props with __propsState" do
+    test "keeps the props binding pointing at __props" do
       js =
         generate("""
         <script setup>
@@ -79,7 +77,6 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><p>{{ filtered.length }}</p></template>
         """)
 
-      assert js =~ "__propsState"
       assert js =~ "const props = __props"
     end
 
@@ -148,7 +145,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><button @click="deleteUser(1)">x</button></template>
         """)
 
-      assert js =~ ~s|__propsState["users"] = users.filter(u => u.id !== id);|
+      assert js =~ ~s|__pv.props["users"] = users.filter(u => u.id !== id);|
       refute js =~ "__serverProps"
     end
 

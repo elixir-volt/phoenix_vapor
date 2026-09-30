@@ -18,8 +18,16 @@ defmodule PhoenixVapor.Expr do
 
   Static literal values tagged as `{:static_, text}` are returned as-is.
   """
-  @spec eval(String.t() | {:static_, String.t()}, map()) :: term()
+  @spec eval(String.t() | {:static_, String.t()} | compiled(), map()) :: term()
   def eval({:static_, text}, _assigns), do: text
+
+  def eval({:expr, source, nil, _keys}, assigns), do: resolve_path(source, assigns)
+
+  def eval({:expr, source, node, _keys}, assigns) do
+    eval_node(node, assigns)
+  catch
+    :unsupported_node -> quickbeam_eval(source, assigns)
+  end
 
   def eval(expr, assigns) when is_binary(expr) do
     case parse_and_eval(expr, assigns) do
@@ -27,6 +35,29 @@ defmodule PhoenixVapor.Expr do
       :error -> resolve_path(expr, assigns)
       :fallback -> quickbeam_eval(expr, assigns)
     end
+  end
+
+  @typedoc "An expression parsed ahead of time by `compile/1`."
+  @type compiled :: {:expr, String.t(), map() | nil, [atom()]}
+
+  @doc """
+  Parses an expression once, for templates compiled into a module, so that
+  rendering doesn't parse it again. `eval/2` and `assign_keys/1` accept the
+  result in place of the source.
+  """
+  @spec compile(String.t() | {:static_, String.t()} | compiled()) ::
+          compiled() | {:static_, String.t()}
+  def compile({:static_, _} = static), do: static
+  def compile({:expr, _, _, _} = compiled), do: compiled
+
+  def compile(expr) when is_binary(expr) do
+    node =
+      case OXC.parse(expr, "e.js") do
+        {:ok, %{body: [%{type: :expression_statement, expression: node}]}} -> node
+        _ -> nil
+      end
+
+    {:expr, expr, node, assign_keys(expr)}
   end
 
   @doc """
@@ -44,8 +75,9 @@ defmodule PhoenixVapor.Expr do
   @doc """
   Extract root assign keys referenced by an expression.
   """
-  @spec assign_keys(String.t() | {:static_, String.t()}) :: [atom()]
+  @spec assign_keys(String.t() | {:static_, String.t()} | compiled()) :: [atom()]
   def assign_keys({:static_, _}), do: []
+  def assign_keys({:expr, _source, _node, keys}), do: keys
 
   def assign_keys(expr) when is_binary(expr) do
     case OXC.parse(expr, "e.js") do

@@ -117,10 +117,10 @@ defmodule PhoenixVapor.Integration.HybridTest do
       assert first["id"] == 1
     end
 
-    test "server-only props are excluded from JSON" do
+    test "props the template renders are included in JSON" do
       html = ContactsLive.render(%{contacts: @contacts, title: "T"}) |> render_to_html()
       props = extract_props_json(html)
-      refute Map.has_key?(props, "title")
+      assert Map.has_key?(props, "title")
     end
 
     test "empty contacts produces empty array in props" do
@@ -255,9 +255,9 @@ defmodule PhoenixVapor.Integration.HybridTest do
       assert "contacts" in c.client_props
     end
 
-    test "title is a server-only prop (not used by any client computed)" do
+    test "title is a client prop because the template renders it" do
       c = ContactsLive.__hybrid_classification__()
-      assert "title" in c.server_only_props
+      assert "title" in c.client_props
     end
   end
 
@@ -309,14 +309,14 @@ defmodule PhoenixVapor.Integration.HybridTest do
   end
 
   describe "client JS: bridge exports" do
-    test "exports __applyProps" do
+    test "__mount takes the initial props" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ "export function __applyProps"
+      assert js =~ "export function __mount(el, bridge, props = {})"
     end
 
-    test "exports __setBridge" do
+    test "gives setup its instance context" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ "export function __setBridge"
+      assert js =~ ~s|const __pv = __inject("__pv")|
     end
 
     test "exports __mount" do
@@ -333,12 +333,12 @@ defmodule PhoenixVapor.Integration.HybridTest do
   describe "client JS: server actions" do
     test "deleteContact has pushEvent call" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ ~s(__bridge.pushEvent("deleteContact")
+      assert js =~ ~s(__pv.bridge.pushEvent("deleteContact")
     end
 
     test "deleteSelected has pushEvent call" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ ~s(__bridge.pushEvent("deleteSelected")
+      assert js =~ ~s(__pv.bridge.pushEvent("deleteSelected")
     end
 
     test "deleteContact sends id param" do

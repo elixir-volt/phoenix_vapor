@@ -63,7 +63,7 @@ defmodule PhoenixVapor.Reactive do
         nil -> nil
       end
 
-    split = Vize.vapor_split!(template_content)
+    split = template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
     escaped_split = Macro.escape(split)
 
     {refs, computeds, functions, function_bodies, _props} =

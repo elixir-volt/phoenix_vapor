@@ -127,7 +127,7 @@ defmodule PhoenixVapor do
         nil -> raise "No <template> block found in #{file}"
       end
 
-    split = Vize.vapor_split!(template_content)
+    split = template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
     escaped_split = Macro.escape(split)
 
     elixir_block_ast = PhoenixVapor.SFC.elixir_block(desc, full_path)

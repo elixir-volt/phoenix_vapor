@@ -77,7 +77,7 @@ Initial render: server sends statics + dynamics, with the props JSON as the wrap
 
 ### State Sync
 
-- **Server → Client**: LiveView assign changes → re-render → diff with props JSON → hook's `updated()` → `__applyProps()` → Vue reactivity propagates
+- **Server → Client**: LiveView assign changes → re-render → diff with props JSON → hook's `updated()` → the instance's `applyProps()` → Vue reactivity propagates
 - **Client → Server**: `"use server"` function → `pushEvent` → `handle_event` → assign change → back to step 1
 - **Client → Client**: `ref` mutation → computed recomputation → Vue re-render. No wire.
 

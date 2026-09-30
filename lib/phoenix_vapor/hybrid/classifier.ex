@@ -36,9 +36,10 @@ defmodule PhoenixVapor.Hybrid.Classifier do
           computeds :: %{String.t() => String.t()},
           functions :: [String.t()],
           function_bodies :: %{String.t() => String.t()},
-          props :: [String.t()]
+          props :: [String.t()],
+          template_names :: [String.t()]
         ) :: classification()
-  def classify(refs, computeds, functions, function_bodies, props) do
+  def classify(refs, computeds, functions, function_bodies, props, template_names \\ []) do
     prop_set = MapSet.new(props)
     ref_set = MapSet.new(Map.keys(refs))
 
@@ -51,7 +52,9 @@ defmodule PhoenixVapor.Hybrid.Classifier do
     handlers =
       build_handlers(functions, function_bodies, prop_set, all_client)
 
-    client_props = compute_client_props(bindings, props)
+    client_props =
+      compute_client_props(bindings, handlers, function_bodies, refs, props, template_names)
+
     server_only_props = props -- client_props
 
     %{
@@ -168,16 +171,27 @@ defmodule PhoenixVapor.Hybrid.Classifier do
     end)
   end
 
-  defp compute_client_props(bindings, props) do
-    all_computed_server_deps =
-      bindings
-      |> Enum.flat_map(fn
+  # The client renders the whole component, so it needs every prop that the
+  # template or client-side code reads. Props only server actions read stay
+  # on the server.
+  defp compute_client_props(bindings, handlers, function_bodies, refs, props, template_names) do
+    computed_deps =
+      Enum.flat_map(bindings, fn
         {_name, {:mixed_computed, server_deps, _}} -> server_deps
         _ -> []
       end)
+
+    client_code =
+      Map.values(refs) ++
+        for {name, :client_handler} <- handlers, do: Map.get(function_bodies, name, "")
+
+    read =
+      client_code
+      |> Enum.flat_map(&(free_variables(&1) ++ prop_references(&1)))
+      |> Enum.concat(computed_deps ++ template_names)
       |> MapSet.new()
 
-    Enum.filter(props, &MapSet.member?(all_computed_server_deps, &1))
+    Enum.filter(props, &MapSet.member?(read, &1))
   end
 
   @doc """

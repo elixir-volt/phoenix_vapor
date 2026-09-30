@@ -4,7 +4,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   Takes Vize's compiled SFC output and:
   1. Replaces server action bodies with optimistic prop updates and a `pushEvent`
-  2. Adds the bridge exports (`__mount`, `__applyProps`, `__setBridge`, ...)
+  2. Exports `__mount/3`, which mounts one instance with its own props and bridge
   """
 
   alias PhoenixVapor.Hybrid.Classifier
@@ -38,27 +38,17 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   @spec transform(String.t(), Classifier.classification()) :: String.t()
   def transform(vize_code, classification) do
     {:ok, ast} = OXC.parse(vize_code, "module.js")
-    patches = server_action_patches(ast, vize_code, classification) ++ default_export_patches(ast)
+
+    patches =
+      server_action_patches(ast, vize_code, classification) ++
+        setup_patches(ast) ++ default_export_patches(ast)
 
     preamble(classification) <> "\n" <> OXC.patch_string(vize_code, patches) <> exports()
   end
 
   defp preamble(classification) do
     """
-    import { createApp as __createApp, h as __h, reactive as __reactive } from 'vue';
-    let __bridge = null;
-    const __propsState = __reactive({});
-
-    export function __applyProps(props) {
-      for (const key of Object.keys(__propsState)) {
-        if (!(key in props)) delete __propsState[key];
-      }
-      Object.assign(__propsState, props);
-    }
-
-    export function __setBridge(bridge) {
-      __bridge = bridge;
-    }
+    import { createApp as __createApp, h as __h, inject as __inject, reactive as __reactive } from 'vue';
 
     export function __getClientState() {
       return #{Jason.encode!(client_refs(classification))};
@@ -66,26 +56,55 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     """
   end
 
+  # Each mount gets its own props and bridge, provided to the component's
+  # setup as `__pv`, so a page can mount the same component several times.
   defp exports do
     """
 
     export { __component as default };
 
-    let __app = null;
+    export function __mount(el, bridge, props = {}) {
+      const state = __reactive({ ...props });
+      // Rendering through h() reads the props inside the root render effect,
+      // so applyProps re-renders. createApp(component, props) would copy them.
+      const app = __createApp({ render: () => __h(__component, state) });
+      app.provide("__pv", { bridge, props: state });
+      app.mount(el);
 
-    export function __mount(el, bridge) {
-      if (bridge) __bridge = bridge;
-      // Rendering through h() reads __propsState inside the root render effect,
-      // so later __applyProps calls re-render. createApp(component, props) would
-      // copy the props once.
-      __app = __createApp({ render: () => __h(__component, __propsState) });
-      __app.mount(el);
-    }
-
-    export function __unmount() {
-      if (__app) { __app.unmount(); __app = null; }
+      return {
+        applyProps(next) {
+          for (const key of Object.keys(state)) {
+            if (!(key in next)) delete state[key];
+          }
+          Object.assign(state, next);
+        },
+        unmount() {
+          app.unmount();
+        }
+      };
     }
     """
+  end
+
+  defp setup_patches(ast) do
+    ast
+    |> OXC.collect(fn
+      %{type: :export_default_declaration, declaration: %{type: :object_expression} = component} ->
+        patches =
+          for %{type: :property, key: %{name: "setup"}, value: %{body: %{start: start}}} <-
+                component.properties,
+              do: %{
+                start: start + 1,
+                end: start + 1,
+                change: ~s|\n  const __pv = __inject("__pv");|
+              }
+
+        {:keep, patches}
+
+      _ ->
+        :skip
+    end)
+    |> List.flatten()
   end
 
   defp client_refs(classification) do
@@ -119,7 +138,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   defp server_action_patch(%{id: %{name: name}, params: params, body: body}, code, classification) do
     push =
-      "__bridge.pushEvent(#{Jason.encode!(name)}, #{event_params(body, params, code, classification)});"
+      "__pv.bridge.pushEvent(#{Jason.encode!(name)}, #{event_params(body, params, code, classification)});"
 
     statements = Enum.flat_map(body.body, &optimistic_update(&1, code, classification)) ++ [push]
     change = IO.iodata_to_binary([Enum.map(statements, &["\n  ", &1]), "\n"])
@@ -138,7 +157,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
        ) do
     case assigned_prop(left, classification) do
       nil -> []
-      prop -> ["__propsState[#{Jason.encode!(prop)}] = #{slice(code, right)};"]
+      prop -> ["__pv.props[#{Jason.encode!(prop)}] = #{slice(code, right)};"]
     end
   end
 

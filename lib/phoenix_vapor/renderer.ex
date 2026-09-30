@@ -29,12 +29,60 @@ defmodule PhoenixVapor.Renderer do
   @spec to_rendered(map(), map(), keyword()) :: Phoenix.LiveView.Rendered.t()
   def to_rendered(split, assigns, opts \\ [])
 
-  def to_rendered(%{statics: statics, slots: slots}, assigns, opts) do
-    split_to_rendered(statics, slots, assigns, opts)
+  def to_rendered(%{statics: statics, slots: slots} = split, assigns, opts) do
+    split_to_rendered(statics, slots, assigns, [fingerprint: split[:fingerprint]] ++ opts)
   end
 
+  # Parses every expression in a split and computes each fingerprint, for
+  # splits compiled into a module. Rendering accepts either form.
+  @spec compile(map()) :: map()
+  def compile(%{statics: statics, slots: slots} = split) do
+    %{split | slots: Enum.map(slots, &compile_slot/1)}
+    |> Map.put(:fingerprint, compute_fingerprint(statics, slots))
+  end
+
+  defp compile_slot(%{kind: kind, values: values} = slot) when kind in [:set_text, :set_prop],
+    do: %{slot | values: Enum.map(values, &Expr.compile/1)}
+
+  defp compile_slot(%{kind: kind, value: expr} = slot)
+       when kind in [:set_html, :v_show, :v_model],
+       do: %{slot | value: Expr.compile(expr)}
+
+  defp compile_slot(%{kind: :if_node, condition: expr, positive: pos, negative: neg} = slot) do
+    %{
+      slot
+      | condition: Expr.compile(expr),
+        positive: compile(pos),
+        negative: compile_branch(neg)
+    }
+  end
+
+  defp compile_slot(%{kind: :for_node, source: source, key_prop: key, render: render} = slot) do
+    %{
+      slot
+      | source: Expr.compile(source),
+        key_prop: key && Expr.compile(key),
+        render: compile(render)
+    }
+  end
+
+  defp compile_slot(%{kind: :create_component, props: props} = slot),
+    do: %{
+      slot
+      | props: Enum.map(props, &%{&1 | values: Enum.map(&1.values, fn v -> Expr.compile(v) end)})
+    }
+
+  defp compile_slot(slot), do: slot
+
+  defp compile_branch(nil), do: nil
+  defp compile_branch(%{kind: _} = slot), do: compile_slot(slot)
+  defp compile_branch(split), do: compile(split)
+
+  defp render_split(split, assigns),
+    do: split_to_rendered(split.statics, split.slots, assigns, fingerprint: split[:fingerprint])
+
   def split_to_rendered(statics, slots, assigns, opts \\ []) do
-    fingerprint = compute_fingerprint(statics, slots)
+    fingerprint = opts[:fingerprint] || compute_fingerprint(statics, slots)
 
     dynamic = fn track_changes? ->
       changed =
@@ -126,7 +174,7 @@ defmodule PhoenixVapor.Renderer do
 
   defp eval_slot(%{kind: :if_node, condition: cond_expr, positive: pos, negative: neg}, assigns) do
     if Expr.eval(cond_expr, assigns) do
-      split_to_rendered(pos.statics, pos.slots, assigns)
+      render_split(pos, assigns)
     else
       case neg do
         nil ->
@@ -135,8 +183,8 @@ defmodule PhoenixVapor.Renderer do
         %{kind: :if_node} = nested_if ->
           eval_slot(nested_if, assigns)
 
-        %{statics: statics, slots: slots} ->
-          split_to_rendered(statics, slots, assigns)
+        split ->
+          render_split(split, assigns)
       end
     end
   end
@@ -146,7 +194,7 @@ defmodule PhoenixVapor.Renderer do
            kind: :for_node,
            source: source,
            value: value_name,
-           render: render_split,
+           render: item_split,
            key_prop: key_prop
          },
          assigns
@@ -154,7 +202,7 @@ defmodule PhoenixVapor.Renderer do
     items = Expr.eval(source, assigns) || []
 
     dummy_assigns = build_item_assigns(assigns, value_name, %{})
-    prototype = split_to_rendered(render_split.statics, render_split.slots, dummy_assigns)
+    prototype = render_split(item_split, dummy_assigns)
     static_parts = prototype.static
     fingerprint = prototype.fingerprint
 
@@ -165,7 +213,7 @@ defmodule PhoenixVapor.Renderer do
         key = if key_prop, do: Expr.eval(key_prop, item_assigns) |> to_string()
 
         render_fn = fn _vars_changed, _track_changes? ->
-          rendered = split_to_rendered(render_split.statics, render_split.slots, item_assigns)
+          rendered = render_split(item_split, item_assigns)
           rendered.dynamic.(false)
         end
 

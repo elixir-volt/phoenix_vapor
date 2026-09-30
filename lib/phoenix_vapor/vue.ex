@@ -31,7 +31,7 @@ defmodule PhoenixVapor.Vue do
 
     source = File.read!(full_path)
     template = extract_template(source)
-    split = Vize.vapor_split!(template)
+    split = template |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
     escaped_split = Macro.escape(split)
 
     {scope_id, scoped_css} = scoped_css(source, full_path)
@@ -60,12 +60,11 @@ defmodule PhoenixVapor.Vue do
     end
   end
 
-  # Vize scopes the CSS with the id it is given, so the same id goes on the
-  # root element.
+  # Vize generates the scope id the way its bundler integrations do and
+  # scopes the CSS with it; the same id goes on the root element.
   defp scoped_css(sfc_source, path) do
     if Enum.any?(Vize.parse_sfc!(sfc_source).styles, & &1.scoped) do
-      id = :crypto.hash(:sha256, Path.relative_to_cwd(path)) |> Base.encode16(case: :lower)
-      id = binary_part(id, 0, 8)
+      id = Vize.SFC.scope_id(path, root: File.cwd!())
       {"data-v-#{id}", Vize.compile_sfc!(sfc_source, scope_id: id).css}
     else
       {nil, nil}

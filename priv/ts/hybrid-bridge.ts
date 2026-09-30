@@ -18,17 +18,21 @@ export interface Bridge {
   handleEvent(event: string, callback: (payload: unknown) => void): void
 }
 
+// A mounted hybrid component.
+export interface HybridInstance {
+  applyProps(props: Props): void
+  unmount(): void
+}
+
 // The module PhoenixVapor generates for each hybrid component.
 export interface HybridComponent {
-  __applyProps(props: Props): void
-  __mount(el: HTMLElement, bridge: Bridge): void
-  __unmount(): void
+  __mount(el: HTMLElement, bridge: Bridge, props: Props): HybridInstance
 }
 
 // The parts of a LiveView hook instance the bridge uses.
 interface HookContext extends Bridge {
   el: HTMLElement
-  component?: HybridComponent
+  instance?: HybridInstance
 }
 
 function readProps(el: HTMLElement): Props | null {
@@ -41,8 +45,8 @@ function readProps(el: HTMLElement): Props | null {
 }
 
 function applyProps(hook: HookContext) {
-  const props = hook.component && readProps(hook.el)
-  if (props) hook.component!.__applyProps(props)
+  const props = hook.instance && readProps(hook.el)
+  if (props) hook.instance!.applyProps(props)
 }
 
 export function createHybridHook(components: Record<string, HybridComponent>) {
@@ -63,9 +67,7 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
         handleEvent: (event, callback) => this.handleEvent(event, callback)
       }
 
-      component.__applyProps(readProps(this.el) ?? {})
-      component.__mount(this.el, bridge)
-      this.component = component
+      this.instance = component.__mount(this.el, bridge, readProps(this.el) ?? {})
     },
 
     updated(this: HookContext) {
@@ -77,8 +79,8 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
     },
 
     destroyed(this: HookContext) {
-      this.component?.__unmount()
-      this.component = undefined
+      this.instance?.unmount()
+      this.instance = undefined
     }
   }
 }

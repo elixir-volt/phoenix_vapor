@@ -41,8 +41,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   def gen_render(split, classification, _props, computeds \\ %{}, component_name \\ nil) do
     escaped_split = Macro.escape(split)
     client_props = Macro.escape(classification.client_props)
-    slot_owners = classify_slots(split.slots, classification)
-    escaped_slot_owners = Macro.escape(slot_owners)
 
     # Ref initializers don't depend on assigns, so evaluate them once here.
     ref_values =
@@ -63,7 +61,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
           unquote(escaped_split),
           var!(assigns),
           unquote(client_props),
-          unquote(escaped_slot_owners),
           unquote(escaped_ref_values),
           unquote(escaped_computed_exprs),
           unquote(escaped_component_name)
@@ -110,7 +107,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
         split,
         assigns,
         client_props,
-        _slot_owners,
         ref_values,
         computed_exprs,
         component_name \\ nil
@@ -124,7 +120,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     # The wrapper div is the root tag; the component itself may render text,
     # comments, or several elements.
     inner = %{
-      PhoenixVapor.Renderer.split_to_rendered(split.statics, split.slots, full_assigns)
+      PhoenixVapor.Renderer.to_rendered(split, full_assigns)
       | root: false
     }
 
@@ -291,63 +287,4 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       end
     end
   end
-
-  @doc """
-  Classify each slot in the Vapor IR as server-owned or client-owned.
-
-  A slot is client-owned if any of its referenced identifiers belong to
-  a client ref, client computed, or mixed computed.
-  """
-  def classify_slots(slots, classification) do
-    Enum.map(slots, fn slot ->
-      refs = slot_references(slot)
-
-      is_client =
-        Enum.any?(refs, fn ref ->
-          case Map.get(classification.bindings, ref) do
-            {:client_ref, _} -> true
-            :client_computed -> true
-            {:mixed_computed, _, _} -> true
-            _ -> false
-          end
-        end)
-
-      if is_client, do: :client, else: :server
-    end)
-  end
-
-  defp slot_references(%{kind: kind, values: values}) when kind in [:set_text, :set_prop] do
-    values
-    |> Enum.flat_map(fn
-      {:static_, _} -> []
-      expr when is_binary(expr) -> Classifier.free_variables(expr)
-    end)
-    |> Enum.uniq()
-  end
-
-  defp slot_references(%{kind: kind, value: expr}) when kind in [:set_html, :v_show, :v_model] do
-    Classifier.free_variables(expr)
-  end
-
-  defp slot_references(%{kind: :if_node, condition: cond_expr}) do
-    Classifier.free_variables(cond_expr)
-  end
-
-  defp slot_references(%{kind: :for_node, source: source}) do
-    Classifier.free_variables(source)
-  end
-
-  defp slot_references(%{kind: :create_component, props: props}) do
-    props
-    |> Enum.flat_map(fn prop ->
-      prop.values
-      |> Enum.flat_map(fn
-        {:static_, _} -> []
-        expr when is_binary(expr) -> Classifier.free_variables(expr)
-      end)
-    end)
-    |> Enum.uniq()
-  end
-
-  defp slot_references(_), do: []
 end
