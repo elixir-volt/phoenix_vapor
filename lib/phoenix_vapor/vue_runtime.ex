@@ -94,10 +94,24 @@ defmodule PhoenixVapor.VueRuntime do
     """
   end
 
+  # Bundles are large and shared by every mount, so each is read once and
+  # kept in :persistent_term until the file changes.
   defp read_bundle(path) when is_binary(path) do
-    case File.read(Path.expand(path)) do
-      {:ok, source} -> source
-      {:error, reason} -> raise "could not read bundle #{path}: #{:file.format_error(reason)}"
+    path = Path.expand(path)
+    key = {__MODULE__, :bundle, path}
+
+    with {:ok, %File.Stat{mtime: mtime, size: size}} <- File.stat(path),
+         {^mtime, ^size, source} <- :persistent_term.get(key, nil) do
+      source
+    else
+      {:error, reason} ->
+        raise "could not read bundle #{path}: #{:file.format_error(reason)}"
+
+      _stale_or_missing ->
+        %File.Stat{mtime: mtime, size: size} = File.stat!(path)
+        source = File.read!(path)
+        :persistent_term.put(key, {mtime, size, source})
+        source
     end
   end
 end

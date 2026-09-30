@@ -3,5 +3,6 @@ defmodule VaporDemoWeb.DialogLive do
   use PhoenixVapor,
     file: "Dialog.vue",
     runtime: :full,
-    bundle: "priv/js/reka-dialog.js"
+    bundle: "priv/js/reka-dialog.js",
+    globals: %{"reka-ui" => "RekaDialog"}
 end

@@ -30,16 +30,20 @@ defmodule PhoenixVapor.LiveVue do
         use MyAppWeb, :live_view
         use PhoenixVapor,
           file: "Dialog.vue", runtime: :full,
-          bundle: "priv/js/reka-dialog.js"
+          bundle: "priv/js/reka-dialog.js",
+          globals: %{"reka-ui" => "RekaDialog"}
       end
+
+  ## Options
+
+    * `:bundle` — path to a script that defines the component libraries as
+      globals, such as one built with `mix phoenix_vapor.bundle`. It is read
+      once and cached until the file changes.
+    * `:globals` — the global each imported package is available as in the
+      bundle. `vue` is always `Vue`.
   """
 
-  @external_map %{
-    "vue" => "Vue",
-    "reka-ui" => "RekaDialog",
-    "@vueuse/core" => "VueUse",
-    "@vueuse/shared" => "VueUseShared"
-  }
+  @default_globals %{"vue" => "Vue"}
 
   defmacro __using__(opts) do
     bundle = Keyword.fetch!(opts, :bundle)
@@ -47,7 +51,9 @@ defmodule PhoenixVapor.LiveVue do
     caller_dir = __CALLER__.file |> Path.dirname()
     full_path = Path.expand(file, caller_dir)
 
-    {setup_js, handlers} = compile_sfc(full_path)
+    {globals, _binding} = opts |> Keyword.get(:globals, Macro.escape(%{})) |> Code.eval_quoted()
+    globals = Map.merge(@default_globals, globals)
+    {setup_js, handlers} = compile_sfc(full_path, globals)
     escaped_handlers = Macro.escape(handlers)
 
     quote do
@@ -112,7 +118,7 @@ defmodule PhoenixVapor.LiveVue do
   def unwrap!({:error, reason}), do: raise("PhoenixVapor.VueRuntime failed: #{inspect(reason)}")
 
   @doc false
-  def compile_sfc(path) do
+  def compile_sfc(path, globals \\ @default_globals) do
     sfc_source = File.read!(path)
     handlers = extract_handlers(sfc_source)
 
@@ -124,7 +130,7 @@ defmodule PhoenixVapor.LiveVue do
     patched = inject_handler_registration(result.code, handlers)
 
     # Bundle with Volt: resolve imports, rewrite externals to globals
-    bundled = volt_bundle(patched, path)
+    bundled = volt_bundle(patched, path, globals)
 
     # Capture the value returned by Volt's bundled IIFE so it can be mounted.
     setup_js =
@@ -204,7 +210,7 @@ defmodule PhoenixVapor.LiveVue do
     end
   end
 
-  defp volt_bundle(compiled, sfc_path) do
+  defp volt_bundle(compiled, sfc_path, globals) do
     entry_id = PhoenixVapor.LiveVue.EntryPlugin.entry_id(sfc_path)
 
     entry_plugin =
@@ -219,7 +225,7 @@ defmodule PhoenixVapor.LiveVue do
         minify: false,
         sourcemap: false,
         code_splitting: false,
-        external: @external_map
+        external: globals
       )
 
     bundle.code

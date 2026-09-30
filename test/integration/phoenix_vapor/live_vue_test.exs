@@ -14,7 +14,8 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
     use PhoenixVapor,
       file: "../../fixtures/Probe.vue",
       runtime: :full,
-      bundle: "priv/js/reka-dialog.js"
+      bundle: "priv/js/reka-dialog.js",
+      globals: %{"reka-ui" => "RekaDialog"}
 
     def mount(params, session, socket) do
       {:ok, socket} = super(params, session, socket)

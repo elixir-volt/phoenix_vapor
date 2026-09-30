@@ -26,6 +26,8 @@
 
 ### Changed
 
+- Full-runtime LiveViews take a `:globals` option mapping each package the bundle provides to its global, such as `%{"reka-ui" => "RekaDialog"}`. The map was hardcoded for the demo's Reka bundle, including two `@vueuse` globals the bundle never defined.
+- The full runtime reads its bundle once and caches it until the file changes, instead of reading it from disk on every mount.
 - Templates compiled into a module parse their expressions and compute fingerprints at compile time. Rendering a 500-row `v-for` went from 55 ms to 0.5 ms.
 - Scoped CSS ids come from `Vize.SFC.scope_id/2`, the id Vize's bundler integrations use.
 - A hybrid module exports `__mount(el, bridge, props)`, which returns `applyProps/1` and `unmount/0` for that instance, in place of the module-level `__applyProps`, `__setBridge` and `__unmount`. The bundled bridge uses it.

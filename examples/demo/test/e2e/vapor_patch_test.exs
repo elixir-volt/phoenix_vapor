@@ -8,6 +8,8 @@ defmodule VaporDemo.E2E.VaporPatchTest do
   test "value-only diffs are patched directly", %{conn: conn} do
     conn
     |> visit("/reactive")
+    # Clicks before the socket joins are lost.
+    |> assert_has(".phx-connected")
     |> assert_has("[data-vapor-statics]")
     |> assert_has("p", text: "Doubled: 0")
     |> click_button("+")

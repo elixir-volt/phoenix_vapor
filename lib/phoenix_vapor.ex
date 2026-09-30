@@ -66,13 +66,9 @@ defmodule PhoenixVapor do
     end
   end
 
-  defp do_use_file(file, :full, opts, _caller) do
-    bundle = Keyword.fetch!(opts, :bundle)
-
+  defp do_use_file(_file, :full, opts, _caller) do
     quote do
-      use PhoenixVapor.LiveVue,
-        file: unquote(file),
-        bundle: unquote(bundle)
+      use PhoenixVapor.LiveVue, unquote(opts)
     end
   end
 
