@@ -7,12 +7,8 @@ defmodule PhoenixVapor.E2E.VueRuntimeTest do
 
   @bundle_path Path.join(File.cwd!(), "priv/js/reka-dialog.js")
 
-  setup do
-    if File.regular?(@bundle_path) do
-      :ok
-    else
-      {:skip, "reka-dialog.js bundle not found — run esbuild first"}
-    end
+  unless File.regular?(@bundle_path) do
+    @moduletag skip: "priv/js/reka-dialog.js not found; build it with `mix phoenix_vapor.bundle --name reka-dialog`"
   end
 
   describe "basic Vue runtime" do

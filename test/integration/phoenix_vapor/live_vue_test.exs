@@ -3,6 +3,10 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
 
   @moduletag :integration
 
+  unless File.regular?("priv/js/reka-dialog.js") do
+    @moduletag skip: "priv/js/reka-dialog.js not found; build it with `mix phoenix_vapor.bundle --name reka-dialog`"
+  end
+
   defmodule ComposedLive do
     use Phoenix.LiveView
 
