@@ -31,6 +31,7 @@ defmodule PhoenixVapor.MixProject do
 
   defp aliases do
     [
+      setup: ["deps.get", "volt.priv.vendor priv/ts", "npm.install"],
       "test.unit": ["test test/phoenix_vapor"],
       "test.integration": ["test test/integration"],
       "test.e2e": ["test test/e2e --include e2e"],
@@ -40,10 +41,15 @@ defmodule PhoenixVapor.MixProject do
         "credo --strict",
         "ex_dna",
         "reach.check --dead-code --smells --strict --baseline .reach-baseline.json",
-        "dialyzer"
+        "dialyzer",
+        "volt.js.check --type-aware --type-check"
       ],
-      # The e2e tests need Vue from node_modules and the Reka bundle.
-      ci: ["lint", "npm.install", "phoenix_vapor.bundle --name reka-dialog", "test --include e2e"]
+      # tsgolint and the e2e tests' Vue come from node_modules; the e2e tests
+      # also need the Reka bundle.
+      ci: ["npm.install", "lint", "phoenix_vapor.bundle --name reka-dialog", "test --include e2e"],
+      # A separate process, so compiling for vendoring leaves Hex's own tasks loaded.
+      "hex.build": ["cmd mix volt.priv.vendor priv/ts", "hex.build"],
+      "hex.publish": ["cmd mix volt.priv.vendor priv/ts", "hex.publish"]
     ]
   end
 
@@ -54,8 +60,8 @@ defmodule PhoenixVapor.MixProject do
         "GitHub" => @source_url,
         "Volt" => "https://github.com/elixir-volt/volt"
       },
-      files: ~w(lib priv/js/hybrid-bridge.js priv/js/runtime-setup.js priv/js/vue-reactivity.js
-                 .formatter.exs mix.exs README.md ARCHITECTURE.md CHANGELOG.md LICENSE)
+      files:
+        ~w(lib priv/ts package.json .formatter.exs mix.exs README.md ARCHITECTURE.md CHANGELOG.md LICENSE)
     ]
   end
 
@@ -87,7 +93,7 @@ defmodule PhoenixVapor.MixProject do
       {:vize, "~> 0.15.0"},
       {:oxc, "~> 0.18.1"},
       {:quickbeam, "~> 0.11.2", optional: true},
-      {:volt, "~> 0.19.0", optional: true, runtime: false},
+      {:volt, "~> 0.19.0", runtime: false},
       {:ex_doc, "~> 0.40.3", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

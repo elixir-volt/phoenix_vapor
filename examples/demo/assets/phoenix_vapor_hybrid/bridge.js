@@ -1,1 +1,0 @@
-../../../../priv/js/hybrid-bridge.js

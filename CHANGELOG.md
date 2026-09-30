@@ -16,6 +16,13 @@
 - Publish only PhoenixVapor's own JavaScript files. The Hex package included all of `priv/js`, so a locally built bundle such as `reka-dialog.js` would have been published with it.
 - Point the README install snippet and the bundle task's error message at the current QuickBEAM and Volt versions.
 
+### Changed
+
+- The browser and QuickBEAM code is TypeScript in `priv/ts`, built with Volt. Import it as `phoenix_vapor` (`patchLiveSocket`), `phoenix_vapor/hybrid` (`getHybridHooks`) and `phoenix_vapor/vapor-patch`. `patchLiveSocket` was not in the Hex package before.
+- `@vue/reactivity` for reactive mode is pinned in `priv/ts/package.json` and vendored by `mix volt.priv.vendor`, replacing a hand-copied build of 3.5.30.
+- Slot positions for direct DOM patching come from the browser's HTML parser instead of a hand-written one, which mishandled `>` inside attribute values.
+- Volt is a required dependency (compile time only).
+
 ### Compatibility
 
 - Require Elixir 1.19. vize 0.15 already did, so earlier versions could not resolve the dependencies.

@@ -107,6 +107,54 @@
       "tarball": "https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.6.0.tgz",
       "version": "1.6.0"
     },
+    "@oxlint-tsgolint/darwin-arm64": {
+      "dependencies": {},
+      "has_install_script": false,
+      "integrity": "sha512-4150Lpgc1YM09GcjA6GSrra1JoPjC7aOpfywLjWEY4vW0Sd1qKzqHF1WRaiw0/qUZ40OATYdv3aRd7ipPkWQbw==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@oxlint-tsgolint/darwin-arm64/-/darwin-arm64-0.22.1.tgz",
+      "version": "0.22.1"
+    },
+    "@oxlint-tsgolint/darwin-x64": {
+      "dependencies": {},
+      "has_install_script": false,
+      "integrity": "sha512-vFWcPWYOgZs4HWcgS1EjUZg33NLcNfEYU49KGImmCfZWkflENrmBYV4HN/C0YeAPum6ZZ/goPSvQrB/cOD+NfA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@oxlint-tsgolint/darwin-x64/-/darwin-x64-0.22.1.tgz",
+      "version": "0.22.1"
+    },
+    "@oxlint-tsgolint/linux-arm64": {
+      "dependencies": {},
+      "has_install_script": false,
+      "integrity": "sha512-6LiUpP0Zir3+29FvBm7Y28q/dBjSHqTZ5MhG1Ckw4fGhI4cAvbcwXaKvbjx1TP7rRmBNOoq/M5xdpHjTb+GAew==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@oxlint-tsgolint/linux-arm64/-/linux-arm64-0.22.1.tgz",
+      "version": "0.22.1"
+    },
+    "@oxlint-tsgolint/linux-x64": {
+      "dependencies": {},
+      "has_install_script": false,
+      "integrity": "sha512-fuX1hEQfpHauUbXADsfqVhRzrUrGabzGXbj5wsp2vKhV5uk/Rze8Mba9GdjFGECzvXudMGqHqxB4r6jGRdhxVA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@oxlint-tsgolint/linux-x64/-/linux-x64-0.22.1.tgz",
+      "version": "0.22.1"
+    },
+    "@oxlint-tsgolint/win32-arm64": {
+      "dependencies": {},
+      "has_install_script": false,
+      "integrity": "sha512-8SZidAj+jrbZf9ZjBEYW0tiNZ+KasqB2zgW26qdiPpQSF/DzURnPmXz651IeA9YsmbVdHGIooEHUmev6QJdquA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@oxlint-tsgolint/win32-arm64/-/win32-arm64-0.22.1.tgz",
+      "version": "0.22.1"
+    },
+    "@oxlint-tsgolint/win32-x64": {
+      "dependencies": {},
+      "has_install_script": false,
+      "integrity": "sha512-QweSk9H5lFh5Y+WUf2Kq/OAN88V6+62ZwGhP38gqdRotI90luXSMkruFTj7Q2rYrzH4ZVNaSqx7NY8JpSfIzqg==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@oxlint-tsgolint/win32-x64/-/win32-x64-0.22.1.tgz",
+      "version": "0.22.1"
+    },
     "@swc/helpers": {
       "dependencies": {
         "tslib": "^2.8.0"
@@ -346,6 +394,21 @@
       "optional_dependencies": {},
       "tarball": "https://registry.npmjs.org/ohash/-/ohash-2.0.12.tgz",
       "version": "2.0.12"
+    },
+    "oxlint-tsgolint": {
+      "dependencies": {},
+      "has_install_script": false,
+      "integrity": "sha512-YUSGSLUnoolsu8gxISEDio3q1rtsCozwfOzASUn3DT2mR2EeQ93uEEnen7s+6LpF+lyTQFln1pQfqwBh/fsVEg==",
+      "optional_dependencies": {
+        "@oxlint-tsgolint/darwin-arm64": "0.22.1",
+        "@oxlint-tsgolint/darwin-x64": "0.22.1",
+        "@oxlint-tsgolint/linux-arm64": "0.22.1",
+        "@oxlint-tsgolint/linux-x64": "0.22.1",
+        "@oxlint-tsgolint/win32-arm64": "0.22.1",
+        "@oxlint-tsgolint/win32-x64": "0.22.1"
+      },
+      "tarball": "https://registry.npmjs.org/oxlint-tsgolint/-/oxlint-tsgolint-0.22.1.tgz",
+      "version": "0.22.1"
     },
     "picocolors": {
       "dependencies": {},

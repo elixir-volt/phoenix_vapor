@@ -185,12 +185,31 @@ The `<script lang="elixir">` block is extracted and injected into the LiveView m
 ```elixir
 def deps do
   [
-    {:phoenix_vapor, "~> 0.3.3"},
-    {:quickbeam, "~> 0.11.2", optional: true},
-    {:volt, "~> 0.19.0", optional: true}
+    {:phoenix_vapor, "~> 0.3.3"}
   ]
 end
 ```
+
+PhoenixVapor brings Volt, which compiles its TypeScript, and QuickBEAM, which runs the reactive and full runtimes.
+
+### Browser code
+
+The browser modules ship as TypeScript in `priv/ts`, exported through the package's `package.json`. With Volt resolving from `deps` (`resolve_dirs: ["node_modules", "deps"]`):
+
+```js
+import { patchLiveSocket } from "phoenix_vapor"
+import { getHybridHooks } from "phoenix_vapor/hybrid"
+import * as Contacts from "./hybrid/Contacts.hybrid.js"
+
+const liveSocket = new LiveSocket("/live", Socket, {
+  hooks: { ...getHybridHooks({ Contacts }) }
+})
+
+patchLiveSocket(liveSocket)
+liveSocket.connect()
+```
+
+`patchLiveSocket` writes value-only diffs for Vapor-rendered elements straight to the DOM. Hybrid components compile to `assets/js/hybrid/<Name>.hybrid.js`; register each one with `getHybridHooks`.
 
 ## Toolchain
 
@@ -201,7 +220,7 @@ All compilation runs through Rust NIFs and the BEAM — no Node.js required.
 | [Vize](https://hex.pm/packages/vize) | Vue SFC → Vapor IR / standard render functions |
 | [OXC](https://hex.pm/packages/oxc) | JS/TS parse, transform, bundle, format, lint |
 | [QuickBEAM](https://hex.pm/packages/quickbeam) | Server-side JS runtime (Vue reactivity, complex expressions) |
-| [Volt](https://hex.pm/packages/volt) | Dev server, HMR, Tailwind, production builds |
+| [Volt](https://hex.pm/packages/volt) | Bundles PhoenixVapor's TypeScript; dev server, HMR, Tailwind, production builds |
 
 ## Docs
 

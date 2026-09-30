@@ -1,0 +1,31 @@
+{
+  "lockfileVersion": 1,
+  "packages": {
+    "@vue/reactivity": {
+      "dependencies": {
+        "@vue/shared": "3.5.43"
+      },
+      "has_install_script": false,
+      "integrity": "sha512-G/c9GyOZNI2jVaaS6OX1EF1SSFSv7H0ERqNTl4+DTFMlZmB5eVAB53aLQNam/7NL2NPtaDD7RdVrzf8uJzMuOA==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/reactivity/-/reactivity-3.5.43.tgz",
+      "version": "3.5.43"
+    },
+    "@vue/shared": {
+      "dependencies": {},
+      "has_install_script": false,
+      "integrity": "sha512-uksS7YGMR5NZyr4JNq0Rp+QyLns0ueaz20KwzIPW9R0LH1Vnt4E+XUM29PNseEbf1www2gOuhuDi5AKOIXag9Q==",
+      "optional_dependencies": {},
+      "tarball": "https://registry.npmjs.org/@vue/shared/-/shared-3.5.43.tgz",
+      "version": "3.5.43"
+    }
+  },
+  "policy": {
+    "allow_registry_redirects": false,
+    "allowed_registries": [
+      "https://registry.npmjs.org"
+    ],
+    "block_exotic_subdeps": true,
+    "exotic_deps": []
+  }
+}

@@ -136,7 +136,14 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 - `PhoenixVapor.LiveVue` — full Vue runtime (runtime: :full)
 - `PhoenixVapor.VueRuntime` — QuickBEAM GenServer for full Vue
 
-### Client JS
-- `priv/js/hybrid-bridge.js` — LiveView hook for hybrid mode
-- `priv/js/vue-reactivity.js` — `@vue/reactivity` for server-side reactive mode
-- `priv/js/runtime-setup.js` — QuickBEAM reactive runtime bootstrap
+### Shared
+- `PhoenixVapor.JS` — a QuickBEAM runtime, or a context on a configured pool
+- `PhoenixVapor.SFC` — `<script lang="elixir">` extraction
+- `PhoenixVapor.LiveVue.EntryPlugin` — Volt plugin serving the full runtime's entry module
+- `Mix.Tasks.PhoenixVapor.Bundle` — bundles a Vue component library for the full runtime
+
+### TypeScript (`priv/ts`)
+- `reactive-runtime.ts` — reactive mode's runtime in QuickBEAM, bundled with the vendored `@vue/reactivity` at compile time
+- `live-socket.ts` — `patchLiveSocket`, direct DOM writes for value-only diffs (`phoenix_vapor`)
+- `vapor-patch.ts` — slot analysis and DOM writes behind it (`phoenix_vapor/vapor-patch`)
+- `hybrid-bridge.ts` — LiveView hook for hybrid components (`phoenix_vapor/hybrid`)

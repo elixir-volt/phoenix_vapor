@@ -42,12 +42,12 @@ defmodule PhoenixVapor.Runtime do
 
   alias PhoenixVapor.JS
 
-  @reactivity_js_path Path.join(:code.priv_dir(:phoenix_vapor), "js/vue-reactivity.js")
-  @setup_js_path Path.join(:code.priv_dir(:phoenix_vapor), "js/runtime-setup.js")
-  @external_resource @reactivity_js_path
-  @external_resource @setup_js_path
-  @reactivity_js File.read!(@reactivity_js_path)
-  @setup_js File.read!(@setup_js_path)
+  @runtime_ts {:phoenix_vapor, "ts"}
+  @external_resource Volt.Priv.path(@runtime_ts, "reactive-runtime.ts")
+  @external_resource Volt.Priv.path(@runtime_ts, "npm.lock")
+  @runtime_js Volt.Priv.bundle!(@runtime_ts, "reactive-runtime.ts",
+                define: %{"process.env.NODE_ENV" => ~s("production")}
+              )
 
   # ── Public API ──
 
@@ -99,8 +99,7 @@ defmodule PhoenixVapor.Runtime do
 
   defp setup_runtime(config, pool) do
     with {:ok, js} <- JS.start(pool, apis: false) do
-      with {:ok, _} <- JS.eval(js, @reactivity_js),
-           {:ok, _} <- JS.eval(js, @setup_js),
+      with {:ok, _} <- JS.eval(js, @runtime_js),
            {:ok, _} <- JS.call(js, "__pv_setup", [config]) do
         {:ok, js}
       else
