@@ -8,10 +8,9 @@ defmodule PhoenixVapor.MixProject do
     [
       app: :phoenix_vapor,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
       name: "PhoenixVapor",
       description:
@@ -19,23 +18,32 @@ defmodule PhoenixVapor.MixProject do
       source_url: @source_url,
       homepage_url: @source_url,
       package: package(),
-      docs: docs()
+      docs: docs(),
+      dialyzer: [plt_add_apps: [:mix, :volt]]
     ]
   end
+
+  def cli, do: [preferred_envs: [ci: :test, lint: :test]]
 
   def application do
     [extra_applications: [:logger]]
   end
-
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
-  defp elixirc_paths(_), do: ["lib"]
 
   defp aliases do
     [
       "test.unit": ["test test/phoenix_vapor"],
       "test.integration": ["test test/integration"],
       "test.e2e": ["test test/e2e --include e2e"],
-      ci: ["test --include e2e"]
+      lint: [
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "credo --strict",
+        "ex_dna",
+        "reach.check --dead-code --smells --strict --baseline .reach-baseline.json",
+        "dialyzer"
+      ],
+      # The e2e tests need Vue from node_modules and the Reka bundle.
+      ci: ["lint", "npm.install", "phoenix_vapor.bundle --name reka-dialog", "test --include e2e"]
     ]
   end
 
@@ -80,7 +88,12 @@ defmodule PhoenixVapor.MixProject do
       {:oxc, "~> 0.18.1"},
       {:quickbeam, "~> 0.11.2", optional: true},
       {:volt, "~> 0.19.0", optional: true, runtime: false},
-      {:ex_doc, "~> 0.40.3", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.40.3", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
+      {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
+      {:reach, "~> 2.0", only: [:dev, :test], runtime: false}
     ]
   end
 end

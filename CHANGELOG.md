@@ -18,6 +18,7 @@
 
 ### Compatibility
 
+- Require Elixir 1.19. vize 0.15 already did, so earlier versions could not resolve the dependencies.
 - Require vize 0.15.0, OXC 0.18.1, and QuickBEAM 0.11.2 or later in the 0.11 series, and support Volt 0.19, matching the dependencies Volt 0.19 resolves. Building vize from source now requires Rust 1.95.
 
 ## 0.3.3 - 2026-09-15
