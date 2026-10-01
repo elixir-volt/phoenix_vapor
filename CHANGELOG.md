@@ -20,6 +20,7 @@
 - Hybrid components get every prop the template or client-side code reads. Props used only in the template were left out of `data-pv-props`, so the client rendered them empty once it mounted.
 - Read `defineProps` in its object and TypeScript forms, not only as an array, using Vize's script analysis.
 - A page can mount the same hybrid component several times. Each mount has its own props and bridge.
+- Expressions with methods PhoenixVapor doesn't evaluate in Elixir fall back to QuickBEAM. `list.filter(fun)` and `list.map(fun)` with a function reference returned the list unchanged, and other methods, such as `padStart`, rendered nothing.
 - Publish only PhoenixVapor's own JavaScript files. The Hex package included all of `priv/js`, so a locally built bundle such as `reka-dialog.js` would have been published with it.
 - Point the README install snippet and the bundle task's error message at the current QuickBEAM and Volt versions.
 

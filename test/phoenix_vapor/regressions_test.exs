@@ -108,4 +108,18 @@ defmodule PhoenixVapor.RegressionsTest do
     assert html.(split) =~ "A many"
     assert html.(split) =~ "1 with many"
   end
+
+  test "methods Elixir doesn't evaluate fall back to JavaScript" do
+    render = fn template, assigns ->
+      template
+      |> PhoenixVapor.render(assigns)
+      |> Phoenix.HTML.Safe.to_iodata()
+      |> IO.iodata_to_binary()
+    end
+
+    assert render.("<p>{{ name.padStart(5, '*') }}</p>", %{name: "ab"}) == "<p>***ab</p>"
+
+    assert render.("<p>{{ items.filter(i => i > 1).length }}</p>", %{items: [1, 2, 3]}) ==
+             "<p>2</p>"
+  end
 end

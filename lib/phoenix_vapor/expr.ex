@@ -322,8 +322,6 @@ defmodule PhoenixVapor.Expr do
 
   defp access_value(_, _), do: nil
 
-  defp call_method(list, "filter", [_fun]) when is_list(list), do: list
-  defp call_method(list, "map", [_fun]) when is_list(list), do: list
   defp call_method(list, "join", [sep]) when is_list(list), do: Enum.join(list, to_string(sep))
   defp call_method(list, "join", []) when is_list(list), do: Enum.join(list, ",")
   defp call_method(list, "includes", [val]) when is_list(list), do: val in list
@@ -340,7 +338,8 @@ defmodule PhoenixVapor.Expr do
   defp call_method(str, "endsWith", [suf]) when is_binary(str),
     do: String.ends_with?(str, to_string(suf))
 
-  defp call_method(_, _, _), do: nil
+  # Anything else, such as filter/map with a callback, is evaluated in QuickBEAM.
+  defp call_method(_, _, _), do: throw(:unsupported_node)
 
   defp numeric_or_string_add(l, r) when is_binary(l) or is_binary(r),
     do: to_string(l) <> to_string(r)
