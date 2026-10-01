@@ -4,7 +4,6 @@
 
 ### Fixed
 
-- Render `v-html`. Vize dropped the `set_html` slot, so the element rendered empty; vize 0.15.0 keeps it.
 - Hybrid server actions no longer throw in the browser. They referenced `__serverProps` and `triggerRef`, which the generated module never defined.
 - Re-render hybrid components when LiveView sends new props. Only the first render used them.
 - Keep hybrid components working across server updates. The wrapper is now `phx-update="ignore"`, and the props JSON is a dynamic instead of part of the statics, so a prop change no longer resends the whole tree.
@@ -14,7 +13,7 @@
 - Reactive `mount/3` no longer creates atoms from URL params. Only params the template reads become assigns.
 - Computeds may read computeds declared after them, and block-bodied computeds work in Reactive mode.
 - Put scope and Vapor metadata attributes after the root tag's name. They were inserted before the first `>`, which landed inside an attribute value such as `title="a > b"`.
-- Scoped CSS uses a scope id PhoenixVapor chooses and passes to Vize, instead of one read back out of the compiled CSS.
+- Scoped CSS uses the scope id from `Vize.SFC.scope_id/2`, passed to Vize, instead of one read back out of the compiled CSS.
 - Leave a `<script lang="elixir">` block out of the hybrid client module when it follows `<script setup>`. The block was cut from the first `<script` tag.
 - Full-runtime LiveViews raise the JavaScript error from mount and events instead of a `MatchError`.
 - An unknown `:runtime` option is a compile error. It used to fall back to detecting the mode.
@@ -29,7 +28,6 @@
 - Full-runtime LiveViews take a `:globals` option mapping each package the bundle provides to its global, such as `%{"reka-ui" => "RekaDialog"}`. The map was hardcoded for the demo's Reka bundle, including two `@vueuse` globals the bundle never defined.
 - The full runtime reads its bundle once and caches it until the file changes, instead of reading it from disk on every mount.
 - Templates compiled into a module parse their expressions and compute fingerprints at compile time. Rendering a 500-row `v-for` went from 55 ms to 0.5 ms.
-- Scoped CSS ids come from `Vize.SFC.scope_id/2`, the id Vize's bundler integrations use.
 - A hybrid module exports `__mount(el, bridge, props)`, which returns `applyProps/1` and `unmount/0` for that instance, in place of the module-level `__applyProps`, `__setBridge` and `__unmount`. The bundled bridge uses it.
 - The browser and QuickBEAM code is TypeScript in `priv/ts`, built with Volt. Import it as `phoenix_vapor` (`patchLiveSocket`), `phoenix_vapor/hybrid` (`getHybridHooks`) and `phoenix_vapor/vapor-patch`. `patchLiveSocket` was not in the Hex package before.
 - `@vue/reactivity` for reactive mode is pinned in `priv/ts/package.json` and vendored by `mix volt.priv.vendor`, replacing a hand-copied build of 3.5.30.
@@ -39,7 +37,13 @@
 ### Compatibility
 
 - Require Elixir 1.19. vize 0.15 already did, so earlier versions could not resolve the dependencies.
-- Require vize 0.15.0, OXC 0.18.1, and QuickBEAM 0.11.2 or later in the 0.11 series, and support Volt 0.19, matching the dependencies Volt 0.19 resolves. Building vize from source now requires Rust 1.95.
+- Require vize 0.15, OXC 0.18, QuickBEAM 0.11.2 and Volt 0.19, dropping the older versions 0.3.4 also accepted. Building vize from source requires Rust 1.95.
+
+## 0.3.4 - 2026-09-30
+
+### Compatibility
+
+- Support Volt 0.19, OXC 0.18, and Vize 0.15, alongside the versions supported before.
 
 ## 0.3.3 - 2026-09-15
 
