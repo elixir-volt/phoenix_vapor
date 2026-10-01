@@ -67,10 +67,17 @@ defmodule PhoenixVapor.MixProject do
 
   defp docs do
     [
-      main: "PhoenixVapor",
+      main: "readme",
+      source_ref: "v#{@version}",
       extras: [
         "README.md",
         "CHANGELOG.md",
+        "guides/introduction/getting-started.md",
+        "guides/features/templates.md",
+        "guides/features/reactive.md",
+        "guides/features/hybrid.md",
+        "guides/features/full-runtime.md",
+        "guides/cheatsheets/modes.cheatmd",
         "ARCHITECTURE.md",
         "docs/hybrid-architecture.md",
         "docs/comparisons/fronix-wire-protocol.md",
@@ -79,10 +86,12 @@ defmodule PhoenixVapor.MixProject do
         "LICENSE"
       ],
       groups_for_extras: [
-        Guides: ["docs/hybrid-architecture.md"],
-        Comparisons: ~r/docs\/comparisons\/.*/
+        Introduction: ~r/guides\/introduction\//,
+        Features: ~r/guides\/features\//,
+        Cheatsheets: ~r/guides\/cheatsheets\//,
+        Internals: ["ARCHITECTURE.md", "docs/hybrid-architecture.md"],
+        Comparisons: ~r/docs\/comparisons\//
       ],
-      source_ref: "v#{@version}",
       skip_undefined_reference_warnings_on: ["ARCHITECTURE.md"]
     ]
   end
