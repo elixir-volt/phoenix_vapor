@@ -39,7 +39,10 @@ defmodule PhoenixVapor.Hybrid do
     {refs, computeds, functions, function_bodies, props} =
       PhoenixVapor.ScriptSetup.parse(script_content)
 
-    split = template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+    # The client component handles the template's events, so no phx-* attributes.
+    split =
+      template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile(events: false)
+
     template_names = split |> PhoenixVapor.Renderer.assign_keys() |> Enum.map(&Atom.to_string/1)
 
     classification =

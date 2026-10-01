@@ -146,10 +146,10 @@ defmodule PhoenixVapor do
   """
   @spec render(String.t() | map(), map()) :: Phoenix.LiveView.Rendered.t()
   def render(template, assigns) when is_binary(template) do
-    render(Vize.vapor_split!(template), assigns)
+    render(template |> Vize.vapor_split!() |> Renderer.compile(), assigns)
   end
 
   def render(%{statics: _, slots: _} = split, assigns) do
-    Renderer.to_rendered(split, assigns)
+    split |> Renderer.compile() |> Renderer.to_rendered(assigns)
   end
 end

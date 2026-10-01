@@ -21,6 +21,7 @@
 - Read `defineProps` in its object and TypeScript forms, not only as an array, using Vize's script analysis.
 - A page can mount the same hybrid component several times. Each mount has its own props and bridge.
 - Expressions with methods PhoenixVapor doesn't evaluate in Elixir fall back to QuickBEAM. `list.filter(fun)` and `list.map(fun)` with a function reference returned the list unchanged, and other methods, such as `padStart`, rendered nothing.
+- Hybrid server HTML no longer carries `phx-*` event attributes. Vue handles the component's events once it mounts, but until then LiveView acted on attributes such as `phx-click="pick(c)"` and pushed the handler source to the server as an event name.
 - Publish only PhoenixVapor's own JavaScript files. The Hex package included all of `priv/js`, so a locally built bundle such as `reka-dialog.js` would have been published with it.
 - Point the README install snippet and the bundle task's error message at the current QuickBEAM and Volt versions.
 
@@ -37,6 +38,7 @@
 
 ### Compatibility
 
+- Require vize 0.16, whose `vapor_split` reports events and `v-model` as data. PhoenixVapor now renders them as `phx-*` attributes itself, and leaves them out in hybrid mode.
 - Require Elixir 1.19. vize 0.15 already did, so earlier versions could not resolve the dependencies.
 - Require vize 0.15, OXC 0.18, QuickBEAM 0.11.2 and Volt 0.19, dropping the older versions 0.3.4 also accepted. Building vize from source requires Rust 1.95.
 

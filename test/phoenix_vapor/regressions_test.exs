@@ -122,4 +122,37 @@ defmodule PhoenixVapor.RegressionsTest do
     assert render.("<p>{{ items.filter(i => i > 1).length }}</p>", %{items: [1, 2, 3]}) ==
              "<p>2</p>"
   end
+
+  describe "event bindings" do
+    defp html(template, assigns) do
+      template
+      |> PhoenixVapor.render(assigns)
+      |> Phoenix.HTML.Safe.to_iodata()
+      |> IO.iodata_to_binary()
+    end
+
+    test "LiveView templates get phx-* attributes, with handlers escaped" do
+      assert html(~S|<button @click='say("hi")'>x</button>|, %{}) ==
+               ~s|<button phx-click="say(&quot;hi&quot;)">x</button>|
+    end
+
+    test "v-model gets phx-change after its value" do
+      assert html(~S|<input v-model="name">|, %{name: "Ann"}) ==
+               ~s(<input value="Ann" phx-change="name_changed">)
+    end
+
+    test "events inside v-for keep their attribute" do
+      assert html(~S|<ul><li v-for="i in items" @click="pick">{{ i }}</li></ul>|, %{items: [1]}) ==
+               ~s(<ul><li phx-click="pick">1</li></ul>)
+    end
+
+    test "hybrid server HTML leaves events to the client" do
+      split =
+        ~S|<button @click="pick(c)">{{ label }}</button>|
+        |> Vize.vapor_split!()
+        |> PhoenixVapor.Renderer.compile(events: false)
+
+      refute Enum.join(split.statics) =~ "phx-"
+    end
+  end
 end
