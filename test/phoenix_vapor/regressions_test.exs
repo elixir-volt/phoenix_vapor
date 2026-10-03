@@ -182,4 +182,14 @@ defmodule PhoenixVapor.RegressionsTest do
 
     assert [nil, "2"] = rendered.dynamic.(true)
   end
+
+  test "an interpolation after a text node in a nested list renders" do
+    html =
+      ~S|<ul><li>a<ul><li>{{ b }}</li></ul></li></ul>|
+      |> PhoenixVapor.render(%{b: "B"})
+      |> Phoenix.HTML.Safe.to_iodata()
+      |> IO.iodata_to_binary()
+
+    assert html == "<ul><li>a<ul><li>B</li></ul></li></ul>"
+  end
 end
