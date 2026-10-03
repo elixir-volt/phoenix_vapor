@@ -10,9 +10,19 @@ defmodule PhoenixVapor.Components do
   # as a diagnostic. A component that isn't imported at all is looked up in the
   # `__components__` assign when the template renders.
 
-  alias PhoenixVapor.{Macros, Renderer}
+  alias PhoenixVapor.{Macros, Renderer, Template}
 
-  @type diagnostic :: %{tag: String.t(), file: Path.t() | nil, problem: term()}
+  @typedoc """
+  A problem found while compiling, in the shape of `t:Code.diagnostic/1`.
+  Severity `:unrendered` marks what the server can't render: an error, except
+  in hybrid mode, where the browser renders it.
+  """
+  @type diagnostic :: %{
+          file: Path.t() | nil,
+          severity: :error | :warning | :unrendered,
+          message: String.t(),
+          position: Template.position() | 0
+        }
 
   @doc """
   Splits and compiles `template`, resolving the components its SFC imports.
@@ -20,13 +30,13 @@ defmodule PhoenixVapor.Components do
   ## Options
 
     * `:file` — the SFC's path, for relative imports and diagnostics
+    * `:origin` — `{line, column}` where the template starts in `:file`
     * `:script` — the SFC's `<script setup>` source, for its imports
     * `:events` — passed to `PhoenixVapor.Renderer.compile/2`
 
-  Returns the compiled split, the `.vue` files it read, and diagnostics for
-  components the server can't render.
+  Returns the compiled template, the `.vue` files it read, and diagnostics.
   """
-  @spec compile(String.t(), keyword()) :: {map(), [Path.t()], [diagnostic()]}
+  @spec compile(String.t(), keyword()) :: {Template.t(), [Path.t()], [diagnostic()]}
   def compile(template, opts \\ []) do
     state = %{
       events: Keyword.get(opts, :events, true),
@@ -37,129 +47,162 @@ defmodule PhoenixVapor.Components do
       macros: nil
     }
 
-    {split, state} =
-      compile_template(template, opts[:file], opts[:script] || "", [], nil, state)
+    source = %{
+      template: template,
+      origin: Keyword.get(opts, :origin, {1, 1}),
+      file: opts[:file],
+      script: opts[:script] || ""
+    }
 
-    Macros.stop(state.macros)
-    {split, Enum.uniq(state.resources), Enum.reverse(state.diagnostics)}
-  end
-
-  @doc """
-  Like `compile/2`, but reports diagnostics: `unrendered: :warn` prints them as
-  a compile-time warning, for templates the browser renders again, and
-  `unrendered: :raise` raises a `CompileError`.
-
-  Also takes `:env`, the caller's `Macro.Env`, for the warning's location.
-  Returns the split and the `.vue` files it read.
-  """
-  @spec compile!(String.t(), keyword()) :: {map(), [Path.t()]}
-  def compile!(template, opts) do
-    {split, resources, diagnostics} = compile(template, opts)
-
-    case {format(diagnostics), opts[:unrendered]} do
-      {nil, _} ->
-        :ok
-
-      {message, :warn} ->
-        IO.warn(
-          "the server's first render leaves out what it can't render; " <>
-            "the browser renders it when it mounts the component:\n" <> message,
-          opts[:env] || []
-        )
-
-      {message, _raise} ->
-        raise CompileError, description: message
+    try do
+      {compiled, state} = compile_template(source, [], nil, state)
+      diagnostics = state.diagnostics |> Enum.reverse() |> Enum.uniq_by(&{&1.file, &1.message})
+      {compiled, Enum.uniq(state.resources), diagnostics}
+    after
+      Macros.stop(state.macros)
     end
-
-    {split, resources}
   end
 
   @doc """
-  Formats diagnostics as one message, a line per file and problem, or nil when
-  there are none.
+  Like `compile/2`, but reports the diagnostics: warnings through `IO.warn/2`
+  and errors as a `CompileError`. `unrendered: :warn`, for templates the
+  browser renders again, reports what the server can't render as warnings.
+
+  Returns the template and the `.vue` files it read.
   """
-  @spec format([diagnostic()]) :: String.t() | nil
-  def format([]), do: nil
+  @spec compile!(String.t(), keyword()) :: {Template.t(), [Path.t()]}
+  def compile!(template, opts) do
+    {compiled, resources, diagnostics} = compile(template, opts)
 
-  def format(diagnostics) do
-    diagnostics
-    |> Enum.group_by(&{&1.file, &1.problem}, & &1.tag)
-    |> Enum.sort()
-    |> Enum.map_join("\n", fn {{file, problem}, tags} ->
-      tags = tags |> Enum.uniq() |> Enum.map_join(", ", &"<#{&1}>")
-      location = if file, do: Path.relative_to_cwd(file) <> ": ", else: ""
-      location <> problem_message(problem, tags)
-    end)
-  end
-
-  defp problem_message({:package, source}, tags),
-    do: "#{tags} from #{inspect(source)}, which the server can't render"
-
-  defp problem_message({:not_found, source}, tags), do: "#{tags}: can't find #{inspect(source)}"
-  defp problem_message(:recursive, tags), do: "#{tags} renders itself recursively"
-
-  defp problem_message({:dynamic, source}, _tags),
-    do: "`#{source}` calls a macro with values known only when rendering"
-
-  defp problem_message({:failed, message}, _tags), do: "a macro call failed: #{message}"
-
-  defp compile_template(template, file, script, split_opts, static_props, state) do
-    split =
-      template
-      |> Vize.vapor_split!(split_opts)
-      |> Renderer.compile(events: state.events)
-
-    ctx = %{file: file, imports: imports(script), script: script, static_props: static_props}
-
-    {split, runtime, macro_diagnostics} = Macros.fold(split, ctx, state.macros)
-
-    state =
-      Enum.reduce(macro_diagnostics, %{state | macros: runtime}, fn {problem, detail}, state ->
-        diagnose(state, nil, file, {problem, detail})
+    {errors, warnings} =
+      Enum.split_with(diagnostics, fn
+        %{severity: :unrendered} -> opts[:unrendered] != :warn
+        %{severity: severity} -> severity == :error
       end)
 
-    resolve_split(split, ctx, state)
+    Enum.each(warnings, fn
+      %{severity: :unrendered} = diagnostic ->
+        warn(%{
+          diagnostic
+          | message: diagnostic.message <> "; the browser renders it when it mounts"
+        })
+
+      diagnostic ->
+        warn(diagnostic)
+    end)
+
+    case errors do
+      [] -> {compiled, resources}
+      errors -> raise_errors(errors)
+    end
   end
 
-  defp resolve_split(%{slots: slots} = split, ctx, state) do
+  defp warn(%{message: message} = diagnostic) do
+    IO.warn(message, location(diagnostic))
+  end
+
+  @spec raise_errors([diagnostic()]) :: no_return()
+  defp raise_errors([first | rest]) do
+    # CompileError shows the first error's file and line itself.
+    description = Enum.map_join([first.message | Enum.map(rest, &format/1)], "\n", & &1)
+    raise CompileError, [description: description] ++ location(first)
+  end
+
+  defp location(%{file: file, position: {line, _column}}) when is_binary(file),
+    do: [file: file, line: line]
+
+  defp location(%{file: file}) when is_binary(file), do: [file: file, line: 0]
+  defp location(_diagnostic), do: []
+
+  @doc "Formats a diagnostic as `file:line:column: message`."
+  @spec format(diagnostic()) :: String.t()
+  def format(%{file: file, position: position, message: message}) do
+    file = if file, do: Path.relative_to_cwd(file), else: "nofile"
+
+    case position do
+      {line, column} -> "#{file}:#{line}:#{column}: #{message}"
+      _ -> "#{file}: #{message}"
+    end
+  end
+
+  defp compile_template(source, split_opts, static_props, state) do
+    split =
+      case Vize.split_template(source.template, split_opts) do
+        {:ok, split} ->
+          split
+
+        {:error, %Vize.Error{diagnostics: diagnostics}} ->
+          diagnostics
+          |> Enum.map(
+            &Vize.Diagnostic.to_code_diagnostic(&1, file: source.file, origin: source.origin)
+          )
+          |> raise_errors()
+      end
+
+    state =
+      Enum.reduce(split.diagnostics, state, fn diagnostic, state ->
+        diagnostic =
+          Vize.Diagnostic.to_code_diagnostic(diagnostic, file: source.file, origin: source.origin)
+
+        add(state, Map.take(diagnostic, [:file, :severity, :message, :position]))
+      end)
+
+    compiled =
+      Renderer.compile(split, events: state.events, file: source.file, origin: source.origin)
+
+    ctx = %{
+      file: source.file,
+      imports: imports(source.script),
+      script: source.script,
+      static_props: static_props
+    }
+
+    {compiled, runtime, macro_diagnostics} = Macros.fold(compiled, ctx, state.macros)
+    state = Enum.reduce(macro_diagnostics, %{state | macros: runtime}, &add(&2, &1))
+
+    {compiled, state} = mark_script_calls(compiled, ctx, state)
+    resolve_template(compiled, ctx, state)
+  end
+
+  defp resolve_template(%Template{slots: slots} = template, ctx, state) do
     {slots, state} = Enum.map_reduce(slots, state, &resolve_slot(&1, ctx, &2))
-    {%{split | slots: slots}, state}
+    {%{template | slots: slots}, state}
   end
 
-  defp resolve_slot(%{kind: :if_node, positive: pos, negative: neg} = slot, ctx, state) do
-    {pos, state} = resolve_split(pos, ctx, state)
-    {neg, state} = resolve_branch(neg, ctx, state)
-    {%{slot | positive: pos, negative: neg}, state}
+  defp resolve_slot(%{kind: :if, branches: branches} = slot, ctx, state) do
+    {branches, state} =
+      Enum.map_reduce(branches, state, fn branch, state ->
+        {block, state} = resolve_template(branch.block, ctx, state)
+        {%{branch | block: block}, state}
+      end)
+
+    {%{slot | branches: branches}, state}
   end
 
-  defp resolve_slot(%{kind: :for_node, render: render} = slot, ctx, state) do
-    {render, state} = resolve_split(render, ctx, state)
-    {%{slot | render: render}, state}
+  defp resolve_slot(%{kind: :for, block: block} = slot, ctx, state) do
+    {block, state} = resolve_template(block, ctx, state)
+    {%{slot | block: block}, state}
   end
 
-  defp resolve_slot(%{kind: :slot_outlet, fallback: fallback} = slot, ctx, state) do
-    {fallback, state} = resolve_branch(fallback, ctx, state)
+  defp resolve_slot(%{kind: :slot, fallback: %Template{} = fallback} = slot, ctx, state) do
+    {fallback, state} = resolve_template(fallback, ctx, state)
     {%{slot | fallback: fallback}, state}
   end
 
-  defp resolve_slot(%{kind: :create_component, slots: slot_fns} = slot, ctx, state) do
-    {slot_fns, state} =
-      Enum.map_reduce(slot_fns, state, fn slot_fn, state ->
-        {render, state} = resolve_split(slot_fn.render, ctx, state)
-        {%{slot_fn | render: render}, state}
+  defp resolve_slot(%{kind: :component, slots: contents} = slot, ctx, state) do
+    {contents, state} =
+      Enum.map_reduce(contents, state, fn content, state ->
+        {block, state} = resolve_template(content.block, ctx, state)
+        {%{content | block: block}, state}
       end)
 
-    resolve_component(%{slot | slots: slot_fns}, ctx, state)
+    resolve_component(%{slot | slots: contents}, ctx, state)
   end
 
   defp resolve_slot(slot, _ctx, state), do: {slot, state}
 
-  defp resolve_branch(nil, _ctx, state), do: {nil, state}
-  defp resolve_branch(%{kind: _} = slot, ctx, state), do: resolve_slot(slot, ctx, state)
-  defp resolve_branch(split, ctx, state), do: resolve_split(split, ctx, state)
-
-  defp resolve_component(%{tag: tag} = slot, ctx, state) do
-    case import_for(ctx.imports, tag) do
+  defp resolve_component(%{name: name} = slot, ctx, state) do
+    case import_for(ctx.imports, name) do
       nil ->
         {slot, state}
 
@@ -167,16 +210,18 @@ defmodule PhoenixVapor.Components do
         if Path.extname(source) == ".vue" do
           resolve_vue(slot, source, ctx, state)
         else
-          {slot, diagnose(state, tag, ctx.file, {:package, source})}
+          message = "<#{name}> is imported from #{inspect(source)}, which the server can't render"
+          {slot, diagnose(state, :unrendered, ctx.file, slot.position, message)}
         end
     end
   end
 
-  defp resolve_vue(%{tag: tag} = slot, source, ctx, state) do
+  defp resolve_vue(%{name: name} = slot, source, ctx, state) do
     case resolve_path(source, ctx.file) do
       {:ok, path} ->
         if path in state.stack do
-          {slot, diagnose(state, tag, ctx.file, :recursive)}
+          message = "<#{name}> renders itself, which the server can't do"
+          {slot, diagnose(state, :unrendered, ctx.file, slot.position, message)}
         else
           static_props = static_props(slot.props)
 
@@ -192,9 +237,87 @@ defmodule PhoenixVapor.Components do
         end
 
       {:error, _reason} ->
-        {slot, diagnose(state, tag, ctx.file, {:not_found, source})}
+        message = "can't find #{inspect(source)}, imported for <#{name}>"
+        {slot, diagnose(state, :error, ctx.file, slot.position, message)}
     end
   end
+
+  # A call to a function `<script setup>` defines or imports, other than a
+  # macro, runs only in the browser.
+  defp mark_script_calls(template, ctx, state) do
+    case browser_functions(ctx.script, ctx.imports) do
+      [] ->
+        {template, state}
+
+      functions ->
+        Template.map_exprs(template, state, fn
+          {:expr, source, node, _keys} = expr, slot, state when is_map(node) ->
+            case called(node, functions) do
+              nil ->
+                {expr, state}
+
+              name ->
+                message = "`#{source}` calls #{name}, which runs only in the browser"
+
+                {{:unrendered, source},
+                 diagnose(state, :unrendered, ctx.file, slot[:position], message)}
+            end
+
+          expr, _slot, state ->
+            {expr, state}
+        end)
+    end
+  end
+
+  defp browser_functions(script, imports) do
+    imported =
+      for {name, %{source: source} = import} <- imports,
+          Path.extname(source) != ".vue",
+          import.attributes["type"] != "macro",
+          do: name
+
+    declared =
+      case OXC.parse(script, "setup.ts") do
+        {:ok, ast} ->
+          OXC.collect(ast, fn
+            %{type: :function_declaration, id: %{name: name}} ->
+              {:keep, name}
+
+            %{type: :variable_declarator, id: %{name: name}, init: %{type: type}}
+            when type in [:arrow_function_expression, :function_expression] ->
+              {:keep, name}
+
+            _ ->
+              :skip
+          end)
+
+        _ ->
+          []
+      end
+
+    Enum.uniq(imported ++ declared)
+  end
+
+  # The first of `functions` the expression calls, directly or as a namespace.
+  defp called(node, functions) do
+    node
+    |> OXC.collect(fn
+      %{type: :call_expression, callee: %{type: :identifier, name: name}} ->
+        {:keep, name}
+
+      %{type: :call_expression, callee: %{object: %{type: :identifier, name: name}}} ->
+        {:keep, name}
+
+      _ ->
+        :skip
+    end)
+    |> Enum.find(&(&1 in functions))
+  end
+
+  defp diagnose(state, severity, file, position, message),
+    do: add(state, %{file: file, severity: severity, message: message, position: position || 0})
+
+  defp add(state, diagnostic), do: %{state | diagnostics: [diagnostic | state.diagnostics]}
 
   # What a component instance knows about its props at compile time: values
   # passed as constants, such as `variant="ghost"` or `:size="'sm'"`, and the
@@ -202,20 +325,19 @@ defmodule PhoenixVapor.Components do
   # component is compiled once for each combination, so macro calls that use
   # its props can fold.
   defp static_props(props) do
-    Enum.reduce(props, %{static: %{}, dynamic: MapSet.new()}, fn prop, acc ->
-      case {prop.key, prop.values} do
-        {{:static_, key}, [{:static_, value}]} ->
-          put_in(acc, [:static, camelize(key)], value)
+    Enum.reduce(props, %{static: %{}, dynamic: MapSet.new()}, fn
+      %{name: name, static: static, value: nil, name_value: nil}, acc when name != nil ->
+        put_in(acc, [:static, camelize(name)], static)
 
-        {{:static_, key}, [{:expr, _source, %{type: :literal, value: value}, _keys}]} ->
-          put_in(acc, [:static, camelize(key)], value)
+      %{name: name, value: {:expr, _source, %{type: :literal, value: value}, _keys}}, acc
+      when name != nil ->
+        put_in(acc, [:static, camelize(name)], value)
 
-        {{:static_, key}, _values} ->
-          %{acc | dynamic: MapSet.put(acc.dynamic, camelize(key))}
+      %{name: name}, acc when name != nil ->
+        %{acc | dynamic: MapSet.put(acc.dynamic, camelize(name))}
 
-        _dynamic_key ->
-          acc
-      end
+      _spread_or_dynamic_name, acc ->
+        acc
     end)
   end
 
@@ -225,7 +347,7 @@ defmodule PhoenixVapor.Components do
     source = File.read!(path)
     desc = Vize.parse_sfc!(source)
     script = (desc.script_setup && desc.script_setup.content) || ""
-    template = (desc.template && String.trim(desc.template.content)) || ""
+    {template, origin} = PhoenixVapor.SFC.template(desc) || {"", {1, 1}}
 
     parent_stack = state.stack
     state = %{state | stack: [path | parent_stack], resources: [path | state.resources]}
@@ -236,11 +358,11 @@ defmodule PhoenixVapor.Components do
         do: Map.put(static_props, :declared, props(source)),
         else: nil
 
-    {split, state} =
-      compile_template(template, path, script, [root_attrs: true], static_props, state)
+    child = %{template: template, origin: origin, file: path, script: script}
+    {compiled, state} = compile_template(child, [root_attrs: true], static_props, state)
 
-    compiled = %{props: props(source), split: split, events: state.events}
-    {compiled, %{state | stack: parent_stack}}
+    component = %{props: props(source), template: compiled, events: state.events}
+    {component, %{state | stack: parent_stack}}
   end
 
   defp props(source) do
@@ -271,15 +393,10 @@ defmodule PhoenixVapor.Components do
     imports[tag] || imports[tag |> String.replace("-", "_") |> Macro.camelize()]
   end
 
-  defp diagnose(state, tag, file, problem) do
-    %{state | diagnostics: [%{tag: tag, file: file, problem: problem} | state.diagnostics]}
-  end
-
-  @doc false
   # The bindings a `<script setup>` imports: local name to source and
   # import attributes.
   @spec imports(String.t()) :: %{String.t() => map()}
-  def imports(script) do
+  defp imports(script) do
     case OXC.parse(script, "setup.ts") do
       {:ok, ast} ->
         ast

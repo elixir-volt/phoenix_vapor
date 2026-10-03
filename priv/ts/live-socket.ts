@@ -121,21 +121,19 @@ function patchViewPrototype(proto: ViewPrototype, update: ViewUpdate, debug: boo
       const vaporEl = this.el.querySelector("[data-vapor-statics]")
       const registry = vaporEl && registries.get(vaporEl)
 
-      if (registry && registry.size > 0) {
+      // Only a diff that changes nothing but registered slots is written
+      // directly; anything else goes to LiveView whole.
+      if (registry && registry.size > 0 && onlyRegisteredSlots(diff, registry)) {
         this.rendered.mergeDiff(diff)
         const values = this.rendered.rendered
-        let applied = 0
 
         for (const [slot, entry] of registry) {
-          const value = slotText(values[slot])
-          if (value !== null && applyValue(entry, value)) applied++
+          applyValue(entry, slot, (part) => slotText(values[part]))
         }
 
-        if (applied > 0 || onlyRegisteredSlots(diff, registry)) {
-          if (debug) window.__vaporDirectPatches = (window.__vaporDirectPatches ?? 0) + 1
-          this.liveSocket.dispatchEvents(events)
-          return true
-        }
+        if (debug) window.__vaporDirectPatches = (window.__vaporDirectPatches ?? 0) + 1
+        this.liveSocket.dispatchEvents(events)
+        return true
       }
     }
 

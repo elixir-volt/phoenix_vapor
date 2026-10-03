@@ -4,18 +4,28 @@
 
 ### Breaking changes
 
-- Require vize 0.17, whose `vapor_split` renders a dynamic attribute as a whole slot. `data-vapor-keys` now accompanies `data-vapor-statics` on Reactive templates; the browser code in this release reads it.
+- Require vize 0.17, whose `Vize.split_template/2` replaces `vapor_split`. It works from Vize's L2 semantic IR instead of scanning Vapor's template HTML, so PhoenixVapor no longer depends on locating elements in generated HTML. `PhoenixVapor.render/2` takes a template string or a `PhoenixVapor.Template`.
+- Compiled templates are `%PhoenixVapor.Template{}` structs, which inspect as their file and slot count, instead of maps.
+- An expression that fails when rendering, such as a call to something that isn't a function, raises `PhoenixVapor.ExpressionError` with its file, line, and column, where it rendered nothing.
+- A component, function call, or macro call the server can't render is a compile error outside hybrid mode, and a warning in it; it used to render nothing.
+- Reactive templates carry `data-vapor-keys` beside `data-vapor-statics`; the browser code in this release reads it.
 
 ### Added
 
-- Components imported from `.vue` files render on the server, in every mode: props, slots and scoped slots, `<slot>` fallbacks, and fallthrough attributes merged into the root element. A component the server can't render, such as one from a package, is a compile error, or a warning in hybrid mode, where it was left out silently.
+- Components imported from `.vue` files render on the server, in every mode: props, slots and scoped slots, `<slot>` fallbacks, and fallthrough attributes merged into the root element.
 - Helpers imported with `with { type: "macro" }` run at compile time when their arguments are known then, so variant helpers such as tailwind-variants cost nothing when rendering.
+- Compile errors and warnings point to the line in the `.vue` file, and editors show them there.
 - Function components from the `__components__` assign receive default slot content as `inner_block`.
 
 ### Fixed
 
-- Dynamic attributes render as Vue's server renderer does: `null` and a false boolean attribute are left out, where `disabled="false"` made an element disabled, and `class` and `style` accept objects and arrays, which raised.
+- Attributes render as Vue's server renderer does: `null` and a false boolean attribute are left out, where `disabled="false"` made an element disabled, and `class` and `style` take objects and arrays. An object literal such as `:class="{ on: active }"` used to evaluate to nothing.
+- `v-show` merges with the element's `style`, and `v-model` renders a checkbox's or radio's `checked` state and a textarea's content.
+- `v-for` binds the index, or a map's key and index, to its other aliases.
+- Interpolated objects and lists display as JSON, as in Vue.
+- A root `v-if` rendered its first branch twice.
 - A `v-if`, `v-for` or component re-renders when an assign its content reads changes, not only its condition or source.
+- Reactive templates patch text that mixes static text and several values, such as `Doubled: {{ n }} · {{ label }}`, directly, and decode HTML entities in patched text. A diff that also changed a value the patcher couldn't write was half applied.
 - A component prop bound to a list or map keeps its value instead of raising.
 - Relative imports in a hybrid component's client module resolve from where the module is written.
 - Full-runtime components resolve imports through the project's Volt aliases, and a resolution failure raises a readable error.

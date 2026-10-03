@@ -11,7 +11,7 @@ defmodule PhoenixVapor.Vue do
         PhoenixVapor.Vue.component :dashboard, "assets/vue/Dashboard.vue"
       end
 
-  This compiles the Vue template at compile time via `Vize.vapor_split!/1`
+  This compiles the Vue template at compile time via `Vize.split_template/2`
   and generates a function component that renders it against assigns.
 
   The SFC's `<template>` block becomes the component. A `<style scoped>`
@@ -30,12 +30,15 @@ defmodule PhoenixVapor.Vue do
     full_path = Path.expand(path, caller_dir)
 
     source = File.read!(full_path)
-    template = extract_template(source)
+    desc = Vize.parse_sfc!(source)
+    {template, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+    script = (desc.script_setup && desc.script_setup.content) || ""
 
     {split, component_files} =
       PhoenixVapor.Components.compile!(template,
         file: full_path,
-        script: script_setup(source),
+        origin: origin,
+        script: script,
         unrendered: :raise
       )
 
@@ -60,20 +63,6 @@ defmodule PhoenixVapor.Vue do
           rendered
         end
       end
-    end
-  end
-
-  defp script_setup(sfc_source) do
-    case Vize.parse_sfc(sfc_source) do
-      {:ok, %{script_setup: %{content: content}}} -> content
-      _ -> ""
-    end
-  end
-
-  defp extract_template(sfc_source) do
-    case Vize.parse_sfc(sfc_source) do
-      {:ok, %{template: %{content: content}}} -> String.trim(content)
-      _ -> sfc_source
     end
   end
 

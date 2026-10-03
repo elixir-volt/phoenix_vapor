@@ -20,4 +20,32 @@ defmodule PhoenixVapor.SFC do
   end
 
   def elixir_block(_desc, _file), do: []
+
+  # A `<template>` block's content without surrounding whitespace, and the
+  # `{line, column}` in the file where that content starts.
+  @spec template(map()) :: {String.t(), {pos_integer(), pos_integer()}} | nil
+  def template(%{template: %{content: content, loc: loc}}) do
+    trimmed = String.trim_leading(content)
+    leading = binary_part(content, 0, byte_size(content) - byte_size(trimmed))
+
+    origin =
+      case String.split(leading, "\n") do
+        [same_line] -> {loc.start_line, loc.start_column + String.length(same_line)}
+        lines -> {loc.start_line + length(lines) - 1, String.length(List.last(lines)) + 1}
+      end
+
+    {String.trim_trailing(trimmed), origin}
+  end
+
+  def template(_desc), do: nil
+
+  # Like `template/1`, but raises when the SFC has no `<template>` block.
+  @spec template!(map(), Path.t()) :: {String.t(), {pos_integer(), pos_integer()}}
+  def template!(desc, file) do
+    template(desc) ||
+      raise CompileError,
+        file: file,
+        line: 1,
+        description: "no <template> block in #{Path.relative_to_cwd(file)}"
+  end
 end

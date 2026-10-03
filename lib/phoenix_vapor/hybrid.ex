@@ -30,11 +30,7 @@ defmodule PhoenixVapor.Hybrid do
         nil -> ""
       end
 
-    template_content =
-      case desc.template do
-        %{content: c} -> String.trim(c)
-        nil -> raise "No <template> block found in #{file}"
-      end
+    {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
 
     {refs, computeds, functions, function_bodies, props} =
       PhoenixVapor.ScriptSetup.parse(script_content)
@@ -43,10 +39,10 @@ defmodule PhoenixVapor.Hybrid do
     {split, component_files} =
       PhoenixVapor.Components.compile!(template_content,
         file: full_path,
+        origin: origin,
         script: script_content,
         events: false,
-        unrendered: :warn,
-        env: __CALLER__
+        unrendered: :warn
       )
 
     template_names = PhoenixVapor.Renderer.assign_keys(split)

@@ -18,15 +18,15 @@ defmodule PhoenixVapor.RegressionsTest do
 
       [scope] = Regex.run(~r/data-v-[0-9a-f]{8}/, Scoped.__vue_css_card__())
 
-      assert html =~ ~s(<div #{scope} title="a > b" class="card">Hi</div>)
+      assert html =~ ~s(<div #{scope} title="a &gt; b" class="card">Hi</div>)
     end
 
     test "vapor metadata goes after the tag name" do
-      split = Vize.vapor_split!(~s(<div title="a > b"><p>{{ x }}</p></div>))
+      split = Vize.split_template!(~s(<div title="a > b"><p>{{ x }}</p></div>))
       [first | _] = PhoenixVapor.Renderer.to_rendered(split, %{x: 1}, vapor_metadata: true).static
 
       assert first =~
-               ~r/\A<div data-vapor data-vapor-statics="[^"]*" data-vapor-keys="[^"]*" title="a > b">/
+               ~r/\A<div data-vapor data-vapor-statics="[^"]*" data-vapor-keys="[^"]*" title="a &gt; b">/
     end
   end
 
@@ -97,7 +97,7 @@ defmodule PhoenixVapor.RegressionsTest do
     """
 
     assigns = %{cls: "list", items: [%{id: 1, name: "a", qty: 2}, %{id: 2, name: "b", qty: 1}]}
-    split = Vize.vapor_split!(template)
+    split = Vize.split_template!(template)
 
     html =
       &(&1
@@ -137,9 +137,9 @@ defmodule PhoenixVapor.RegressionsTest do
                ~s|<button phx-click="say(&quot;hi&quot;)">x</button>|
     end
 
-    test "v-model gets phx-change after its value" do
+    test "v-model gets phx-change and its value" do
       assert html(~S|<input v-model="name">|, %{name: "Ann"}) ==
-               ~s(<input value="Ann" phx-change="name_changed">)
+               ~s(<input phx-change="name_changed" value="Ann">)
     end
 
     test "events inside v-for keep their attribute" do
@@ -150,7 +150,7 @@ defmodule PhoenixVapor.RegressionsTest do
     test "hybrid server HTML leaves events to the client" do
       split =
         ~S|<button @click="pick(c)">{{ label }}</button>|
-        |> Vize.vapor_split!()
+        |> Vize.split_template!()
         |> PhoenixVapor.Renderer.compile(events: false)
 
       refute Enum.join(split.statics) =~ "phx-"
@@ -177,7 +177,7 @@ defmodule PhoenixVapor.RegressionsTest do
 
   test "change tracking still skips slots whose assigns didn't change" do
     split =
-      "<p>{{ a }}</p><b>{{ b }}</b>" |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+      "<p>{{ a }}</p><b>{{ b }}</b>" |> Vize.split_template!() |> PhoenixVapor.Renderer.compile()
 
     rendered = PhoenixVapor.Renderer.to_rendered(split, %{a: 1, b: 2, __changed__: %{b: true}})
 
@@ -192,5 +192,50 @@ defmodule PhoenixVapor.RegressionsTest do
       |> IO.iodata_to_binary()
 
     assert html == "<ul><li>a<ul><li>B</li></ul></li></ul>"
+  end
+
+  describe "Vue rendering semantics" do
+    defp render_html(template, assigns) do
+      template
+      |> PhoenixVapor.render(assigns)
+      |> Phoenix.HTML.Safe.to_iodata()
+      |> IO.iodata_to_binary()
+    end
+
+    test "object class bindings" do
+      assert render_html(~S|<p class="a" :class="{ on: active, off: !active }">x</p>|, %{
+               active: true
+             }) ==
+               ~s(<p class="a on">x</p>)
+    end
+
+    test "false boolean attributes are left out" do
+      assert render_html(~S|<button :disabled="busy">x</button>|, %{busy: false}) ==
+               "<button>x</button>"
+
+      assert render_html(~S|<button :disabled="busy">x</button>|, %{busy: true}) ==
+               "<button disabled>x</button>"
+    end
+
+    test "v-for binds the index, and a map's key" do
+      assert render_html(~S|<i v-for="(item, i) in items">{{ i }}{{ item }}</i>|, %{
+               items: ["a", "b"]
+             }) ==
+               "<i>0a</i><i>1b</i>"
+
+      assert render_html(~S|<i v-for="(value, key) in map">{{ key }}={{ value }}</i>|, %{
+               map: %{"x" => 1}
+             }) ==
+               "<i>x=1</i>"
+    end
+
+    test "objects and lists display as JSON, and null as nothing" do
+      assert render_html(~S"<p>{{ list }}|{{ none }}</p>", %{list: [1], none: nil}) ==
+               "<p>[\n  1\n]|</p>"
+    end
+
+    test "a root v-if renders once" do
+      assert render_html(~S|<p v-if="ok">yes</p><p v-else>no</p>|, %{ok: true}) == "<p>yes</p>"
+    end
   end
 end

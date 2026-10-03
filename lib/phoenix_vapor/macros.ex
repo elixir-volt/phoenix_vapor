@@ -18,6 +18,7 @@ defmodule PhoenixVapor.Macros do
   # assign, can't be folded and is reported.
 
   alias PhoenixVapor.LiveVue.EntryPlugin
+  alias PhoenixVapor.Template
 
   # `static_props` is nil for a template whose props are all only known when
   # rendering, such as a LiveView's. For a component instance it has the
@@ -43,7 +44,7 @@ defmodule PhoenixVapor.Macros do
   shared across one compile, or nil to start one; the runtime in use is
   returned with the split and diagnostics, `{split, runtime, diagnostics}`.
   """
-  @spec fold(map(), context(), pid() | nil) :: {map(), pid() | nil, [{atom(), String.t()}]}
+  @spec fold(Template.t(), context(), pid() | nil) :: {Template.t(), pid() | nil, [map()]}
   def fold(split, ctx, runtime) do
     macros = for {local, import} <- ctx.imports, macro?(import), into: %{}, do: {local, import}
 
@@ -55,7 +56,8 @@ defmodule PhoenixVapor.Macros do
       bundle_id = load_bundle(runtime, macros, ctx.file)
       env = Map.put(env, :bundle_id, bundle_id)
 
-      {split, diagnostics} = map_exprs(split, [], &fold_expr(&1, &2, env, runtime))
+      env = Map.put(env, :file, ctx.file)
+      {split, diagnostics} = Template.map_exprs(split, [], &fold_expr(&1, &2, &3, env, runtime))
       {split, runtime, Enum.reverse(diagnostics)}
     end
   end
@@ -178,7 +180,7 @@ defmodule PhoenixVapor.Macros do
 
   # ── Folding ──
 
-  defp fold_expr({:expr, source, node, _keys} = expr, diagnostics, env, runtime)
+  defp fold_expr({:expr, source, node, _keys} = expr, slot, diagnostics, env, runtime)
        when is_map(node) do
     case classify(refs(node), env.derived, env.static_props) do
       :none ->
@@ -186,16 +188,27 @@ defmodule PhoenixVapor.Macros do
 
       :foldable ->
         case evaluate(runtime, source, env) do
-          {:ok, value} -> {{:value, value}, diagnostics}
-          {:error, message} -> {expr, [{:failed, "#{source}: #{message}"} | diagnostics]}
+          {:ok, value} ->
+            {{:value, value}, diagnostics}
+
+          {:error, message} ->
+            {expr,
+             [
+               diagnostic(env, slot, :error, "the macro call `#{source}` failed: #{message}")
+               | diagnostics
+             ]}
         end
 
       :dynamic ->
-        {expr, [{:dynamic, source} | diagnostics]}
+        message = "`#{source}` calls a macro with values known only when rendering"
+        {{:unrendered, source}, [diagnostic(env, slot, :unrendered, message) | diagnostics]}
     end
   end
 
-  defp fold_expr(expr, diagnostics, _env, _runtime), do: {expr, diagnostics}
+  defp fold_expr(expr, _slot, diagnostics, _env, _runtime), do: {expr, diagnostics}
+
+  defp diagnostic(env, slot, severity, message),
+    do: %{file: env.file, severity: severity, message: message, position: slot[:position] || 0}
 
   defp evaluate(runtime, source, env) do
     bindings =
@@ -312,75 +325,4 @@ defmodule PhoenixVapor.Macros do
   end
 
   defp slice(source, %{start: start, end: stop}), do: binary_part(source, start, stop - start)
-
-  # ── Walking a split's expressions ──
-
-  @doc false
-  # Maps every expression in a split, threading an accumulator. A component's
-  # own template, under `:component`, belongs to that component and is skipped.
-  def map_exprs(%{slots: slots} = split, acc, fun) do
-    {slots, acc} = Enum.map_reduce(slots, acc, &map_slot(&1, &2, fun))
-    {%{split | slots: slots}, acc}
-  end
-
-  defp map_slot(%{kind: kind, values: values} = slot, acc, fun)
-       when kind in [:set_text, :set_prop] do
-    {values, acc} = Enum.map_reduce(values, acc, fun)
-    {%{slot | values: values}, acc}
-  end
-
-  defp map_slot(%{kind: kind, value: value} = slot, acc, fun)
-       when kind in [:set_html, :v_show, :v_model] do
-    {value, acc} = fun.(value, acc)
-    {%{slot | value: value}, acc}
-  end
-
-  defp map_slot(%{kind: :if_node} = slot, acc, fun) do
-    {condition, acc} = fun.(slot.condition, acc)
-    {positive, acc} = map_exprs(slot.positive, acc, fun)
-    {negative, acc} = map_branch(slot.negative, acc, fun)
-    {%{slot | condition: condition, positive: positive, negative: negative}, acc}
-  end
-
-  defp map_slot(%{kind: :for_node} = slot, acc, fun) do
-    {source, acc} = fun.(slot.source, acc)
-    {render, acc} = map_exprs(slot.render, acc, fun)
-    {%{slot | source: source, render: render}, acc}
-  end
-
-  defp map_slot(%{kind: :create_component} = slot, acc, fun) do
-    {props, acc} = map_props(slot.props, acc, fun)
-
-    {slot_fns, acc} =
-      Enum.map_reduce(Map.get(slot, :slots, []), acc, fn slot_fn, acc ->
-        {render, acc} = map_exprs(slot_fn.render, acc, fun)
-        {%{slot_fn | render: render}, acc}
-      end)
-
-    {%{slot | props: props} |> Map.put(:slots, slot_fns), acc}
-  end
-
-  defp map_slot(%{kind: :slot_outlet} = slot, acc, fun) do
-    {props, acc} = map_props(slot.props, acc, fun)
-    {fallback, acc} = map_branch(slot.fallback, acc, fun)
-    {%{slot | props: props, fallback: fallback}, acc}
-  end
-
-  defp map_slot(%{kind: :root_attrs} = slot, acc, fun) do
-    {props, acc} = map_props(slot.props, acc, fun)
-    {%{slot | props: props}, acc}
-  end
-
-  defp map_slot(slot, acc, _fun), do: {slot, acc}
-
-  defp map_props(props, acc, fun) do
-    Enum.map_reduce(props, acc, fn prop, acc ->
-      {values, acc} = Enum.map_reduce(prop.values, acc, fun)
-      {%{prop | values: values}, acc}
-    end)
-  end
-
-  defp map_branch(nil, acc, _fun), do: {nil, acc}
-  defp map_branch(%{kind: _} = slot, acc, fun), do: map_slot(slot, acc, fun)
-  defp map_branch(split, acc, fun), do: map_exprs(split, acc, fun)
 end

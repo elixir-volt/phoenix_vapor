@@ -60,13 +60,11 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
           script: ~s(import Button from "./Button.vue")
         )
 
-      [%{component: %{split: button}}] = split.slots
+      [%{component: %{template: button}}] = split.slots
       [%{kind: :root_attrs, props: props} | _] = button.slots
 
-      assert {"class", [{:value, "btn btn-ghost btn-md"}]} in Enum.map(
-               props,
-               &{&1.key, &1.values}
-             )
+      assert %{name: "class", value: {:value, "btn btn-ghost btn-md"}} =
+               Enum.find(props, &(&1.name == "class"))
     end
 
     test "report calls whose arguments are only known when rendering" do
@@ -93,6 +91,6 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
       end
 
     assert Exception.message(error) =~
-             ~s(<DialogRoot> from "reka-ui", which the server can't render)
+             ~s(<DialogRoot> is imported from "reka-ui", which the server can't render)
   end
 end

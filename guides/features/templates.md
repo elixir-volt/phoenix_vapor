@@ -34,7 +34,9 @@ PhoenixVapor supports these parts of [Vue's template syntax](https://vuejs.org/g
 
 ### Expressions
 
-Expressions read assigns by name; `user.name` and `items[0]` work on maps and lists. Most expressions are evaluated in Elixir: comparisons, arithmetic, `&&`, `||`, `!`, ternaries, template literals, `.length`, `join` and `includes` on lists, and `trim`, `toUpperCase`, `toLowerCase`, `includes`, `startsWith`, and `endsWith` on strings. Anything else, such as `.filter(...)` with a callback, is evaluated in QuickBEAM.
+Expressions read assigns by name; `user.name` and `items[0]` work on maps and lists. Most expressions are evaluated in Elixir: comparisons, arithmetic, `&&`, `||`, `!`, ternaries, template literals, `.length`, `join` and `includes` on lists, and `trim`, `toUpperCase`, `toLowerCase`, `includes`, `startsWith`, and `endsWith` on strings. Anything else, such as `.filter(...)` with a callback, is evaluated in QuickBEAM, with the [globals Vue allows](https://vuejs.org/guide/essentials/template-syntax.html#restricted-globals-access) such as `Math` and `JSON`. A name that isn't an assign is `null`, as Vue treats an unknown name; an expression that fails, such as a call to something that isn't a function, raises `PhoenixVapor.ExpressionError` with its file, line, and column.
+
+Values display as in Vue: `null` as nothing, and objects and lists as JSON. Attributes follow [Vue's server renderer](https://vuejs.org/guide/scaling-up/ssr.html): `null` and a false boolean attribute such as `disabled` leave the attribute out, and `class` and `style` take objects and arrays.
 
 ### Components
 
@@ -126,6 +128,23 @@ end
 MyAppWeb.Components.__vue_css_card__()
 # ".card[data-v-7a7a37b1] { ... }"
 ```
+
+## Problems at compile time
+
+Templates compile when the module that uses them does, and problems point into the `.vue` file:
+
+```
+** (CompileError) lib/my_app_web/live/Settings.vue:12: can't parse the expression `user.`
+
+warning: <TabsRoot> is imported from "reka-ui", which the server can't render; the browser renders it when it mounts
+    │
+ 24 │     <TabsRoot v-model="tab">
+    │     ~~~~~~~~~~~~~~~~~~~~~~~~
+    │
+    └─ lib/my_app_web/live/Settings.vue:24: (file)
+```
+
+What the server can't render is a compile error, except in hybrid mode, where the browser renders it once it mounts, so it's a warning: a component from a package, a call to a function `<script setup>` defines or imports, and a [macro](#macros) call that depends on a value known only when rendering.
 
 ## Rendering at runtime
 

@@ -8,7 +8,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       PhoenixVapor.ScriptSetup.parse(script)
 
     classification = Classifier.classify(refs, computeds, functions, function_bodies, props)
-    split = Vize.vapor_split!(template)
+    split = Vize.split_template!(template)
     {split, classification, props}
   end
 
