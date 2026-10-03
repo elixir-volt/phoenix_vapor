@@ -31,11 +31,12 @@ config :volt,
   minify: false,
   hash: false,
   resolve_dirs: ["node_modules", "deps"],
+  aliases: %{"@" => "assets/js"},
 
   tailwind: [
     css: "assets/css/app.css",
     sources: [
-      %{base: "lib/", pattern: "**/*.{ex,heex}"},
+      %{base: "lib/", pattern: "**/*.{ex,heex,vue,ts}"},
       %{base: "assets/", pattern: "**/*.{js,ts,vue}"}
     ]
   ]

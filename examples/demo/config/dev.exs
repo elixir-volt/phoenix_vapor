@@ -13,10 +13,7 @@ config :vapor_demo, VaporDemoWeb.Endpoint,
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
-  secret_key_base: "d/TdWfeJxIryPLXfHCauumxABoDLfiOSXMJ8a4veOehW8gI8tC8yNKcDyhTyDxDi",
-  watchers: [
-    volt: {Mix.Tasks.Volt.Dev, :run, [~w(--tailwind)]}
-  ]
+  secret_key_base: "d/TdWfeJxIryPLXfHCauumxABoDLfiOSXMJ8a4veOehW8gI8tC8yNKcDyhTyDxDi"
 
 # ## SSL Support
 #
