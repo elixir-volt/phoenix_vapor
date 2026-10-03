@@ -3,13 +3,19 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
 
   @moduletag :integration
 
+  unless File.regular?("priv/js/reka-dialog.js") do
+    @moduletag skip:
+                 "priv/js/reka-dialog.js not found; build it with `mix phoenix_vapor.bundle --name reka-dialog`"
+  end
+
   defmodule ComposedLive do
     use Phoenix.LiveView
 
     use PhoenixVapor,
       file: "../../fixtures/Probe.vue",
       runtime: :full,
-      bundle: "priv/js/reka-dialog.js"
+      bundle: "priv/js/reka-dialog.js",
+      globals: %{"reka-ui" => "RekaDialog"}
 
     def mount(params, session, socket) do
       {:ok, socket} = super(params, session, socket)

@@ -40,4 +40,15 @@ defmodule PhoenixVapor.VueRuntimeTest do
     assert {:ok, "<p>ready</p>"} = VueRuntime.render(runtime)
     assert {:ok, "updated"} = VueRuntime.dispatch(runtime, "update", %{"message" => "updated"})
   end
+
+  test "a changed bundle is read again", %{tmp_dir: tmp_dir} do
+    bundle = Path.join(tmp_dir, "versioned.js")
+    start = &start_supervised!({VueRuntime, bundle: bundle, setup: ""}, id: &1)
+
+    File.write!(bundle, "document.body.textContent = 'one';")
+    assert {:ok, "one"} = VueRuntime.render(start.(:first))
+
+    File.write!(bundle, "document.body.textContent = 'two, longer';")
+    assert {:ok, "two, longer"} = VueRuntime.render(start.(:second))
+  end
 end

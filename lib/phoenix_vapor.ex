@@ -66,13 +66,9 @@ defmodule PhoenixVapor do
     end
   end
 
-  defp do_use_file(file, :full, opts, _caller) do
-    bundle = Keyword.fetch!(opts, :bundle)
-
+  defp do_use_file(_file, :full, opts, _caller) do
     quote do
-      use PhoenixVapor.LiveVue,
-        file: unquote(file),
-        bundle: unquote(bundle)
+      use PhoenixVapor.LiveVue, unquote(opts)
     end
   end
 
@@ -82,7 +78,13 @@ defmodule PhoenixVapor do
     end
   end
 
-  defp do_use_file(file, _runtime, opts, caller) do
+  defp do_use_file(_file, runtime, _opts, _caller) when runtime != nil do
+    raise ArgumentError,
+          "unknown :runtime #{inspect(runtime)}; use :reactive or :full, or leave it out " <>
+            "to choose between server-only and hybrid from the component"
+  end
+
+  defp do_use_file(file, nil, opts, caller) do
     caller_dir = caller.file |> Path.dirname()
     full_path = Path.expand(file, caller_dir)
     sfc_source = File.read!(full_path)
@@ -121,23 +123,10 @@ defmodule PhoenixVapor do
         nil -> raise "No <template> block found in #{file}"
       end
 
-    split = Vize.vapor_split!(template_content)
+    split = template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
     escaped_split = Macro.escape(split)
 
-    elixir_block_ast =
-      case desc.script do
-        %{lang: "elixir", content: content} when is_binary(content) ->
-          case Code.string_to_quoted(content, file: full_path) do
-            {:ok, {:__block__, _, exprs}} -> exprs
-            {:ok, expr} -> [expr]
-            {:error, {meta, msg, token}} ->
-              line = Keyword.get(List.wrap(meta), :line, 0)
-              raise CompileError, file: full_path, line: line, description: "#{msg}#{token}"
-          end
-
-        _ ->
-          []
-      end
+    elixir_block_ast = PhoenixVapor.SFC.elixir_block(desc, full_path)
 
     quote do
       import PhoenixVapor.Sigil
@@ -157,10 +146,10 @@ defmodule PhoenixVapor do
   """
   @spec render(String.t() | map(), map()) :: Phoenix.LiveView.Rendered.t()
   def render(template, assigns) when is_binary(template) do
-    render(Vize.vapor_split!(template), assigns)
+    render(template |> Vize.vapor_split!() |> Renderer.compile(), assigns)
   end
 
   def render(%{statics: _, slots: _} = split, assigns) do
-    Renderer.to_rendered(split, assigns)
+    split |> Renderer.compile() |> Renderer.to_rendered(assigns)
   end
 end

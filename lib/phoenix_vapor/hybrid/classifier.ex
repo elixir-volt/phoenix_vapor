@@ -36,9 +36,10 @@ defmodule PhoenixVapor.Hybrid.Classifier do
           computeds :: %{String.t() => String.t()},
           functions :: [String.t()],
           function_bodies :: %{String.t() => String.t()},
-          props :: [String.t()]
+          props :: [String.t()],
+          template_names :: [String.t()]
         ) :: classification()
-  def classify(refs, computeds, functions, function_bodies, props) do
+  def classify(refs, computeds, functions, function_bodies, props, template_names \\ []) do
     prop_set = MapSet.new(props)
     ref_set = MapSet.new(Map.keys(refs))
 
@@ -51,7 +52,9 @@ defmodule PhoenixVapor.Hybrid.Classifier do
     handlers =
       build_handlers(functions, function_bodies, prop_set, all_client)
 
-    client_props = compute_client_props(bindings, props)
+    client_props =
+      compute_client_props(bindings, handlers, function_bodies, refs, props, template_names)
+
     server_only_props = props -- client_props
 
     %{
@@ -72,8 +75,8 @@ defmodule PhoenixVapor.Hybrid.Classifier do
         prop_refs = prop_references(expr)
 
         server_deps =
-          (free |> Enum.filter(&MapSet.member?(prop_set, &1)))
-          ++ (prop_refs |> Enum.filter(&MapSet.member?(prop_set, &1)))
+          ((free |> Enum.filter(&MapSet.member?(prop_set, &1))) ++
+             (prop_refs |> Enum.filter(&MapSet.member?(prop_set, &1))))
           |> Enum.uniq()
 
         client_deps = free |> Enum.filter(&MapSet.member?(ref_set, &1))
@@ -118,7 +121,12 @@ defmodule PhoenixVapor.Hybrid.Classifier do
       {:ok, %{body: [%{type: :expression_statement, directive: "use server"} | _]}} ->
         true
 
-      {:ok, %{body: [%{type: :expression_statement, expression: %{type: :literal, value: "use server"}} | _]}} ->
+      {:ok,
+       %{
+         body: [
+           %{type: :expression_statement, expression: %{type: :literal, value: "use server"}} | _
+         ]
+       }} ->
         true
 
       _ ->
@@ -163,16 +171,27 @@ defmodule PhoenixVapor.Hybrid.Classifier do
     end)
   end
 
-  defp compute_client_props(bindings, props) do
-    all_computed_server_deps =
-      bindings
-      |> Enum.flat_map(fn
+  # The client renders the whole component, so it needs every prop that the
+  # template or client-side code reads. Props only server actions read stay
+  # on the server.
+  defp compute_client_props(bindings, handlers, function_bodies, refs, props, template_names) do
+    computed_deps =
+      Enum.flat_map(bindings, fn
         {_name, {:mixed_computed, server_deps, _}} -> server_deps
         _ -> []
       end)
+
+    client_code =
+      Map.values(refs) ++
+        for {name, :client_handler} <- handlers, do: Map.get(function_bodies, name, "")
+
+    read =
+      client_code
+      |> Enum.flat_map(&(free_variables(&1) ++ prop_references(&1)))
+      |> Enum.concat(computed_deps ++ template_names)
       |> MapSet.new()
 
-    Enum.filter(props, &MapSet.member?(all_computed_server_deps, &1))
+    Enum.filter(props, &MapSet.member?(read, &1))
   end
 
   @doc """
@@ -183,18 +202,21 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   """
   @spec prop_references(String.t()) :: [String.t()]
   def prop_references(source) do
-    parse_source = case OXC.parse(source, "e.js") do
-      {:ok, ast} -> {:ok, ast}
-      _ -> OXC.parse("function __wrapper() #{source}", "e.js")
-    end
+    parse_source =
+      case OXC.parse(source, "e.js") do
+        {:ok, ast} -> {:ok, ast}
+        _ -> OXC.parse("function __wrapper() #{source}", "e.js")
+      end
 
     case parse_source do
       {:ok, ast} ->
         OXC.collect(ast, fn
-          %{type: :member_expression,
+          %{
+            type: :member_expression,
             object: %{type: :identifier, name: "props"},
             property: %{type: :identifier, name: prop_name},
-            computed: false} ->
+            computed: false
+          } ->
             {:keep, prop_name}
 
           _ ->
@@ -261,14 +283,7 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   end
 
   defp walk(%{type: :variable_declaration, declarations: decls}, bound) do
-    {free, _bound} =
-      Enum.reduce(decls, {MapSet.new(), bound}, fn decl, {acc_free, acc_bound} ->
-        name = get_in(decl, [:id, :name])
-        new_bound = if name, do: MapSet.put(acc_bound, name), else: acc_bound
-        init_free = if decl[:init], do: walk(decl[:init], new_bound), else: MapSet.new()
-        {MapSet.union(acc_free, init_free), new_bound}
-      end)
-
+    {free, _bound} = walk_declarations(decls, bound)
     free
   end
 
@@ -296,7 +311,10 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   defp walk(%{type: :unary_expression, argument: arg}, bound), do: walk(arg, bound)
   defp walk(%{type: :update_expression, argument: arg}, bound), do: walk(arg, bound)
   defp walk(%{type: :expression_statement, expression: expr}, bound), do: walk(expr, bound)
-  defp walk(%{type: :return_statement, argument: arg}, bound), do: if(arg, do: walk(arg, bound), else: MapSet.new())
+
+  defp walk(%{type: :return_statement, argument: arg}, bound),
+    do: if(arg, do: walk(arg, bound), else: MapSet.new())
+
   defp walk(%{type: :block_statement, body: body}, bound), do: walk_block(body, bound)
   defp walk(%{type: :template_literal, expressions: exprs}, bound), do: walk(exprs || [], bound)
   defp walk(%{type: :array_expression, elements: elems}, bound), do: walk(elems || [], bound)
@@ -306,9 +324,15 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   defp walk(%{type: :sequence_expression, expressions: exprs}, bound), do: walk(exprs, bound)
   defp walk(%{type: :parenthesized_expression, expression: expr}, bound), do: walk(expr, bound)
   defp walk(%{type: :await_expression, argument: arg}, bound), do: walk(arg, bound)
-  defp walk(%{type: :yield_expression, argument: arg}, bound), do: if(arg, do: walk(arg, bound), else: MapSet.new())
-  defp walk(%{type: :new_expression, callee: c, arguments: args}, bound), do: MapSet.union(walk(c, bound), walk(args, bound))
-  defp walk(%{type: :tagged_template_expression, tag: tag, quasi: q}, bound), do: MapSet.union(walk(tag, bound), walk(q, bound))
+
+  defp walk(%{type: :yield_expression, argument: arg}, bound),
+    do: if(arg, do: walk(arg, bound), else: MapSet.new())
+
+  defp walk(%{type: :new_expression, callee: c, arguments: args}, bound),
+    do: MapSet.union(walk(c, bound), walk(args, bound))
+
+  defp walk(%{type: :tagged_template_expression, tag: tag, quasi: q}, bound),
+    do: MapSet.union(walk(tag, bound), walk(q, bound))
 
   defp walk(%{type: :if_statement, test: t, consequent: c, alternate: a}, bound) do
     [walk(t, bound), walk(c, bound), if(a, do: walk(a, bound), else: MapSet.new())]
@@ -345,11 +369,14 @@ defmodule PhoenixVapor.Hybrid.Classifier do
 
   defp walk(%{type: :switch_statement, discriminant: d, cases: cases}, bound) do
     d_free = walk(d, bound)
-    cases_free = Enum.reduce(cases, MapSet.new(), fn c, acc ->
-      test_free = if c[:test], do: walk(c[:test], bound), else: MapSet.new()
-      body_free = walk(c[:consequent] || [], bound)
-      acc |> MapSet.union(test_free) |> MapSet.union(body_free)
-    end)
+
+    cases_free =
+      Enum.reduce(cases, MapSet.new(), fn c, acc ->
+        test_free = if c[:test], do: walk(c[:test], bound), else: MapSet.new()
+        body_free = walk(c[:consequent] || [], bound)
+        acc |> MapSet.union(test_free) |> MapSet.union(body_free)
+      end)
+
     MapSet.union(d_free, cases_free)
   end
 
@@ -365,9 +392,18 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   defp walk(%{type: :throw_statement, argument: arg}, bound), do: walk(arg, bound)
 
   defp walk(%{type: type}, _bound)
-       when type in [:literal, :program, :empty_statement, :break_statement,
-                     :continue_statement, :debugger_statement, :this_expression,
-                     :super, :import_expression, :meta_property] do
+       when type in [
+              :literal,
+              :program,
+              :empty_statement,
+              :break_statement,
+              :continue_statement,
+              :debugger_statement,
+              :this_expression,
+              :super,
+              :import_expression,
+              :meta_property
+            ] do
     MapSet.new()
   end
 
@@ -381,19 +417,23 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   defp walk(nil, _bound), do: MapSet.new()
   defp walk(_, _bound), do: MapSet.new()
 
+  # Returns the free variables of the initializers and the scope after the
+  # declared names are bound.
+  defp walk_declarations(decls, bound) do
+    Enum.reduce(decls, {MapSet.new(), bound}, fn decl, {free, bound} ->
+      name = get_in(decl, [:id, :name])
+      bound = if name, do: MapSet.put(bound, name), else: bound
+      init_free = if decl[:init], do: walk(decl[:init], bound), else: MapSet.new()
+      {MapSet.union(free, init_free), bound}
+    end)
+  end
+
   defp walk_block(stmts, bound) when is_list(stmts) do
     {free, _} =
       Enum.reduce(stmts, {MapSet.new(), bound}, fn stmt, {acc_free, acc_bound} ->
         case stmt do
           %{type: :variable_declaration, declarations: decls} ->
-            {decl_free, new_bound} =
-              Enum.reduce(decls, {MapSet.new(), acc_bound}, fn decl, {df, db} ->
-                name = get_in(decl, [:id, :name])
-                new_db = if name, do: MapSet.put(db, name), else: db
-                init_free = if decl[:init], do: walk(decl[:init], new_db), else: MapSet.new()
-                {MapSet.union(df, init_free), new_db}
-              end)
-
+            {decl_free, new_bound} = walk_declarations(decls, acc_bound)
             {MapSet.union(acc_free, decl_free), new_bound}
 
           _ ->
@@ -409,21 +449,30 @@ defmodule PhoenixVapor.Hybrid.Classifier do
 
   defp extract_param_names(params) when is_list(params) do
     Enum.flat_map(params, fn
-      %{type: :identifier, name: name} -> [name]
-      %{type: :assignment_pattern, left: %{type: :identifier, name: name}} -> [name]
-      %{type: :rest_element, argument: %{type: :identifier, name: name}} -> [name]
+      %{type: :identifier, name: name} ->
+        [name]
+
+      %{type: :assignment_pattern, left: %{type: :identifier, name: name}} ->
+        [name]
+
+      %{type: :rest_element, argument: %{type: :identifier, name: name}} ->
+        [name]
+
       %{type: :object_pattern, properties: props} ->
         Enum.flat_map(props, fn
           %{value: %{type: :identifier, name: name}} -> [name]
           %{type: :identifier, name: name} -> [name]
           _ -> []
         end)
+
       %{type: :array_pattern, elements: elems} ->
         Enum.flat_map(elems || [], fn
           %{type: :identifier, name: name} -> [name]
           _ -> []
         end)
-      _ -> []
+
+      _ ->
+        []
     end)
   end
 

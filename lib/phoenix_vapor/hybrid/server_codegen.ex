@@ -3,9 +3,9 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   Generates Elixir code (AST) for the server side of a hybrid component.
 
   Produces:
-  - `mount/3` — initializes LiveView assigns
   - `render/1` — produces `%Rendered{}` with server slots + props payload
-  - `handle_event/3` — one clause per server action
+  - `handle_event/3` — no-op fallbacks for server actions, when the module
+    defines no `handle_event/3` of its own
   """
 
   alias PhoenixVapor.Hybrid.Classifier
@@ -41,11 +41,14 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   def gen_render(split, classification, _props, computeds \\ %{}, component_name \\ nil) do
     escaped_split = Macro.escape(split)
     client_props = Macro.escape(classification.client_props)
-    slot_owners = classify_slots(split.slots, classification)
-    escaped_slot_owners = Macro.escape(slot_owners)
 
-    ref_defaults = extract_ref_defaults(classification)
-    escaped_ref_defaults = Macro.escape(ref_defaults)
+    # Ref initializers don't depend on assigns, so evaluate them once here.
+    ref_values =
+      classification
+      |> extract_ref_defaults()
+      |> PhoenixVapor.ScriptSetup.eval_initial_state()
+
+    escaped_ref_values = Macro.escape(ref_values)
 
     computed_exprs = extract_computed_exprs(classification, computeds)
     escaped_computed_exprs = Macro.escape(computed_exprs)
@@ -58,8 +61,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
           unquote(escaped_split),
           var!(assigns),
           unquote(client_props),
-          unquote(escaped_slot_owners),
-          unquote(escaped_ref_defaults),
+          unquote(escaped_ref_values),
           unquote(escaped_computed_exprs),
           unquote(escaped_component_name)
         )
@@ -94,30 +96,79 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   @doc """
   Build the `%Phoenix.LiveView.Rendered{}` struct at runtime.
 
-  Handles:
-  - Full initial render (all slots evaluated for first paint)
-  - Props JSON payload injected into the statics via a wrapper
-  - Change tracking: client-owned slots still re-evaluate when their
-    underlying server prop changes (for LV diff correctness)
+  The component renders inside a wrapper whose `data-pv-props` attribute
+  carries the client props as JSON. The wrapper has `phx-update="ignore"` when
+  a client component owns its children: LiveView still merges its `data-*`
+  attributes, and the hook's `updated/0` passes the new props to the client.
+  The props are a dynamic of the wrapper, so a prop change sends only the new
+  JSON instead of new statics.
   """
-  def build_rendered(split, assigns, client_props, _slot_owners, ref_defaults, computed_exprs, component_name \\ nil) do
-    props_json = encode_client_props(assigns, client_props)
-    escaped_props = props_json |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
-
+  def build_rendered(
+        split,
+        assigns,
+        client_props,
+        ref_values,
+        computed_exprs,
+        component_name \\ nil
+      ) do
     full_assigns =
       assigns
-      |> seed_ref_defaults(ref_defaults)
+      |> seed_ref_values(ref_values)
       |> seed_props_alias(client_props)
-      |> eval_computed_defaults(computed_exprs, ref_defaults)
+      |> eval_computed_defaults(computed_exprs, ref_values)
 
-    wrapped_statics = wrap_statics(split.statics, escaped_props, component_name)
-    PhoenixVapor.Renderer.split_to_rendered(wrapped_statics, split.slots, full_assigns)
+    # The wrapper div is the root tag; the component itself may render text,
+    # comments, or several elements.
+    inner = %{
+      PhoenixVapor.Renderer.to_rendered(split, full_assigns)
+      | root: false
+    }
+
+    static = wrapper_statics(component_name)
+
+    %Phoenix.LiveView.Rendered{
+      static: static,
+      dynamic: fn track_changes? ->
+        props =
+          if track_changes? and not client_props_changed?(assigns, client_props) do
+            nil
+          else
+            assigns
+            |> encode_client_props(client_props)
+            |> Phoenix.HTML.html_escape()
+            |> Phoenix.HTML.safe_to_string()
+          end
+
+        [props, inner]
+      end,
+      fingerprint: :erlang.phash2({__MODULE__, static}),
+      root: true
+    }
   end
+
+  defp wrapper_statics(nil), do: [~s(<div data-pv data-pv-props="), ~s(">), "</div>"]
+
+  defp wrapper_statics(component_name) do
+    [
+      ~s(<div id="pv-#{component_name}" data-pv data-pv-props="),
+      ~s(" phx-hook="PhoenixVaporHybrid" phx-update="ignore" data-pv-client="#{component_name}">),
+      "</div>"
+    ]
+  end
+
+  defp client_props_changed?(%{__changed__: changed}, client_props) when is_map(changed) do
+    Enum.any?(client_props, fn prop ->
+      Map.has_key?(changed, prop) or
+        Enum.any?(Map.keys(changed), &(is_atom(&1) and Atom.to_string(&1) == prop))
+    end)
+  end
+
+  defp client_props_changed?(_assigns, _client_props), do: true
 
   defp seed_props_alias(assigns, client_props) do
     props_map =
       Enum.reduce(client_props, %{}, fn prop, acc ->
-        key = if is_atom(prop), do: prop, else: String.to_atom(prop)
+        key = if is_atom(prop), do: prop, else: PhoenixVapor.Names.existing(prop)
         value = Map.get(assigns, key, Map.get(assigns, prop))
         Map.put(acc, prop, value)
       end)
@@ -127,34 +178,30 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     |> Map.put("props", props_map)
   end
 
-  defp seed_ref_defaults(assigns, ref_defaults) do
-    ref_values = PhoenixVapor.ScriptSetup.eval_initial_state(ref_defaults)
-
+  defp seed_ref_values(assigns, ref_values) do
     Enum.reduce(ref_values, assigns, fn {key, value}, acc ->
-      string_key = to_string(key)
-      acc |> Map.put_new(key, value) |> Map.put_new(string_key, value)
+      acc |> Map.put_new(key, value) |> Map.put_new(to_string(key), value)
     end)
   end
 
-  defp eval_computed_defaults(assigns, computed_exprs, ref_defaults) do
+  defp eval_computed_defaults(assigns, computed_exprs, ref_values) do
     if computed_exprs == %{} do
       assigns
     else
-      eval_computeds_via_quickbeam(assigns, computed_exprs, ref_defaults)
+      eval_computeds_via_quickbeam(assigns, computed_exprs, ref_values)
     end
   end
 
-  defp eval_computeds_via_quickbeam(assigns, computed_exprs, ref_defaults) do
+  defp eval_computeds_via_quickbeam(assigns, computed_exprs, ref_values) do
     if Code.ensure_loaded?(QuickBEAM) do
-      {:ok, rt} = QuickBEAM.start()
-
-      ref_names = MapSet.new(Map.keys(ref_defaults))
+      ref_names = MapSet.new(Map.keys(ref_values), &to_string/1)
 
       vars =
         assigns
         |> Enum.filter(fn {k, _} -> is_atom(k) and k not in [:__changed__, :__components__] end)
         |> Map.new(fn {k, v} ->
           name = Atom.to_string(k)
+
           if MapSet.member?(ref_names, name) do
             {name, %{"value" => v}}
           else
@@ -162,18 +209,21 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
           end
         end)
 
-      Enum.reduce(computed_exprs, assigns, fn {name, expr}, acc ->
-        js_expr = wrap_computed_expr(expr)
+      {:ok, rt} = QuickBEAM.start()
 
-        case QuickBEAM.eval(rt, js_expr, vars: vars) do
-          {:ok, value} ->
-            atom_key = String.to_atom(name)
-            acc |> Map.put(atom_key, value) |> Map.put(name, value)
+      try do
+        Enum.reduce(computed_exprs, assigns, fn {name, expr}, acc ->
+          case QuickBEAM.eval(rt, wrap_computed_expr(expr), vars: vars) do
+            {:ok, value} ->
+              Map.put(acc, name, value)
 
-          _ ->
-            acc
-        end
-      end)
+            _ ->
+              acc
+          end
+        end)
+      after
+        QuickBEAM.stop(rt)
+      end
     else
       assigns
     end
@@ -189,43 +239,10 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     end
   end
 
-  defp wrap_statics([first | rest], escaped_props, component_name) do
-    hook_attrs =
-      if component_name do
-        ~s( phx-hook="PhoenixVaporHybrid" data-pv-client="#{component_name}")
-      else
-        ""
-      end
-
-    hook_id = if component_name, do: ~s( id="pv-#{component_name}"), else: ""
-    wrapper_open = ~s(<div#{hook_id} data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}>)
-
-    case rest do
-      [] ->
-        [wrapper_open <> first <> "</div>"]
-
-      _ ->
-        last = List.last(rest)
-        middle = rest |> Enum.drop(-1)
-        [wrapper_open <> first | middle] ++ [last <> "</div>"]
-    end
-  end
-
-  defp wrap_statics([], escaped_props, component_name) do
-    hook_attrs =
-      if component_name do
-        ~s( phx-hook="PhoenixVaporHybrid" data-pv-client="#{component_name}")
-      else
-        ""
-      end
-
-    [~s(<div data-pv data-pv-props=") <> escaped_props <> ~s("#{hook_attrs}></div>)]
-  end
-
   defp encode_client_props(assigns, client_props) do
     client_props
     |> Map.new(fn prop ->
-      key = if is_atom(prop), do: prop, else: String.to_atom(prop)
+      key = if is_atom(prop), do: prop, else: PhoenixVapor.Names.existing(prop)
       value = Map.get(assigns, key, Map.get(assigns, prop))
       {prop, value}
     end)
@@ -244,11 +261,13 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     if action_names == [] do
       []
     else
-      [quote do
-        @__hybrid_server_actions__ unquote(action_names)
+      [
+        quote do
+          @__hybrid_server_actions__ unquote(action_names)
 
-        @before_compile PhoenixVapor.Hybrid.ServerCodegen
-      end]
+          @before_compile PhoenixVapor.Hybrid.ServerCodegen
+        end
+      ]
     end
   end
 
@@ -268,63 +287,4 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       end
     end
   end
-
-  @doc """
-  Classify each slot in the Vapor IR as server-owned or client-owned.
-
-  A slot is client-owned if any of its referenced identifiers belong to
-  a client ref, client computed, or mixed computed.
-  """
-  def classify_slots(slots, classification) do
-    Enum.map(slots, fn slot ->
-      refs = slot_references(slot)
-
-      is_client =
-        Enum.any?(refs, fn ref ->
-          case Map.get(classification.bindings, ref) do
-            {:client_ref, _} -> true
-            :client_computed -> true
-            {:mixed_computed, _, _} -> true
-            _ -> false
-          end
-        end)
-
-      if is_client, do: :client, else: :server
-    end)
-  end
-
-  defp slot_references(%{kind: kind, values: values}) when kind in [:set_text, :set_prop] do
-    values
-    |> Enum.flat_map(fn
-      {:static_, _} -> []
-      expr when is_binary(expr) -> Classifier.free_variables(expr)
-    end)
-    |> Enum.uniq()
-  end
-
-  defp slot_references(%{kind: kind, value: expr}) when kind in [:set_html, :v_show, :v_model] do
-    Classifier.free_variables(expr)
-  end
-
-  defp slot_references(%{kind: :if_node, condition: cond_expr}) do
-    Classifier.free_variables(cond_expr)
-  end
-
-  defp slot_references(%{kind: :for_node, source: source}) do
-    Classifier.free_variables(source)
-  end
-
-  defp slot_references(%{kind: :create_component, props: props}) do
-    props
-    |> Enum.flat_map(fn prop ->
-      prop.values
-      |> Enum.flat_map(fn
-        {:static_, _} -> []
-        expr when is_binary(expr) -> Classifier.free_variables(expr)
-      end)
-    end)
-    |> Enum.uniq()
-  end
-
-  defp slot_references(_), do: []
 end

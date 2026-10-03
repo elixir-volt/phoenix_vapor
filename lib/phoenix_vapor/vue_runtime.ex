@@ -14,6 +14,8 @@ defmodule PhoenixVapor.VueRuntime do
 
   use GenServer
 
+  alias PhoenixVapor.JS
+
   @stack_size 16 * 1024 * 1024
 
   # ── Public API ──
@@ -40,22 +42,23 @@ defmodule PhoenixVapor.VueRuntime do
     setup = Keyword.get(opts, :setup, "")
     pool = Keyword.get(opts, :pool) || Application.get_env(:phoenix_vapor, :pool)
 
-    {js, mode} = start_js(pool)
-    state = %{js: js, mode: mode}
-
     combined = read_bundle(bundle) <> "\n;\n(function(){\n" <> setup <> "\n})();"
 
-    case js_eval(state, combined) do
-      {:ok, _} -> {:ok, state}
-      {:error, err} ->
-        stop_js(js, mode)
-        {:stop, err}
+    with {:ok, js} <- JS.start(pool, apis: [:browser], max_stack_size: @stack_size) do
+      case JS.eval(js, combined) do
+        {:ok, _} ->
+          {:ok, %{js: js}}
+
+        {:error, err} ->
+          JS.stop(js)
+          {:stop, err}
+      end
     end
   end
 
   @impl true
   def handle_call(:render, _from, state) do
-    {:reply, js_eval(state, "document.body.innerHTML"), state}
+    {:reply, JS.eval(state.js, "document.body.innerHTML"), state}
   end
 
   def handle_call({:dispatch, event, params}, _from, state) do
@@ -67,14 +70,13 @@ defmodule PhoenixVapor.VueRuntime do
   end
 
   @impl true
-  def terminate(_reason, %{js: js, mode: :context}), do: QuickBEAM.Context.stop(js)
-  def terminate(_reason, %{js: js, mode: :runtime}), do: QuickBEAM.stop(js)
+  def terminate(_reason, %{js: js}), do: JS.stop(js)
 
   # ── Private ──
 
   defp eval_and_render(state, code) do
-    with {:ok, _} <- js_eval(state, code) do
-      js_eval(state, "document.body.innerHTML")
+    with {:ok, _} <- JS.eval(state.js, code) do
+      JS.eval(state.js, "document.body.innerHTML")
     end
   end
 
@@ -92,38 +94,24 @@ defmodule PhoenixVapor.VueRuntime do
     """
   end
 
-  defp js_eval(%{js: js, mode: :context}, code), do: QuickBEAM.Context.eval(js, code)
-  defp js_eval(%{js: js, mode: :runtime}, code), do: QuickBEAM.eval(js, code)
-
-  defp start_js(nil) do
-    {:ok, rt} = QuickBEAM.start(apis: [:browser], max_stack_size: @stack_size)
-    {rt, :runtime}
-  end
-
-  defp start_js(pool) do
-    if Code.ensure_loaded?(QuickBEAM.Context) do
-      {:ok, ctx} = QuickBEAM.Context.start_link(pool: pool, apis: [:browser], max_stack_size: @stack_size)
-      {ctx, :context}
-    else
-      start_js(nil)
-    end
-  end
-
-  defp stop_js(js, :context), do: QuickBEAM.Context.stop(js)
-  defp stop_js(js, :runtime), do: QuickBEAM.stop(js)
-
+  # Bundles are large and shared by every mount, so each is read once and
+  # kept in :persistent_term until the file changes.
   defp read_bundle(path) when is_binary(path) do
-    expanded = Path.expand(path)
+    path = Path.expand(path)
+    key = {__MODULE__, :bundle, path}
 
-    cond do
-      File.regular?(expanded) ->
-        File.read!(expanded)
+    with {:ok, %File.Stat{mtime: mtime, size: size}} <- File.stat(path),
+         {^mtime, ^size, source} <- :persistent_term.get(key, nil) do
+      source
+    else
+      {:error, reason} ->
+        raise "could not read bundle #{path}: #{:file.format_error(reason)}"
 
-      File.regular?(Path.join(to_string(:code.priv_dir(:phoenix_vapor)), path)) ->
-        File.read!(Path.join(to_string(:code.priv_dir(:phoenix_vapor)), path))
-
-      true ->
-        raise "Bundle not found: #{path}"
+      _stale_or_missing ->
+        %File.Stat{mtime: mtime, size: size} = File.stat!(path)
+        source = File.read!(path)
+        :persistent_term.put(key, {mtime, size, source})
+        source
     end
   end
 end

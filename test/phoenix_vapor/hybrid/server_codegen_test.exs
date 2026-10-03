@@ -27,74 +27,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
     |> IO.iodata_to_binary()
   end
 
-  describe "classify_slots/2" do
-    test "server-only slot" do
-      {split, classification, _} =
-        parse_and_classify(
-          ~s|defineProps(["title"])|,
-          "<h1>{{ title }}</h1>"
-        )
-
-      owners = ServerCodegen.classify_slots(split.slots, classification)
-      assert owners == [:server]
-    end
-
-    test "client-only slot" do
-      {split, classification, _} =
-        parse_and_classify(
-          """
-          import { ref } from "vue"
-          defineProps(["users"])
-          const search = ref("")
-          """,
-          "<input :value=\"search\" />"
-        )
-
-      owners = ServerCodegen.classify_slots(split.slots, classification)
-      assert owners == [:client]
-    end
-
-    test "mixed computed slot is client-owned" do
-      {split, classification, _} =
-        parse_and_classify(
-          """
-          import { ref, computed } from "vue"
-          defineProps(["users"])
-          const search = ref("")
-          const filtered = computed(() => users.filter(u => u.name.includes(search.value)))
-          """,
-          "<p>{{ filtered.length }}</p>"
-        )
-
-      owners = ServerCodegen.classify_slots(split.slots, classification)
-      assert owners == [:client]
-    end
-
-    test "mixed template with server and client slots" do
-      {split, classification, _} =
-        parse_and_classify(
-          """
-          import { ref, computed } from "vue"
-          defineProps(["users", "title"])
-          const search = ref("")
-          const filtered = computed(() => users.filter(u => u.name.includes(search.value)))
-          """,
-          """
-          <div>
-            <h1>{{ title }}</h1>
-            <input :value="search" />
-            <p>{{ filtered.length }}</p>
-          </div>
-          """
-        )
-
-      owners = ServerCodegen.classify_slots(split.slots, classification)
-      # title is server-only, search is client, filtered.length is client
-      assert :server in owners
-      assert :client in owners
-    end
-  end
-
   describe "build_rendered/6" do
     test "wraps content in data-pv div with props JSON" do
       {split, classification, _} =
@@ -108,10 +40,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
         )
 
       assigns = %{count: 42}
-      slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
+        ServerCodegen.build_rendered(
+          split,
+          assigns,
+          classification.client_props,
+          %{},
+          %{}
+        )
 
       html = render_to_html(rendered)
       assert html =~ "data-pv"
@@ -131,10 +68,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
         )
 
       assigns = %{users: [%{name: "Alice"}], serverOnly: "secret"}
-      slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
+        ServerCodegen.build_rendered(
+          split,
+          assigns,
+          classification.client_props,
+          %{},
+          %{}
+        )
 
       html = render_to_html(rendered)
       assert html =~ "Alice"
@@ -149,10 +91,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
         )
 
       assigns = %{msg: "hello"}
-      slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
+        ServerCodegen.build_rendered(
+          split,
+          assigns,
+          classification.client_props,
+          %{},
+          %{}
+        )
 
       assert %Phoenix.LiveView.Rendered{} = rendered
       assert is_list(rendered.static)
@@ -172,10 +119,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
         )
 
       assigns = %{users: [1, 2, 3], search: ""}
-      slot_owners = ServerCodegen.classify_slots(split.slots, classification)
 
       rendered =
-        ServerCodegen.build_rendered(split, assigns, classification.client_props, slot_owners, %{}, %{})
+        ServerCodegen.build_rendered(
+          split,
+          assigns,
+          classification.client_props,
+          %{},
+          %{}
+        )
 
       html = render_to_html(rendered)
       assert html =~ "3"

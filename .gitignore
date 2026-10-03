@@ -17,7 +17,7 @@ erl_crash.dump
 *.ez
 
 # Ignore package tarball (built via "mix hex.build").
-live_vue_ext-*.tar
+phoenix_vapor-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
@@ -25,7 +25,8 @@ live_vue_ext-*.tar
 # npm packages (installed via mix npm.install)
 /node_modules/
 
-# Generated bundles (built via mix phoenix_vapor.bundle)
-/priv/js/reka-*.js
-/priv/js/vue-*.js
-/priv/js/manifest.json
+# Vendored by mix volt.priv.vendor priv/ts; shipped in the Hex package.
+/priv/ts/node_modules/
+
+# Bundles built by mix phoenix_vapor.bundle
+/priv/js/

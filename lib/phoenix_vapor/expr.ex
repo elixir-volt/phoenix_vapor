@@ -18,8 +18,16 @@ defmodule PhoenixVapor.Expr do
 
   Static literal values tagged as `{:static_, text}` are returned as-is.
   """
-  @spec eval(String.t() | {:static_, String.t()}, map()) :: term()
+  @spec eval(String.t() | {:static_, String.t()} | compiled(), map()) :: term()
   def eval({:static_, text}, _assigns), do: text
+
+  def eval({:expr, source, nil, _keys}, assigns), do: resolve_path(source, assigns)
+
+  def eval({:expr, source, node, _keys}, assigns) do
+    eval_node(node, assigns)
+  catch
+    :unsupported_node -> quickbeam_eval(source, assigns)
+  end
 
   def eval(expr, assigns) when is_binary(expr) do
     case parse_and_eval(expr, assigns) do
@@ -27,6 +35,29 @@ defmodule PhoenixVapor.Expr do
       :error -> resolve_path(expr, assigns)
       :fallback -> quickbeam_eval(expr, assigns)
     end
+  end
+
+  @typedoc "An expression parsed ahead of time by `compile/1`."
+  @type compiled :: {:expr, String.t(), map() | nil, [String.t()]}
+
+  @doc """
+  Parses an expression once, for templates compiled into a module, so that
+  rendering doesn't parse it again. `eval/2` and `assign_keys/1` accept the
+  result in place of the source.
+  """
+  @spec compile(String.t() | {:static_, String.t()} | compiled()) ::
+          compiled() | {:static_, String.t()}
+  def compile({:static_, _} = static), do: static
+  def compile({:expr, _, _, _} = compiled), do: compiled
+
+  def compile(expr) when is_binary(expr) do
+    node =
+      case OXC.parse(expr, "e.js") do
+        {:ok, %{body: [%{type: :expression_statement, expression: node}]}} -> node
+        _ -> nil
+      end
+
+    {:expr, expr, node, assign_keys(expr)}
   end
 
   @doc """
@@ -44,28 +75,30 @@ defmodule PhoenixVapor.Expr do
   @doc """
   Extract root assign keys referenced by an expression.
   """
-  @spec assign_keys(String.t() | {:static_, String.t()}) :: [atom()]
+  @spec assign_keys(String.t() | {:static_, String.t()} | compiled()) :: [String.t()]
   def assign_keys({:static_, _}), do: []
+  def assign_keys({:expr, _source, _node, keys}), do: keys
 
   def assign_keys(expr) when is_binary(expr) do
     case OXC.parse(expr, "e.js") do
       {:ok, ast} ->
         OXC.collect(ast, fn
-          %{type: :identifier, name: name} -> {:keep, String.to_atom(name)}
+          %{type: :identifier, name: name} -> {:keep, name}
           _ -> :skip
         end)
         |> Enum.uniq()
 
       _ ->
-        root = expr |> String.split(".") |> hd() |> String.trim()
-        if root == "", do: [], else: [String.to_atom(root)]
+        [root | _] = String.split(expr, ".", parts: 2)
+        root = String.trim(root)
+        if root == "", do: [], else: [root]
     end
   end
 
   @doc """
   Extract root assign keys from a `values` list.
   """
-  @spec values_assign_keys([String.t() | {:static_, String.t()}]) :: [atom()]
+  @spec values_assign_keys([String.t() | {:static_, String.t()}]) :: [String.t()]
   def values_assign_keys(values) do
     values
     |> Enum.flat_map(&assign_keys/1)
@@ -98,15 +131,13 @@ defmodule PhoenixVapor.Expr do
     quasis = node.quasis || []
     expressions = node.expressions || []
 
-    parts =
-      Enum.with_index(quasis)
-      |> Enum.flat_map(fn {quasi, i} ->
-        cooked = quasi[:cooked] || quasi[:raw] || ""
-        expr_val = if i < length(expressions), do: [eval_node(Enum.at(expressions, i), assigns)], else: []
-        [cooked | expr_val]
-      end)
+    # A template literal has one more quasi than it has expressions.
+    values = Enum.map(expressions, &eval_node(&1, assigns)) ++ [""]
 
-    parts |> Enum.map(&to_string/1) |> IO.iodata_to_binary()
+    quasis
+    |> Enum.zip(values)
+    |> Enum.map(fn {quasi, value} -> [quasi[:cooked] || quasi[:raw] || "", to_string(value)] end)
+    |> IO.iodata_to_binary()
   end
 
   defp eval_node(%{type: :member_expression, object: obj, property: prop} = node, assigns) do
@@ -122,7 +153,10 @@ defmodule PhoenixVapor.Expr do
     end
   end
 
-  defp eval_node(%{type: :conditional_expression, test: test, consequent: cons, alternate: alt}, assigns) do
+  defp eval_node(
+         %{type: :conditional_expression, test: test, consequent: cons, alternate: alt},
+         assigns
+       ) do
     if eval_node(test, assigns), do: eval_node(cons, assigns), else: eval_node(alt, assigns)
   end
 
@@ -221,9 +255,17 @@ defmodule PhoenixVapor.Expr do
   end
 
   defp eval_node(%{type: type}, _assigns)
-       when type in [:arrow_function_expression, :function_expression, :sequence_expression,
-                      :assignment_expression, :update_expression, :new_expression,
-                      :tagged_template_expression, :yield_expression, :await_expression] do
+       when type in [
+              :arrow_function_expression,
+              :function_expression,
+              :sequence_expression,
+              :assignment_expression,
+              :update_expression,
+              :new_expression,
+              :tagged_template_expression,
+              :yield_expression,
+              :await_expression
+            ] do
     throw(:unsupported_node)
   end
 
@@ -231,10 +273,18 @@ defmodule PhoenixVapor.Expr do
 
   defp get_assign(assigns, name) do
     case name do
-      "true" -> true
-      "false" -> false
-      "null" -> nil
-      "undefined" -> nil
+      "true" ->
+        true
+
+      "false" ->
+        false
+
+      "null" ->
+        nil
+
+      "undefined" ->
+        nil
+
       _ ->
         atom_key = String.to_existing_atom(name)
         Map.get(assigns, atom_key, Map.get(assigns, name))
@@ -272,32 +322,42 @@ defmodule PhoenixVapor.Expr do
 
   defp access_value(_, _), do: nil
 
-  defp call_method(list, "filter", [_fun]) when is_list(list), do: list
-  defp call_method(list, "map", [_fun]) when is_list(list), do: list
   defp call_method(list, "join", [sep]) when is_list(list), do: Enum.join(list, to_string(sep))
   defp call_method(list, "join", []) when is_list(list), do: Enum.join(list, ",")
   defp call_method(list, "includes", [val]) when is_list(list), do: val in list
   defp call_method(str, "trim", []) when is_binary(str), do: String.trim(str)
   defp call_method(str, "toUpperCase", []) when is_binary(str), do: String.upcase(str)
   defp call_method(str, "toLowerCase", []) when is_binary(str), do: String.downcase(str)
-  defp call_method(str, "includes", [sub]) when is_binary(str), do: String.contains?(str, to_string(sub))
-  defp call_method(str, "startsWith", [pre]) when is_binary(str), do: String.starts_with?(str, to_string(pre))
-  defp call_method(str, "endsWith", [suf]) when is_binary(str), do: String.ends_with?(str, to_string(suf))
-  defp call_method(_, _, _), do: nil
 
-  defp numeric_or_string_add(l, r) when is_binary(l) or is_binary(r), do: to_string(l) <> to_string(r)
+  defp call_method(str, "includes", [sub]) when is_binary(str),
+    do: String.contains?(str, to_string(sub))
+
+  defp call_method(str, "startsWith", [pre]) when is_binary(str),
+    do: String.starts_with?(str, to_string(pre))
+
+  defp call_method(str, "endsWith", [suf]) when is_binary(str),
+    do: String.ends_with?(str, to_string(suf))
+
+  # Anything else, such as filter/map with a callback, is evaluated in QuickBEAM.
+  defp call_method(_, _, _), do: throw(:unsupported_node)
+
+  defp numeric_or_string_add(l, r) when is_binary(l) or is_binary(r),
+    do: to_string(l) <> to_string(r)
+
   defp numeric_or_string_add(l, r), do: to_number(l) + to_number(r)
 
   defp to_number(n) when is_number(n), do: n
   defp to_number(true), do: 1
   defp to_number(false), do: 0
   defp to_number(nil), do: 0
+
   defp to_number(s) when is_binary(s) do
     case Float.parse(s) do
       {n, ""} -> n
       _ -> 0
     end
   end
+
   defp to_number(_), do: 0
 
   defp safe_div(_, 0), do: nil
@@ -322,13 +382,10 @@ defmodule PhoenixVapor.Expr do
     Enum.reduce_while(parts, assigns, fn part, acc ->
       part = String.trim(part)
 
-      cond do
-        is_map(acc) ->
-          value = Map.get(acc, part) || Map.get(acc, String.to_existing_atom(part))
-          {:cont, value}
-
-        true ->
-          {:halt, nil}
+      if is_map(acc) do
+        {:cont, Map.get(acc, part) || Map.get(acc, String.to_existing_atom(part))}
+      else
+        {:halt, nil}
       end
     end)
   rescue

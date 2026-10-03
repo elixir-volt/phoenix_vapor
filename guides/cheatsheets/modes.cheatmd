@@ -1,0 +1,92 @@
+# Modes
+
+## Templates
+{: .col-2}
+
+### Sigil
+
+```elixir
+use PhoenixVapor
+
+def render(assigns) do
+  ~VUE"<p>{{ msg }}</p>"
+end
+```
+
+### Server-only `.vue`
+
+```elixir
+use PhoenixVapor, file: "Page.vue"
+```
+
+No `ref()` in `<script setup>`.
+
+### Function component
+
+```elixir
+require PhoenixVapor.Vue
+PhoenixVapor.Vue.component(:card, "Card.vue")
+```
+
+### At runtime
+
+```elixir
+PhoenixVapor.render(template, assigns)
+```
+
+## `.vue` LiveViews
+{: .col-2}
+
+### Reactive
+
+```elixir
+use PhoenixVapor,
+  file: "Counter.vue",
+  runtime: :reactive
+```
+
+Refs by name, params as `__params`.
+
+### Hybrid
+
+```elixir
+use PhoenixVapor,
+  file: "Contacts.vue",
+  client_output: "assets/js/hybrid"
+```
+
+`ref()` in `<script setup>`.
+
+### Full runtime
+
+```elixir
+use PhoenixVapor,
+  file: "Dialog.vue",
+  runtime: :full,
+  bundle: "priv/js/reka-dialog.js",
+  globals: %{"reka-ui" => "RekaDialog"}
+```
+
+### Bundle task
+
+```bash
+mix phoenix_vapor.bundle \
+  --entry assets/reka-entry.js \
+  --name reka-dialog
+```
+
+## Browser
+{: .col-2}
+
+### Hooks and patching
+
+```js
+import { patchLiveSocket } from "phoenix_vapor"
+import { getHybridHooks } from "phoenix_vapor/hybrid"
+```
+
+### Context pool
+
+```elixir
+config :phoenix_vapor, pool: MyApp.JSPool
+```

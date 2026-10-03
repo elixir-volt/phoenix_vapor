@@ -4,7 +4,6 @@
 - `integration/` covers behavior spanning multiple PhoenixVapor modules, Vize, or Volt.
 - `e2e/` runs executable Vue behavior through QuickBEAM and is excluded from the default `mix test` run.
 - `fixtures/` contains shared Vue SFC fixtures.
-- `support/` contains test-only Elixir support modules.
 
 Run each tier independently:
 

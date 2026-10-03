@@ -8,10 +8,9 @@ defmodule PhoenixVapor.MixProject do
     [
       app: :phoenix_vapor,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
       name: "PhoenixVapor",
       description:
@@ -19,23 +18,38 @@ defmodule PhoenixVapor.MixProject do
       source_url: @source_url,
       homepage_url: @source_url,
       package: package(),
-      docs: docs()
+      docs: docs(),
+      dialyzer: [plt_add_apps: [:mix, :volt]]
     ]
   end
+
+  def cli, do: [preferred_envs: [ci: :test, lint: :test]]
 
   def application do
     [extra_applications: [:logger]]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
-  defp elixirc_paths(_), do: ["lib"]
-
   defp aliases do
     [
+      setup: ["deps.get", "volt.priv.vendor priv/ts", "npm.install"],
       "test.unit": ["test test/phoenix_vapor"],
       "test.integration": ["test test/integration"],
       "test.e2e": ["test test/e2e --include e2e"],
-      ci: ["test --include e2e"]
+      lint: [
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "credo --strict",
+        "ex_dna",
+        "reach.check --dead-code --smells --strict --baseline .reach-baseline.json",
+        "dialyzer",
+        "volt.js.check --type-aware --type-check"
+      ],
+      # tsgolint and the e2e tests' Vue come from node_modules; the e2e tests
+      # also need the Reka bundle.
+      ci: ["npm.install", "lint", "phoenix_vapor.bundle --name reka-dialog", "test --include e2e"],
+      # A separate process, so compiling for vendoring leaves Hex's own tasks loaded.
+      "hex.build": ["cmd mix volt.priv.vendor priv/ts", "hex.build"],
+      "hex.publish": ["cmd mix volt.priv.vendor priv/ts", "hex.publish"]
     ]
   end
 
@@ -46,16 +60,24 @@ defmodule PhoenixVapor.MixProject do
         "GitHub" => @source_url,
         "Volt" => "https://github.com/elixir-volt/volt"
       },
-      files: ~w(lib priv/js .formatter.exs mix.exs README.md ARCHITECTURE.md CHANGELOG.md LICENSE)
+      files:
+        ~w(lib priv/ts package.json .formatter.exs mix.exs README.md ARCHITECTURE.md CHANGELOG.md LICENSE)
     ]
   end
 
   defp docs do
     [
-      main: "PhoenixVapor",
+      main: "readme",
+      source_ref: "v#{@version}",
       extras: [
         "README.md",
         "CHANGELOG.md",
+        "guides/introduction/getting-started.md",
+        "guides/features/templates.md",
+        "guides/features/reactive.md",
+        "guides/features/hybrid.md",
+        "guides/features/full-runtime.md",
+        "guides/cheatsheets/modes.cheatmd",
         "ARCHITECTURE.md",
         "docs/hybrid-architecture.md",
         "docs/comparisons/fronix-wire-protocol.md",
@@ -64,10 +86,12 @@ defmodule PhoenixVapor.MixProject do
         "LICENSE"
       ],
       groups_for_extras: [
-        Guides: ["docs/hybrid-architecture.md"],
-        Comparisons: ~r/docs\/comparisons\/.*/
+        Introduction: ~r/guides\/introduction\//,
+        Features: ~r/guides\/features\//,
+        Cheatsheets: ~r/guides\/cheatsheets\//,
+        Internals: ["ARCHITECTURE.md", "docs/hybrid-architecture.md"],
+        Comparisons: ~r/docs\/comparisons\//
       ],
-      source_ref: "v#{@version}",
       skip_undefined_reference_warnings_on: ["ARCHITECTURE.md"]
     ]
   end
@@ -75,11 +99,17 @@ defmodule PhoenixVapor.MixProject do
   defp deps do
     [
       {:phoenix_live_view, "~> 1.2"},
-      {:vize, "~> 0.14.2 or ~> 0.15.0"},
-      {:oxc, "~> 0.17.8 or ~> 0.18.1"},
-      {:quickbeam, "~> 0.11.1", optional: true},
-      {:volt, "~> 0.17.11 or ~> 0.18.0 or ~> 0.19.0", optional: true, runtime: false},
-      {:ex_doc, "~> 0.40.3", only: :dev, runtime: false}
+      {:vize, "~> 0.16.0"},
+      {:oxc, "~> 0.18.1"},
+      {:jason, "~> 1.4"},
+      {:quickbeam, "~> 0.11.2", optional: true},
+      {:volt, "~> 0.19.0", runtime: false},
+      {:ex_doc, "~> 0.40.3", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
+      {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
+      {:reach, "~> 2.0", only: [:dev, :test], runtime: false}
     ]
   end
 end

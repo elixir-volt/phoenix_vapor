@@ -1,9 +1,8 @@
 defmodule PhoenixVapor.Renderer do
   @moduledoc false
 
-  alias PhoenixVapor.Expr
+  alias PhoenixVapor.{Expr, Names}
 
-  @doc false
   def inject_scope_id(%Phoenix.LiveView.Rendered{static: static} = rendered, scope_id) do
     case static do
       [first | rest] ->
@@ -14,12 +13,15 @@ defmodule PhoenixVapor.Renderer do
     end
   end
 
+  # A tag name ends at whitespace, "/" or ">", so the attribute goes right
+  # after it; attribute values may contain ">".
   defp inject_attr_into_first_tag(html, attr) do
-    case :binary.match(html, ">") do
-      {pos, 1} ->
-        binary_part(html, 0, pos) <> " #{attr}" <> binary_part(html, pos, byte_size(html) - pos)
+    case Regex.run(~r{\A\s*<[a-zA-Z][^\s/>]*}, html) do
+      [open] ->
+        open <>
+          " " <> attr <> binary_part(html, byte_size(open), byte_size(html) - byte_size(open))
 
-      :nomatch ->
+      nil ->
         html
     end
   end
@@ -27,20 +29,129 @@ defmodule PhoenixVapor.Renderer do
   @spec to_rendered(map(), map(), keyword()) :: Phoenix.LiveView.Rendered.t()
   def to_rendered(split, assigns, opts \\ [])
 
-  def to_rendered(%{statics: statics, slots: slots}, assigns, opts) do
-    split_to_rendered(statics, slots, assigns, opts)
+  def to_rendered(%{statics: statics, slots: slots} = split, assigns, opts) do
+    split_to_rendered(statics, slots, assigns, [fingerprint: split[:fingerprint]] ++ opts)
   end
 
-  @doc false
+  # Parses every expression in a split, renders its bindings, and computes each
+  # fingerprint, for splits compiled into a module. Rendering accepts either
+  # form.
+  #
+  # Vize leaves events and v-model unrendered and reports where each element's
+  # start tag ends. LiveView handles them through phx-* attributes; pass
+  # `events: false` when client code handles the template's events instead.
+  @spec compile(map(), keyword()) :: map()
+  def compile(%{statics: statics, slots: slots} = split, opts \\ []) do
+    statics = render_bindings(statics, Map.get(split, :bindings, []), opts)
+
+    %{split | statics: statics, slots: Enum.map(slots, &compile_slot(&1, opts))}
+    |> Map.put(:bindings, [])
+    |> Map.put(:fingerprint, compute_fingerprint(statics, slots))
+  end
+
+  defp render_bindings(statics, bindings, opts) do
+    events? = Keyword.get(opts, :events, true)
+
+    inserts =
+      bindings
+      |> Enum.flat_map(fn %{at: {index, offset}} = binding ->
+        case binding_attribute(binding, events?) do
+          nil -> []
+          attribute -> [{index, offset, attribute}]
+        end
+      end)
+      |> Enum.group_by(&elem(&1, 0), &Tuple.delete_at(&1, 0))
+
+    statics
+    |> Enum.with_index()
+    |> Enum.map(fn {static, index} -> splice(static, Map.get(inserts, index, [])) end)
+  end
+
+  defp splice(static, []), do: static
+
+  # Inserts attributes at byte offsets. The sort is stable, so attributes at
+  # the same offset keep their order.
+  defp splice(static, inserts) do
+    {parts, position} =
+      inserts
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map_reduce(0, fn {offset, attribute}, position ->
+        {[binary_part(static, position, offset - position), attribute], offset}
+      end)
+
+    IO.iodata_to_binary([parts, binary_part(static, position, byte_size(static) - position)])
+  end
+
+  defp binding_attribute(_binding, false), do: nil
+
+  defp binding_attribute(%{kind: :set_event, node: node}, true) do
+    event = event_name(node.key)
+    ~s( phx-#{event}="#{Phoenix.HTML.Engine.html_escape(node.value || event)}")
+  end
+
+  defp binding_attribute(%{kind: :directive, node: %{name: "model", value: value}}, true),
+    do: ~s( phx-change="#{Phoenix.HTML.Engine.html_escape(value <> "_changed")}")
+
+  defp binding_attribute(_binding, true), do: nil
+
+  defp event_name({:static_, name}), do: name
+  defp event_name(name) when is_binary(name), do: name
+
+  defp compile_slot(%{kind: kind, values: values} = slot, _opts)
+       when kind in [:set_text, :set_prop],
+       do: %{slot | values: Enum.map(values, &Expr.compile/1)}
+
+  defp compile_slot(%{kind: kind, value: expr} = slot, _opts)
+       when kind in [:set_html, :v_show, :v_model],
+       do: %{slot | value: Expr.compile(expr)}
+
+  defp compile_slot(%{kind: :if_node, condition: expr, positive: pos, negative: neg} = slot, opts) do
+    %{
+      slot
+      | condition: Expr.compile(expr),
+        positive: compile(pos, opts),
+        negative: compile_branch(neg, opts)
+    }
+  end
+
+  defp compile_slot(
+         %{kind: :for_node, source: source, key_prop: key, render: render} = slot,
+         opts
+       ) do
+    %{
+      slot
+      | source: Expr.compile(source),
+        key_prop: key && Expr.compile(key),
+        render: compile(render, opts)
+    }
+  end
+
+  defp compile_slot(%{kind: :create_component, props: props} = slot, _opts),
+    do: %{
+      slot
+      | props: Enum.map(props, &%{&1 | values: Enum.map(&1.values, fn v -> Expr.compile(v) end)})
+    }
+
+  defp compile_slot(slot, _opts), do: slot
+
+  defp compile_branch(nil, _opts), do: nil
+  defp compile_branch(%{kind: _} = slot, opts), do: compile_slot(slot, opts)
+  defp compile_branch(split, opts), do: compile(split, opts)
+
+  defp render_split(split, assigns),
+    do: split_to_rendered(split.statics, split.slots, assigns, fingerprint: split[:fingerprint])
+
   def split_to_rendered(statics, slots, assigns, opts \\ []) do
-    statics = normalize_text_slot_statics(statics, slots)
-    fingerprint = compute_fingerprint(statics, slots)
+    fingerprint = opts[:fingerprint] || compute_fingerprint(statics, slots)
 
     dynamic = fn track_changes? ->
       changed =
         case assigns do
-          %{__changed__: changed} when track_changes? -> changed
-          _ -> nil
+          %{__changed__: changed} when track_changes? ->
+            MapSet.new(Map.keys(changed), &to_string/1)
+
+          _ ->
+            nil
         end
 
       Enum.map(slots, fn slot ->
@@ -66,6 +177,34 @@ defmodule PhoenixVapor.Renderer do
       root: true
     }
   end
+
+  # Every root assign key a split's expressions read, for callers that need the
+  # set at compile time.
+  @spec assign_keys(map()) :: [String.t()]
+  def assign_keys(%{slots: slots}) do
+    slots |> Enum.flat_map(&slot_assign_keys/1) |> Enum.uniq()
+  end
+
+  defp slot_assign_keys(%{kind: kind, values: values}) when kind in [:set_text, :set_prop],
+    do: Expr.values_assign_keys(values)
+
+  defp slot_assign_keys(%{kind: kind, value: expr}) when kind in [:set_html, :v_show, :v_model],
+    do: Expr.assign_keys(expr)
+
+  defp slot_assign_keys(%{kind: :if_node, condition: expr, positive: pos, negative: neg}) do
+    Expr.assign_keys(expr) ++ assign_keys(pos) ++ if(neg, do: slot_or_split_keys(neg), else: [])
+  end
+
+  defp slot_assign_keys(%{kind: :for_node, source: source, render: render}),
+    do: Expr.assign_keys(source) ++ assign_keys(render)
+
+  defp slot_assign_keys(%{kind: :create_component, props: props}),
+    do: Enum.flat_map(props, &Expr.values_assign_keys(&1.values))
+
+  defp slot_assign_keys(_slot), do: []
+
+  defp slot_or_split_keys(%{kind: _} = slot), do: slot_assign_keys(slot)
+  defp slot_or_split_keys(split), do: assign_keys(split)
 
   # ── Slot evaluation ──
 
@@ -98,7 +237,7 @@ defmodule PhoenixVapor.Renderer do
 
   defp eval_slot(%{kind: :if_node, condition: cond_expr, positive: pos, negative: neg}, assigns) do
     if Expr.eval(cond_expr, assigns) do
-      split_to_rendered(pos.statics, pos.slots, assigns)
+      render_split(pos, assigns)
     else
       case neg do
         nil ->
@@ -107,8 +246,8 @@ defmodule PhoenixVapor.Renderer do
         %{kind: :if_node} = nested_if ->
           eval_slot(nested_if, assigns)
 
-        %{statics: statics, slots: slots} ->
-          split_to_rendered(statics, slots, assigns)
+        split ->
+          render_split(split, assigns)
       end
     end
   end
@@ -118,7 +257,7 @@ defmodule PhoenixVapor.Renderer do
            kind: :for_node,
            source: source,
            value: value_name,
-           render: render_split,
+           render: item_split,
            key_prop: key_prop
          },
          assigns
@@ -126,7 +265,7 @@ defmodule PhoenixVapor.Renderer do
     items = Expr.eval(source, assigns) || []
 
     dummy_assigns = build_item_assigns(assigns, value_name, %{})
-    prototype = split_to_rendered(render_split.statics, render_split.slots, dummy_assigns)
+    prototype = render_split(item_split, dummy_assigns)
     static_parts = prototype.static
     fingerprint = prototype.fingerprint
 
@@ -137,7 +276,7 @@ defmodule PhoenixVapor.Renderer do
         key = if key_prop, do: Expr.eval(key_prop, item_assigns) |> to_string()
 
         render_fn = fn _vars_changed, _track_changes? ->
-          rendered = split_to_rendered(render_split.statics, render_split.slots, item_assigns)
+          rendered = render_split(item_split, item_assigns)
           rendered.dynamic.(false)
         end
 
@@ -157,12 +296,12 @@ defmodule PhoenixVapor.Renderer do
       Enum.reduce(props, %{}, fn prop, acc ->
         key_name = extract_key(prop.key)
         value = Expr.eval_values(prop.values, assigns)
-        Map.put(acc, String.to_atom(key_name), value)
+        Map.put(acc, Names.existing(key_name), value)
       end)
 
     components = Map.get(assigns, :__components__, %{})
 
-    case Map.get(components, tag) || Map.get(components, String.to_atom(tag)) do
+    case Map.get(components, tag) || Map.get(components, Names.existing(tag)) do
       nil -> ""
       component_fn -> component_fn.(comp_assigns)
     end
@@ -203,54 +342,23 @@ defmodule PhoenixVapor.Renderer do
 
   defp slot_changed?(_, _), do: true
 
-  defp any_key_changed?(:all, _), do: true
-
+  # Expressions name assigns as strings; `changed` holds the changed names.
   defp any_key_changed?(keys, changed) when is_list(keys) do
-    Enum.any?(keys, &Map.has_key?(changed, &1))
+    Enum.any?(keys, &MapSet.member?(changed, &1))
   end
 
   # ── Helpers ──
 
-  # Vize 0.14 includes the original text in both the static template and the
-  # values for a set_text slot. A LiveView slot replaces the element's complete
-  # text content, so remove that duplicate content around the dynamic hole.
-  defp normalize_text_slot_statics(statics, slots) when length(statics) == length(slots) + 1 do
-    slots
-    |> Enum.with_index()
-    |> Enum.reduce(statics, fn
-      {%{kind: :set_text}, index}, acc ->
-        acc
-        |> List.update_at(index, &remove_text_after_last_tag/1)
-        |> List.update_at(index + 1, &remove_text_before_next_tag/1)
-
-      _, acc ->
-        acc
-    end)
-  end
-
-  defp normalize_text_slot_statics(statics, _slots), do: statics
-
-  defp remove_text_after_last_tag(static) do
-    case :binary.matches(static, ">") do
-      [] -> static
-      matches -> binary_part(static, 0, elem(List.last(matches), 0) + 1)
-    end
-  end
-
-  defp remove_text_before_next_tag(static) do
-    case :binary.match(static, "<") do
-      {position, _length} -> binary_part(static, position, byte_size(static) - position)
-      :nomatch -> static
-    end
-  end
-
   defp extract_key({:static_, name}), do: name
   defp extract_key(name) when is_binary(name), do: name
 
+  # The loop variable shadows an assign with the same name, so set the atom key
+  # too when that atom exists.
   defp build_item_assigns(assigns, value_name, item) do
-    assigns
-    |> Map.put(value_name, item)
-    |> Map.put(String.to_atom(value_name), item)
+    case Names.existing(value_name) do
+      key when is_atom(key) -> assigns |> Map.put(value_name, item) |> Map.put(key, item)
+      _name -> Map.put(assigns, value_name, item)
+    end
   end
 
   defp inject_vapor_metadata([first | rest]) do
@@ -258,7 +366,7 @@ defmodule PhoenixVapor.Renderer do
       statics_json = Jason.encode!([first | rest])
 
       attr =
-        ~s( data-vapor data-vapor-statics="#{Phoenix.HTML.Engine.html_escape(statics_json)}")
+        ~s(data-vapor data-vapor-statics="#{Phoenix.HTML.Engine.html_escape(statics_json)}")
 
       [inject_attr_into_first_tag(first, attr) | rest]
     else

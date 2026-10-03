@@ -11,12 +11,12 @@ defmodule PhoenixVapor.Vue do
         PhoenixVapor.Vue.component :dashboard, "assets/vue/Dashboard.vue"
       end
 
-  This compiles the Vue template at compile time via `Vize.vapor_ir!/1`
-  and generates a function component that renders the IR against assigns.
+  This compiles the Vue template at compile time via `Vize.vapor_split!/1`
+  and generates a function component that renders it against assigns.
 
-  The SFC's `<template>` block is extracted and compiled. `<script>` and
-  `<style>` blocks are currently ignored (see PhoenixVapor roadmap for
-  QuickBEAM integration plans).
+  The SFC's `<template>` block becomes the component. A `<style scoped>`
+  block is compiled and exposed as `__vue_css_<name>__/0`, and the root
+  element gets its scope attribute. `<script>` blocks are ignored.
   """
 
   @doc """
@@ -31,10 +31,10 @@ defmodule PhoenixVapor.Vue do
 
     source = File.read!(full_path)
     template = extract_template(source)
-    split = Vize.vapor_split!(template)
+    split = template |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
     escaped_split = Macro.escape(split)
 
-    {scope_id, scoped_css} = extract_scoped_css(source)
+    {scope_id, scoped_css} = scoped_css(source, full_path)
 
     css_fn_name = :"__vue_css_#{name}__"
 
@@ -53,42 +53,21 @@ defmodule PhoenixVapor.Vue do
     end
   end
 
-  @doc false
-  def extract_template(sfc_source) do
+  defp extract_template(sfc_source) do
     case Vize.parse_sfc(sfc_source) do
       {:ok, %{template: %{content: content}}} -> String.trim(content)
       _ -> sfc_source
     end
   end
 
-  @doc false
-  def extract_scoped_css(sfc_source) do
-    result = Vize.compile_sfc!(sfc_source)
-    css = result.css
-
-    if css && css != "" do
-      # Scope ID is embedded in the CSS by Vize's scoped style compiler
-      case extract_scope_id_from_css(css) do
-        {:ok, hash} -> {"data-v-#{hash}", css}
-        :error -> {nil, css}
-      end
+  # Vize generates the scope id the way its bundler integrations do and
+  # scopes the CSS with it; the same id goes on the root element.
+  defp scoped_css(sfc_source, path) do
+    if Enum.any?(Vize.parse_sfc!(sfc_source).styles, & &1.scoped) do
+      id = Vize.SFC.scope_id(path, root: File.cwd!())
+      {"data-v-#{id}", Vize.compile_sfc!(sfc_source, scope_id: id).css}
     else
       {nil, nil}
-    end
-  end
-
-  defp extract_scope_id_from_css(css) do
-    # Vize embeds scope IDs as [data-v-HASH] in compiled scoped CSS.
-    # The hash comes from Vize.compile_sfc result's style_hash.
-    case String.split(css, "[data-v-", parts: 2) do
-      [_, rest] ->
-        case String.split(rest, "]", parts: 2) do
-          [hash, _] when byte_size(hash) > 0 -> {:ok, hash}
-          _ -> :error
-        end
-
-      _ ->
-        :error
     end
   end
 end

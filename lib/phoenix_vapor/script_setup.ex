@@ -17,13 +17,13 @@ defmodule PhoenixVapor.ScriptSetup do
   Returns `{initial_assigns, computed_exprs, event_handlers}`.
   """
   def parse(script_source) do
-    case OXC.parse(script_source, "setup.js") do
+    case OXC.parse(script_source, "setup.ts") do
       {:ok, ast} ->
         refs = extract_refs(ast, script_source)
         computeds = extract_computeds(ast, script_source)
         functions = extract_functions(ast)
         function_bodies = extract_function_bodies(ast, script_source)
-        props = extract_props(ast)
+        props = props(script_source)
         {refs, computeds, functions, function_bodies, props}
 
       _ ->
@@ -40,27 +40,21 @@ defmodule PhoenixVapor.ScriptSetup do
     if Code.ensure_loaded?(QuickBEAM) do
       {:ok, rt} = QuickBEAM.start()
 
-      Enum.reduce(refs, assigns, fn {name, init_expr}, acc ->
-        case QuickBEAM.eval(rt, "(#{init_expr})") do
-          {:ok, value} -> Map.put(acc, String.to_atom(name), value)
-          _ -> Map.put(acc, String.to_atom(name), nil)
-        end
-      end)
+      try do
+        Enum.reduce(refs, assigns, fn {name, init_expr}, acc ->
+          case QuickBEAM.eval(rt, "(#{init_expr})") do
+            {:ok, value} -> Map.put(acc, PhoenixVapor.Names.atom!(name), value)
+            _ -> Map.put(acc, PhoenixVapor.Names.atom!(name), nil)
+          end
+        end)
+      after
+        QuickBEAM.stop(rt)
+      end
     else
       Enum.reduce(refs, assigns, fn {name, _}, acc ->
-        Map.put(acc, String.to_atom(name), nil)
+        Map.put(acc, PhoenixVapor.Names.atom!(name), nil)
       end)
     end
-  end
-
-  @doc """
-  Evaluate computed expressions against current assigns.
-  """
-  def eval_computeds(computeds, assigns) do
-    Enum.reduce(computeds, assigns, fn {name, expr}, acc ->
-      value = PhoenixVapor.Expr.eval(expr, acc)
-      Map.put(acc, String.to_atom(name), value)
-    end)
   end
 
   defp extract_refs(ast, source) do
@@ -128,39 +122,12 @@ defmodule PhoenixVapor.ScriptSetup do
     end)
   end
 
-  defp extract_props(ast) do
-    OXC.collect(ast, fn
-      %{type: :expression_statement,
-        expression: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}} ->
-        extract_props_from_args(args)
-
-      %{type: :variable_declaration, declarations: decls} ->
-        results =
-          for %{type: :variable_declarator, init: %{type: :call_expression, callee: %{name: "defineProps"}, arguments: args}} <- decls,
-              result = extract_props_from_args(args),
-              result != :skip do
-            result
-          end
-
-        case results do
-          [{:keep, _} = r | _] -> r
-          _ -> :skip
-        end
-
-      _ ->
-        :skip
-    end)
-    |> List.flatten()
-  end
-
-  defp extract_props_from_args(args) do
-    case args do
-      [%{type: :array_expression, elements: elements}] ->
-        props = for %{type: :literal, value: v} <- elements, do: v
-        {:keep, props}
-
-      _ ->
-        :skip
+  # Vize's analysis reads every defineProps form: array, object, and
+  # TypeScript type arguments.
+  defp props(script_source) do
+    case Vize.analyze_sfc(~s(<script setup lang="ts">\n) <> script_source <> "\n</script>") do
+      {:ok, croquis} -> Enum.map(croquis.props, & &1.name)
+      {:error, _} -> []
     end
   end
 

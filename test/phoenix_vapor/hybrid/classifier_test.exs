@@ -61,7 +61,10 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
     end
 
     test "method call — only object and args are free" do
-      assert Classifier.free_variables("users.filter(u => u.name.includes(search.value))") == ["search", "users"]
+      assert Classifier.free_variables("users.filter(u => u.name.includes(search.value))") == [
+               "search",
+               "users"
+             ]
     end
 
     test "object literal" do
@@ -85,7 +88,10 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
     end
 
     test "destructuring params are bound" do
-      assert Classifier.free_variables("arr.map(({name, id}) => name + id + extra)") == ["arr", "extra"]
+      assert Classifier.free_variables("arr.map(({name, id}) => name + id + extra)") == [
+               "arr",
+               "extra"
+             ]
     end
 
     test "variable declaration binds name" do
