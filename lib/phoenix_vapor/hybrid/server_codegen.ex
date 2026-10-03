@@ -168,7 +168,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   defp seed_props_alias(assigns, client_props) do
     props_map =
       Enum.reduce(client_props, %{}, fn prop, acc ->
-        key = if is_atom(prop), do: prop, else: String.to_atom(prop)
+        key = if is_atom(prop), do: prop, else: PhoenixVapor.Names.existing(prop)
         value = Map.get(assigns, key, Map.get(assigns, prop))
         Map.put(acc, prop, value)
       end)
@@ -215,7 +215,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
         Enum.reduce(computed_exprs, assigns, fn {name, expr}, acc ->
           case QuickBEAM.eval(rt, wrap_computed_expr(expr), vars: vars) do
             {:ok, value} ->
-              acc |> Map.put(String.to_atom(name), value) |> Map.put(name, value)
+              Map.put(acc, name, value)
 
             _ ->
               acc
@@ -242,7 +242,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   defp encode_client_props(assigns, client_props) do
     client_props
     |> Map.new(fn prop ->
-      key = if is_atom(prop), do: prop, else: String.to_atom(prop)
+      key = if is_atom(prop), do: prop, else: PhoenixVapor.Names.existing(prop)
       value = Map.get(assigns, key, Map.get(assigns, prop))
       {prop, value}
     end)

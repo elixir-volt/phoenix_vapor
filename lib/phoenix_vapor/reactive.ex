@@ -75,10 +75,13 @@ defmodule PhoenixVapor.Reactive do
 
     # Only URL params the template reads become assigns, so a request can't
     # create atoms.
-    param_keys = PhoenixVapor.Renderer.assign_keys(split)
-    mount_ast = gen_mount(refs, computeds, functions, function_bodies, param_keys)
+    param_keys =
+      split |> PhoenixVapor.Renderer.assign_keys() |> Enum.map(&PhoenixVapor.Names.atom!/1)
+
+    state_keys = Enum.map(Map.keys(refs) ++ Map.keys(computeds), &PhoenixVapor.Names.atom!/1)
+    mount_ast = gen_mount(refs, computeds, functions, function_bodies, param_keys, state_keys)
     render_ast = gen_render(escaped_split)
-    event_asts = gen_events(functions)
+    event_asts = gen_events(functions, state_keys)
 
     quote do
       import PhoenixVapor.Sigil
@@ -89,7 +92,7 @@ defmodule PhoenixVapor.Reactive do
     end
   end
 
-  defp gen_mount(refs, computeds, functions, function_bodies, param_keys) do
+  defp gen_mount(refs, computeds, functions, function_bodies, param_keys, state_keys) do
     escaped_refs = Macro.escape(refs)
     escaped_computeds = Macro.escape(computeds)
     escaped_functions = Macro.escape(functions)
@@ -106,7 +109,7 @@ defmodule PhoenixVapor.Reactive do
           )
 
         {:ok, state} = PhoenixVapor.Runtime.get_state(runtime)
-        assigns = PhoenixVapor.Reactive.state_to_assigns(state)
+        assigns = PhoenixVapor.Reactive.state_to_assigns(state, unquote(state_keys))
 
         param_assigns = PhoenixVapor.Reactive.param_assigns(params, unquote(param_keys))
 
@@ -133,7 +136,7 @@ defmodule PhoenixVapor.Reactive do
     end
   end
 
-  defp gen_events(functions) do
+  defp gen_events(functions, state_keys) do
     Enum.map(functions, fn func_name ->
       quote do
         def handle_event(unquote(func_name), params, socket) do
@@ -142,7 +145,7 @@ defmodule PhoenixVapor.Reactive do
           {:ok, state} =
             PhoenixVapor.Runtime.call_handler(runtime, unquote(func_name), params)
 
-          assigns = PhoenixVapor.Reactive.state_to_assigns(state)
+          assigns = PhoenixVapor.Reactive.state_to_assigns(state, unquote(state_keys))
           {:noreply, Phoenix.Component.assign(socket, assigns)}
         end
       end
@@ -167,12 +170,13 @@ defmodule PhoenixVapor.Reactive do
   @doc """
   Converts the state a `PhoenixVapor.Runtime` returns into assigns.
 
-  The keys are the ref and computed names declared in the component.
+  `keys` are the ref and computed names declared in the component, as atoms
+  created when it compiled.
   """
-  @spec state_to_assigns(map()) :: map()
-  def state_to_assigns(state) when is_map(state) do
-    Enum.reduce(state, %{}, fn {k, v}, acc ->
-      Map.put(acc, String.to_atom(k), v)
-    end)
+  @spec state_to_assigns(map(), [atom()]) :: map()
+  def state_to_assigns(state, keys) when is_map(state) do
+    for key <- keys, {:ok, value} <- [Map.fetch(state, Atom.to_string(key))], into: %{} do
+      {key, value}
+    end
   end
 end

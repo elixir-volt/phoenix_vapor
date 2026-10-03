@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.Renderer do
   @moduledoc false
 
-  alias PhoenixVapor.Expr
+  alias PhoenixVapor.{Expr, Names}
 
   def inject_scope_id(%Phoenix.LiveView.Rendered{static: static} = rendered, scope_id) do
     case static do
@@ -147,8 +147,11 @@ defmodule PhoenixVapor.Renderer do
     dynamic = fn track_changes? ->
       changed =
         case assigns do
-          %{__changed__: changed} when track_changes? -> changed
-          _ -> nil
+          %{__changed__: changed} when track_changes? ->
+            MapSet.new(Map.keys(changed), &to_string/1)
+
+          _ ->
+            nil
         end
 
       Enum.map(slots, fn slot ->
@@ -177,7 +180,7 @@ defmodule PhoenixVapor.Renderer do
 
   # Every root assign key a split's expressions read, for callers that need the
   # set at compile time.
-  @spec assign_keys(map()) :: [atom()]
+  @spec assign_keys(map()) :: [String.t()]
   def assign_keys(%{slots: slots}) do
     slots |> Enum.flat_map(&slot_assign_keys/1) |> Enum.uniq()
   end
@@ -293,12 +296,12 @@ defmodule PhoenixVapor.Renderer do
       Enum.reduce(props, %{}, fn prop, acc ->
         key_name = extract_key(prop.key)
         value = Expr.eval_values(prop.values, assigns)
-        Map.put(acc, String.to_atom(key_name), value)
+        Map.put(acc, Names.existing(key_name), value)
       end)
 
     components = Map.get(assigns, :__components__, %{})
 
-    case Map.get(components, tag) || Map.get(components, String.to_atom(tag)) do
+    case Map.get(components, tag) || Map.get(components, Names.existing(tag)) do
       nil -> ""
       component_fn -> component_fn.(comp_assigns)
     end
@@ -339,8 +342,9 @@ defmodule PhoenixVapor.Renderer do
 
   defp slot_changed?(_, _), do: true
 
+  # Expressions name assigns as strings; `changed` holds the changed names.
   defp any_key_changed?(keys, changed) when is_list(keys) do
-    Enum.any?(keys, &Map.has_key?(changed, &1))
+    Enum.any?(keys, &MapSet.member?(changed, &1))
   end
 
   # ── Helpers ──
@@ -348,10 +352,13 @@ defmodule PhoenixVapor.Renderer do
   defp extract_key({:static_, name}), do: name
   defp extract_key(name) when is_binary(name), do: name
 
+  # The loop variable shadows an assign with the same name, so set the atom key
+  # too when that atom exists.
   defp build_item_assigns(assigns, value_name, item) do
-    assigns
-    |> Map.put(value_name, item)
-    |> Map.put(String.to_atom(value_name), item)
+    case Names.existing(value_name) do
+      key when is_atom(key) -> assigns |> Map.put(value_name, item) |> Map.put(key, item)
+      _name -> Map.put(assigns, value_name, item)
+    end
   end
 
   defp inject_vapor_metadata([first | rest]) do

@@ -155,4 +155,31 @@ defmodule PhoenixVapor.RegressionsTest do
       refute Enum.join(split.statics) =~ "phx-"
     end
   end
+
+  test "rendering a runtime template creates no atoms" do
+    names = for i <- 1..4, do: "pv_unseen_#{System.unique_integer([:positive])}_#{i}"
+    [a, b, c, d] = names
+
+    template = """
+    <p :class="#{a}">{{ #{b}.x }}</p>
+    <li v-for="#{c} in items">{{ #{c} }}</li>
+    <MyCard :#{d}="1" />
+    """
+
+    PhoenixVapor.render(template, %{items: [1], __components__: %{}})
+    |> Phoenix.HTML.Safe.to_iodata()
+
+    for name <- names do
+      assert_raise ArgumentError, fn -> String.to_existing_atom(name) end
+    end
+  end
+
+  test "change tracking still skips slots whose assigns didn't change" do
+    split =
+      "<p>{{ a }}</p><b>{{ b }}</b>" |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+
+    rendered = PhoenixVapor.Renderer.to_rendered(split, %{a: 1, b: 2, __changed__: %{b: true}})
+
+    assert [nil, "2"] = rendered.dynamic.(true)
+  end
 end

@@ -38,7 +38,7 @@ defmodule PhoenixVapor.Expr do
   end
 
   @typedoc "An expression parsed ahead of time by `compile/1`."
-  @type compiled :: {:expr, String.t(), map() | nil, [atom()]}
+  @type compiled :: {:expr, String.t(), map() | nil, [String.t()]}
 
   @doc """
   Parses an expression once, for templates compiled into a module, so that
@@ -75,7 +75,7 @@ defmodule PhoenixVapor.Expr do
   @doc """
   Extract root assign keys referenced by an expression.
   """
-  @spec assign_keys(String.t() | {:static_, String.t()} | compiled()) :: [atom()]
+  @spec assign_keys(String.t() | {:static_, String.t()} | compiled()) :: [String.t()]
   def assign_keys({:static_, _}), do: []
   def assign_keys({:expr, _source, _node, keys}), do: keys
 
@@ -83,7 +83,7 @@ defmodule PhoenixVapor.Expr do
     case OXC.parse(expr, "e.js") do
       {:ok, ast} ->
         OXC.collect(ast, fn
-          %{type: :identifier, name: name} -> {:keep, String.to_atom(name)}
+          %{type: :identifier, name: name} -> {:keep, name}
           _ -> :skip
         end)
         |> Enum.uniq()
@@ -91,14 +91,14 @@ defmodule PhoenixVapor.Expr do
       _ ->
         [root | _] = String.split(expr, ".", parts: 2)
         root = String.trim(root)
-        if root == "", do: [], else: [String.to_atom(root)]
+        if root == "", do: [], else: [root]
     end
   end
 
   @doc """
   Extract root assign keys from a `values` list.
   """
-  @spec values_assign_keys([String.t() | {:static_, String.t()}]) :: [atom()]
+  @spec values_assign_keys([String.t() | {:static_, String.t()}]) :: [String.t()]
   def values_assign_keys(values) do
     values
     |> Enum.flat_map(&assign_keys/1)

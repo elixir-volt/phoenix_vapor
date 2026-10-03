@@ -10,7 +10,7 @@
 - Send the values of refs and computeds in server action params, instead of serialized `Ref` objects.
 - The bundled hybrid bridge applies the initial props before mounting and unmounts the component when the hook is destroyed.
 - Stop leaking a QuickBEAM runtime on every hybrid render.
-- Reactive `mount/3` no longer creates atoms from URL params. Only params the template reads become assigns.
+- Rendering never creates atoms. Reactive `mount/3` turned every URL param into an atom, and change tracking, component props, `v-for` variables, and hybrid props and computeds converted names at render time, which `PhoenixVapor.render/2` does for templates built at runtime. Atoms are now created only while compiling the developer's own templates and scripts.
 - Computeds may read computeds declared after them, and block-bodied computeds work in Reactive mode.
 - Put scope and Vapor metadata attributes after the root tag's name. They were inserted before the first `>`, which landed inside an attribute value such as `title="a > b"`.
 - Scoped CSS uses the scope id from `Vize.SFC.scope_id/2`, passed to Vize, instead of one read back out of the compiled CSS.

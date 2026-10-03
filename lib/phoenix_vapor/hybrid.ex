@@ -43,7 +43,7 @@ defmodule PhoenixVapor.Hybrid do
     split =
       template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile(events: false)
 
-    template_names = split |> PhoenixVapor.Renderer.assign_keys() |> Enum.map(&Atom.to_string/1)
+    template_names = PhoenixVapor.Renderer.assign_keys(split)
 
     classification =
       Classifier.classify(refs, computeds, functions, function_bodies, props, template_names)

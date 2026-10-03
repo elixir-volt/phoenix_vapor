@@ -89,17 +89,17 @@ defmodule PhoenixVapor.ExprTest do
 
   describe "assign_keys/1" do
     test "extracts identifiers" do
-      assert Expr.assign_keys("msg") == [:msg]
-      assert :user in Expr.assign_keys("user.name")
+      assert Expr.assign_keys("msg") == ["msg"]
+      assert "user" in Expr.assign_keys("user.name")
       assert Expr.assign_keys({:static_, "text"}) == []
     end
 
     test "extracts identifiers from complex expressions" do
       keys = Expr.assign_keys("a > b ? x : y")
-      assert :a in keys
-      assert :b in keys
-      assert :x in keys
-      assert :y in keys
+      assert "a" in keys
+      assert "b" in keys
+      assert "x" in keys
+      assert "y" in keys
     end
   end
 end

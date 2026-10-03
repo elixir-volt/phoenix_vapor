@@ -43,8 +43,8 @@ defmodule PhoenixVapor.ScriptSetup do
       try do
         Enum.reduce(refs, assigns, fn {name, init_expr}, acc ->
           case QuickBEAM.eval(rt, "(#{init_expr})") do
-            {:ok, value} -> Map.put(acc, String.to_atom(name), value)
-            _ -> Map.put(acc, String.to_atom(name), nil)
+            {:ok, value} -> Map.put(acc, PhoenixVapor.Names.atom!(name), value)
+            _ -> Map.put(acc, PhoenixVapor.Names.atom!(name), nil)
           end
         end)
       after
@@ -52,19 +52,9 @@ defmodule PhoenixVapor.ScriptSetup do
       end
     else
       Enum.reduce(refs, assigns, fn {name, _}, acc ->
-        Map.put(acc, String.to_atom(name), nil)
+        Map.put(acc, PhoenixVapor.Names.atom!(name), nil)
       end)
     end
-  end
-
-  @doc """
-  Evaluate computed expressions against current assigns.
-  """
-  def eval_computeds(computeds, assigns) do
-    Enum.reduce(computeds, assigns, fn {name, expr}, acc ->
-      value = PhoenixVapor.Expr.eval(expr, acc)
-      Map.put(acc, String.to_atom(name), value)
-    end)
   end
 
   defp extract_refs(ast, source) do
