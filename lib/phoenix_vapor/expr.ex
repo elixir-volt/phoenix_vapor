@@ -21,6 +21,9 @@ defmodule PhoenixVapor.Expr do
   @spec eval(String.t() | {:static_, String.t()} | compiled(), map()) :: term()
   def eval({:static_, text}, _assigns), do: text
 
+  # A value computed at compile time, such as a folded macro call.
+  def eval({:value, value}, _assigns), do: value
+
   def eval({:expr, source, nil, _keys}, assigns), do: resolve_path(source, assigns)
 
   def eval({:expr, source, node, _keys}, assigns) do
@@ -38,7 +41,7 @@ defmodule PhoenixVapor.Expr do
   end
 
   @typedoc "An expression parsed ahead of time by `compile/1`."
-  @type compiled :: {:expr, String.t(), map() | nil, [String.t()]}
+  @type compiled :: {:expr, String.t(), map() | nil, [String.t()]} | {:value, term()}
 
   @doc """
   Parses an expression once, for templates compiled into a module, so that
@@ -48,6 +51,7 @@ defmodule PhoenixVapor.Expr do
   @spec compile(String.t() | {:static_, String.t()} | compiled()) ::
           compiled() | {:static_, String.t()}
   def compile({:static_, _} = static), do: static
+  def compile({:value, _} = value), do: value
   def compile({:expr, _, _, _} = compiled), do: compiled
 
   def compile(expr) when is_binary(expr) do
@@ -77,6 +81,7 @@ defmodule PhoenixVapor.Expr do
   """
   @spec assign_keys(String.t() | {:static_, String.t()} | compiled()) :: [String.t()]
   def assign_keys({:static_, _}), do: []
+  def assign_keys({:value, _}), do: []
   def assign_keys({:expr, _source, _node, keys}), do: keys
 
   def assign_keys(expr) when is_binary(expr) do

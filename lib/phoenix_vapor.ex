@@ -123,7 +123,19 @@ defmodule PhoenixVapor do
         nil -> raise "No <template> block found in #{file}"
       end
 
-    split = template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+    script_content =
+      case desc.script_setup do
+        %{content: c} -> c
+        nil -> ""
+      end
+
+    {split, component_files} =
+      PhoenixVapor.Components.compile!(template_content,
+        file: full_path,
+        script: script_content,
+        unrendered: :raise
+      )
+
     escaped_split = Macro.escape(split)
 
     elixir_block_ast = PhoenixVapor.SFC.elixir_block(desc, full_path)
@@ -132,6 +144,7 @@ defmodule PhoenixVapor do
       import PhoenixVapor.Sigil
       import PhoenixVapor.Component
       @external_resource unquote(full_path)
+      for file <- unquote(component_files), do: @external_resource(file)
 
       def render(var!(assigns)) do
         PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns))

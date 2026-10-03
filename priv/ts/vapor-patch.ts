@@ -57,13 +57,20 @@ function textIndex(node: Text): number {
  * Locates each dynamic slot by parsing the statics joined with slot markers
  * and finding where the HTML parser put each marker. Paths are relative to the
  * first element, the one that carries `data-vapor-statics`.
+ *
+ * `keys` names the attribute each attribute slot renders, from
+ * `data-vapor-keys`; the slot is the whole attribute, so its marker parses as
+ * an attribute name.
  */
-export function analyzeStatics(statics: string[]): SlotDescriptor[] {
+export function analyzeStatics(statics: string[], keys: (string | null)[] = []): SlotDescriptor[] {
   if (statics.length <= 1) return []
 
   const template = document.createElement("template")
   template.innerHTML = statics
-    .map((part, i) => (i < statics.length - 1 ? part + marker(i) : part))
+    .map((part, i) => {
+      if (i === statics.length - 1) return part
+      return keys[i] ? `${part} ${marker(i)}` : part + marker(i)
+    })
     .join("")
 
   const root = template.content.firstElementChild
@@ -88,8 +95,9 @@ export function analyzeStatics(statics: string[]): SlotDescriptor[] {
       const nodePath = elementPath(el, root)!
 
       for (const attr of Array.from(el.attributes)) {
-        for (const i of markerIndices(attr.value)) {
-          slots[i] = { type: "attr", nodePath, key: attr.name }
+        for (const i of markerIndices(attr.name)) {
+          const key = keys[i]
+          if (key) slots[i] = { type: "attr", nodePath, key }
         }
       }
     }
@@ -151,32 +159,46 @@ export function applyValue(entry: RegistryEntry, value: string): boolean {
     return true
   }
 
-  return setAttribute(entry.node, entry.key, value)
+  return setAttribute(entry.node, entry.key, attributeValue(entry.key, value))
 }
 
-export function setAttribute(el: Element, key: string, value: string): boolean {
+/**
+ * The value an attribute slot renders, such as ` class="a"`, read with the
+ * browser's HTML parser. Null when the slot leaves the attribute out.
+ */
+export function attributeValue(key: string, rendered: string): string | null {
+  if (rendered === "") return null
+
+  const template = document.createElement("template")
+  template.innerHTML = `<i${rendered}></i>`
+  return template.content.firstElementChild?.getAttribute(key) ?? null
+}
+
+/** Sets an attribute, or removes it when `value` is null. */
+export function setAttribute(el: Element, key: string, value: string | null): boolean {
   const html = el as HTMLInputElement
 
   switch (key) {
     case "class":
-      if (el.className === value) return false
-      el.className = value
+      if (el.className === (value ?? "")) return false
+      el.className = value ?? ""
       return true
     case "style":
-      if (html.style.cssText === value) return false
-      html.style.cssText = value
+      if (html.style.cssText === (value ?? "")) return false
+      html.style.cssText = value ?? ""
       return true
     case "value":
-      if (html.value === value) return false
-      html.value = value
+      if (html.value === (value ?? "")) return false
+      html.value = value ?? ""
       return true
     case "checked":
-      return setBoolean(html, "checked", value === "true" || value === "checked")
     case "disabled":
-      return setBoolean(html, "disabled", value === "true" || value === "disabled" || value === "")
+      // A boolean attribute is set by being present, whatever its value.
+      return setBoolean(html, key, value !== null)
     default:
       if (el.getAttribute(key) === value) return false
-      el.setAttribute(key, value)
+      if (value === null) el.removeAttribute(key)
+      else el.setAttribute(key, value)
       return true
   }
 }

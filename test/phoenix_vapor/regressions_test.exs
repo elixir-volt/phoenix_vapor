@@ -25,7 +25,8 @@ defmodule PhoenixVapor.RegressionsTest do
       split = Vize.vapor_split!(~s(<div title="a > b"><p>{{ x }}</p></div>))
       [first | _] = PhoenixVapor.Renderer.to_rendered(split, %{x: 1}, vapor_metadata: true).static
 
-      assert first =~ ~r/\A<div data-vapor data-vapor-statics="[^"]*" title="a > b">/
+      assert first =~
+               ~r/\A<div data-vapor data-vapor-statics="[^"]*" data-vapor-keys="[^"]*" title="a > b">/
     end
   end
 

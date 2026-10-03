@@ -31,7 +31,14 @@ defmodule PhoenixVapor.Vue do
 
     source = File.read!(full_path)
     template = extract_template(source)
-    split = template |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+
+    {split, component_files} =
+      PhoenixVapor.Components.compile!(template,
+        file: full_path,
+        script: script_setup(source),
+        unrendered: :raise
+      )
+
     escaped_split = Macro.escape(split)
 
     {scope_id, scoped_css} = scoped_css(source, full_path)
@@ -39,6 +46,9 @@ defmodule PhoenixVapor.Vue do
     css_fn_name = :"__vue_css_#{name}__"
 
     quote do
+      @external_resource unquote(full_path)
+      for file <- unquote(component_files), do: @external_resource(file)
+
       def unquote(css_fn_name)(), do: unquote(scoped_css)
 
       def unquote(name)(var!(assigns)) do
@@ -50,6 +60,13 @@ defmodule PhoenixVapor.Vue do
           rendered
         end
       end
+    end
+  end
+
+  defp script_setup(sfc_source) do
+    case Vize.parse_sfc(sfc_source) do
+      {:ok, %{script_setup: %{content: content}}} -> content
+      _ -> ""
     end
   end
 

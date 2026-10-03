@@ -153,7 +153,8 @@ function onlyRegisteredSlots(diff: Diff, registry: Registry) {
 function buildRegistry(el: HTMLElement) {
   try {
     const statics = JSON.parse(el.dataset.vaporStatics!) as string[]
-    registries.set(el, resolveRegistry(analyzeStatics(statics), el))
+    const keys = JSON.parse(el.dataset.vaporKeys ?? "[]") as (string | null)[]
+    registries.set(el, resolveRegistry(analyzeStatics(statics, keys), el))
   } catch (error) {
     console.warn("[PhoenixVapor] Registry build failed:", error)
   }
@@ -168,8 +169,7 @@ function applyFromMorphdom(entry: RegistryEntry, fromEl: Element, toEl: Element)
 
   const path = elementPath(entry.node, fromEl)
   const toNode = path && walkPath(toEl, path)
-  const value = toNode?.getAttribute(entry.key)
-  if (value !== null && value !== undefined) setAttribute(entry.node, entry.key, value)
+  if (toNode) setAttribute(entry.node, entry.key, toNode.getAttribute(entry.key))
   return true
 }
 

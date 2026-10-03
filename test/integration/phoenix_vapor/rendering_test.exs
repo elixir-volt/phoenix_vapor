@@ -735,7 +735,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       rendered = PhoenixVapor.render(~s[<div :class="cls">{{ msg }}</div>], assigns)
       dynamic = rendered.dynamic.(false)
 
-      assert dynamic == ["a", "Hi"]
+      assert dynamic == [~s( class="a"), "Hi"]
     end
 
     test "all dynamics evaluated when no __changed__ key" do
@@ -743,8 +743,8 @@ defmodule PhoenixVapor.Integration.RenderingTest do
 
       rendered = PhoenixVapor.render(~s[<div :class="cls">{{ msg }}</div>], assigns)
 
-      assert rendered.dynamic.(true) == ["a", "Hi"]
-      assert rendered.dynamic.(false) == ["a", "Hi"]
+      assert rendered.dynamic.(true) == [~s( class="a"), "Hi"]
+      assert rendered.dynamic.(false) == [~s( class="a"), "Hi"]
     end
 
     test "structural ops re-evaluated on relevant change" do
