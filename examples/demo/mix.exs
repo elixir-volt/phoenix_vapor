@@ -61,7 +61,7 @@ defmodule VaporDemo.MixProject do
       {:bandit, ">= 1.12.5 and < 2.0.0"},
       {:phoenix_vapor, path: "../.."},
       {:quickbeam, "~> 0.11.2"},
-      {:volt, "~> 0.19.0"}
+      {:volt, "~> 0.20.0"}
     ]
   end
 

@@ -9,19 +9,28 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   alias PhoenixVapor.Hybrid.Classifier
 
+  import PhoenixVapor.JS, only: [patch: 3]
+
   @doc """
   Generate the client JS module for a hybrid component.
 
   Takes the raw SFC source and classification, produces a self-contained
   JS module that can hydrate server-rendered HTML and manage client reactivity.
+
+  ## Options
+
+    * `:source_dir` and `:output_dir` — when the module is written to a
+      different directory than the `.vue` file, relative imports such as
+      `./ui/Button.vue` are rewritten to resolve from `:output_dir`.
   """
-  @spec generate(String.t(), Classifier.classification()) :: {:ok, String.t()} | {:error, term()}
-  def generate(sfc_source, classification) do
+  @spec generate(String.t(), Classifier.classification(), keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def generate(sfc_source, classification, opts \\ []) do
     sfc_source = strip_elixir_block(sfc_source)
 
     case Vize.compile_sfc(sfc_source) do
       {:ok, result} ->
-        js = transform(result.code, classification)
+        js = transform(result.code, classification, opts)
         {:ok, js}
 
       {:error, errors} ->
@@ -35,15 +44,48 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   Replaces server action bodies with optimistic prop updates followed by a
   `pushEvent`, and wraps the component with the bridge exports.
   """
-  @spec transform(String.t(), Classifier.classification()) :: String.t()
-  def transform(vize_code, classification) do
+  @spec transform(String.t(), Classifier.classification(), keyword()) :: String.t()
+  def transform(vize_code, classification, opts \\ []) do
     {:ok, ast} = OXC.parse(vize_code, "module.js")
 
     patches =
       server_action_patches(ast, vize_code, classification) ++
-        setup_patches(ast) ++ default_export_patches(ast)
+        setup_patches(ast) ++ default_export_patches(ast) ++ import_patches(ast, opts)
 
     preamble(classification) <> "\n" <> OXC.patch_string(vize_code, patches) <> exports()
+  end
+
+  defp import_patches(ast, opts) do
+    case {opts[:source_dir], opts[:output_dir]} do
+      {from, to} when is_binary(from) and is_binary(to) and from != to ->
+        ast
+        |> OXC.collect(fn
+          %{type: type, source: %{type: :literal, value: "." <> _ = spec} = source}
+          when type in [
+                 :import_declaration,
+                 :export_all_declaration,
+                 :export_named_declaration,
+                 :import_expression
+               ] ->
+            {:keep, {source, spec}}
+
+          _ ->
+            :skip
+        end)
+        |> Enum.map(fn {source, spec} ->
+          rebased =
+            from
+            |> Path.join(spec)
+            |> Path.expand()
+            |> Path.relative_to(Path.expand(to), force: true)
+
+          rebased = if String.starts_with?(rebased, "."), do: rebased, else: "./" <> rebased
+          patch(source.start, source.end, Jason.encode!(rebased))
+        end)
+
+      _ ->
+        []
+    end
   end
 
   defp preamble(classification) do
@@ -93,11 +135,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
         patches =
           for %{type: :property, key: %{name: "setup"}, value: %{body: %{start: start}}} <-
                 component.properties,
-              do: %{
-                start: start + 1,
-                end: start + 1,
-                change: ~s|\n  const __pv = __inject("__pv");|
-              }
+              do: patch(start + 1, start + 1, ~s|\n  const __pv = __inject("__pv");|)
 
         {:keep, patches}
 
@@ -143,7 +181,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     statements = Enum.flat_map(body.body, &optimistic_update(&1, code, classification)) ++ [push]
     change = IO.iodata_to_binary([Enum.map(statements, &["\n  ", &1]), "\n"])
 
-    %{start: body.start + 1, end: body.end - 1, change: change}
+    patch(body.start + 1, body.end - 1, change)
   end
 
   # `prop = expr` and `props.prop = expr` apply locally before the server confirms.
@@ -210,7 +248,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   defp default_export_patches(ast) do
     OXC.collect(ast, fn
       %{type: :export_default_declaration, start: s, declaration: %{start: ds}} ->
-        {:keep, %{start: s, end: ds, change: "const __component = "}}
+        {:keep, patch(s, ds, "const __component = ")}
 
       _ ->
         :skip

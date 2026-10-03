@@ -121,21 +121,19 @@ function patchViewPrototype(proto: ViewPrototype, update: ViewUpdate, debug: boo
       const vaporEl = this.el.querySelector("[data-vapor-statics]")
       const registry = vaporEl && registries.get(vaporEl)
 
-      if (registry && registry.size > 0) {
+      // Only a diff that changes nothing but registered slots is written
+      // directly; anything else goes to LiveView whole.
+      if (registry && registry.size > 0 && onlyRegisteredSlots(diff, registry)) {
         this.rendered.mergeDiff(diff)
         const values = this.rendered.rendered
-        let applied = 0
 
         for (const [slot, entry] of registry) {
-          const value = slotText(values[slot])
-          if (value !== null && applyValue(entry, value)) applied++
+          applyValue(entry, slot, (part) => slotText(values[part]))
         }
 
-        if (applied > 0 || onlyRegisteredSlots(diff, registry)) {
-          if (debug) window.__vaporDirectPatches = (window.__vaporDirectPatches ?? 0) + 1
-          this.liveSocket.dispatchEvents(events)
-          return true
-        }
+        if (debug) window.__vaporDirectPatches = (window.__vaporDirectPatches ?? 0) + 1
+        this.liveSocket.dispatchEvents(events)
+        return true
       }
     }
 
@@ -153,7 +151,8 @@ function onlyRegisteredSlots(diff: Diff, registry: Registry) {
 function buildRegistry(el: HTMLElement) {
   try {
     const statics = JSON.parse(el.dataset.vaporStatics!) as string[]
-    registries.set(el, resolveRegistry(analyzeStatics(statics), el))
+    const keys = JSON.parse(el.dataset.vaporKeys ?? "[]") as (string | null)[]
+    registries.set(el, resolveRegistry(analyzeStatics(statics, keys), el))
   } catch (error) {
     console.warn("[PhoenixVapor] Registry build failed:", error)
   }
@@ -168,8 +167,7 @@ function applyFromMorphdom(entry: RegistryEntry, fromEl: Element, toEl: Element)
 
   const path = elementPath(entry.node, fromEl)
   const toNode = path && walkPath(toEl, path)
-  const value = toNode?.getAttribute(entry.key)
-  if (value !== null && value !== undefined) setAttribute(entry.node, entry.key, value)
+  if (toNode) setAttribute(entry.node, entry.key, toNode.getAttribute(entry.key))
   return true
 }
 

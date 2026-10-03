@@ -321,7 +321,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       assert html =~ ">shown</div>"
     end
 
-    test "hidden element has display: none" do
+    test "hidden element has display:none" do
       rendered =
         PhoenixVapor.render(
           ~s[<div v-show="visible">shown</div>],
@@ -329,7 +329,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
         )
 
       html = render_to_html(rendered)
-      assert html =~ ~s[style="display: none"]
+      assert html =~ ~s[style="display:none"]
     end
   end
 
@@ -735,7 +735,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       rendered = PhoenixVapor.render(~s[<div :class="cls">{{ msg }}</div>], assigns)
       dynamic = rendered.dynamic.(false)
 
-      assert dynamic == ["a", "Hi"]
+      assert dynamic == [~s( class="a"), "Hi"]
     end
 
     test "all dynamics evaluated when no __changed__ key" do
@@ -743,8 +743,8 @@ defmodule PhoenixVapor.Integration.RenderingTest do
 
       rendered = PhoenixVapor.render(~s[<div :class="cls">{{ msg }}</div>], assigns)
 
-      assert rendered.dynamic.(true) == ["a", "Hi"]
-      assert rendered.dynamic.(false) == ["a", "Hi"]
+      assert rendered.dynamic.(true) == [~s( class="a"), "Hi"]
+      assert rendered.dynamic.(false) == [~s( class="a"), "Hi"]
     end
 
     test "structural ops re-evaluated on relevant change" do
@@ -880,7 +880,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
 
   describe "vapor metadata" do
     test "injects data-vapor and data-vapor-statics when enabled" do
-      ir = Vize.vapor_split!("<div>{{ msg }}</div>")
+      ir = Vize.split_template!("<div>{{ msg }}</div>")
       rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "hello"}, vapor_metadata: true)
       html = render_to_html(rendered)
 
@@ -890,7 +890,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
     end
 
     test "statics JSON is properly escaped" do
-      ir = Vize.vapor_split!("<div>{{ msg }}</div>")
+      ir = Vize.split_template!("<div>{{ msg }}</div>")
       rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "test"}, vapor_metadata: true)
 
       [first | _] = rendered.static
@@ -912,7 +912,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
     end
 
     test "not injected by default" do
-      ir = Vize.vapor_split!("<div>{{ msg }}</div>")
+      ir = Vize.split_template!("<div>{{ msg }}</div>")
       rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "hello"})
       html = render_to_html(rendered)
 

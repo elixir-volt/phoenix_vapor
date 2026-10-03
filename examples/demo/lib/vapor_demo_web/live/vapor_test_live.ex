@@ -10,7 +10,7 @@ defmodule VaporDemoWeb.VaporTestLive do
   @impl true
   def render(assigns) do
     split =
-      Vize.vapor_split!(~s[<div><p :class="label">Count: {{ count }}</p><button @click="increment">+</button></div>])
+      Vize.split_template!(~s[<div><p :class="label">Count: {{ count }}</p><button @click="increment">+</button></div>])
 
     PhoenixVapor.Renderer.to_rendered(split, assigns, vapor_metadata: true)
   end

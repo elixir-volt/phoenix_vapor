@@ -29,6 +29,8 @@ defmodule VaporDemoWeb.Router do
     live "/hybrid", HybridUsersLive
     live "/contacts", HybridContactsLive
     live "/search", HybridSearchLive
+    live "/playground/hybrid", Playground.SettingsHybridLive
+    live "/playground/full", Playground.SettingsFullLive
   end
 
   # Other scopes may use custom stacks.

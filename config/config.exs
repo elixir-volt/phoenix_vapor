@@ -1,14 +1,7 @@
 import Config
 
-# JavaScript sources are TypeScript under priv/ts. These settings are for
-# `mix format` (through Volt.Formatter) and `mix volt.js.check`.
-config :volt, :format,
-  root: "priv/ts",
-  sources: ["*.ts"],
-  print_width: 100,
-  semi: false,
-  trailing_comma: :none
-
+# JavaScript sources are TypeScript under priv/ts, formatted through the
+# `volt:` options in .formatter.exs. These settings are for `mix volt.js.check`.
 config :volt, :lint,
   root: "priv/ts",
   sources: ["*.ts"],

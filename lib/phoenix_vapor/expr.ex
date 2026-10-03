@@ -21,6 +21,12 @@ defmodule PhoenixVapor.Expr do
   @spec eval(String.t() | {:static_, String.t()} | compiled(), map()) :: term()
   def eval({:static_, text}, _assigns), do: text
 
+  # A value computed at compile time, such as a folded macro call.
+  def eval({:value, value}, _assigns), do: value
+
+  # An expression only the browser can evaluate, reported when compiling.
+  def eval({:unrendered, _source}, _assigns), do: nil
+
   def eval({:expr, source, nil, _keys}, assigns), do: resolve_path(source, assigns)
 
   def eval({:expr, source, node, _keys}, assigns) do
@@ -38,7 +44,10 @@ defmodule PhoenixVapor.Expr do
   end
 
   @typedoc "An expression parsed ahead of time by `compile/1`."
-  @type compiled :: {:expr, String.t(), map() | nil, [String.t()]}
+  @type compiled ::
+          {:expr, String.t(), map() | nil, [String.t()]}
+          | {:value, term()}
+          | {:unrendered, String.t()}
 
   @doc """
   Parses an expression once, for templates compiled into a module, so that
@@ -48,17 +57,28 @@ defmodule PhoenixVapor.Expr do
   @spec compile(String.t() | {:static_, String.t()} | compiled()) ::
           compiled() | {:static_, String.t()}
   def compile({:static_, _} = static), do: static
+  def compile({:value, _} = value), do: value
+  def compile({:unrendered, _} = unrendered), do: unrendered
   def compile({:expr, _, _, _} = compiled), do: compiled
 
   def compile(expr) when is_binary(expr) do
-    node =
-      case OXC.parse(expr, "e.js") do
-        {:ok, %{body: [%{type: :expression_statement, expression: node}]}} -> node
-        _ -> nil
-      end
-
-    {:expr, expr, node, assign_keys(expr)}
+    case parse(expr) do
+      nil -> {:expr, expr, nil, []}
+      node -> {:expr, expr, node, free_names(node)}
+    end
   end
+
+  # Vue parses an expression in parentheses, so `{ on: active }` is an object
+  # rather than a block.
+  defp parse(expr) do
+    case OXC.parse("(" <> expr <> "\n)", "e.js") do
+      {:ok, %{body: [%{type: :expression_statement, expression: node}]}} -> unwrap(node)
+      _ -> nil
+    end
+  end
+
+  defp unwrap(%{type: :parenthesized_expression, expression: node}), do: unwrap(node)
+  defp unwrap(node), do: node
 
   @doc """
   Evaluate a `values` list and concatenate results.
@@ -77,23 +97,11 @@ defmodule PhoenixVapor.Expr do
   """
   @spec assign_keys(String.t() | {:static_, String.t()} | compiled()) :: [String.t()]
   def assign_keys({:static_, _}), do: []
+  def assign_keys({:value, _}), do: []
+  def assign_keys({:unrendered, _}), do: []
   def assign_keys({:expr, _source, _node, keys}), do: keys
 
-  def assign_keys(expr) when is_binary(expr) do
-    case OXC.parse(expr, "e.js") do
-      {:ok, ast} ->
-        OXC.collect(ast, fn
-          %{type: :identifier, name: name} -> {:keep, name}
-          _ -> :skip
-        end)
-        |> Enum.uniq()
-
-      _ ->
-        [root | _] = String.split(expr, ".", parts: 2)
-        root = String.trim(root)
-        if root == "", do: [], else: [root]
-    end
-  end
+  def assign_keys(expr) when is_binary(expr), do: free_names(expr)
 
   @doc """
   Extract root assign keys from a `values` list.
@@ -108,18 +116,21 @@ defmodule PhoenixVapor.Expr do
   # Try to parse and evaluate using the OXC AST for complex expressions.
   # Falls back to simple path resolution for basic identifiers.
   defp parse_and_eval(expr, assigns) do
-    case OXC.parse(expr, "e.js") do
-      {:ok, %{body: [%{type: :expression_statement, expression: node}]}} ->
+    case parse(expr) do
+      nil ->
+        :error
+
+      node ->
         try do
           {:ok, eval_node(node, assigns)}
         catch
           :unsupported_node -> :fallback
         end
-
-      _ ->
-        :error
     end
   end
+
+  defp eval_node(%{type: :parenthesized_expression, expression: node}, assigns),
+    do: eval_node(node, assigns)
 
   defp eval_node(%{type: :identifier, name: name}, assigns) do
     get_assign(assigns, name)
@@ -249,8 +260,9 @@ defmodule PhoenixVapor.Expr do
         evaluated_args = Enum.map(args || [], &eval_node(&1, assigns))
         call_method(receiver, method, evaluated_args)
 
+      # A call to a function: QuickBEAM runs it, or reports that it isn't one.
       _ ->
-        nil
+        throw(:unsupported_node)
     end
   end
 
@@ -392,19 +404,63 @@ defmodule PhoenixVapor.Expr do
     ArgumentError -> nil
   end
 
-  defp quickbeam_eval(expr, assigns) do
-    if Code.ensure_loaded?(QuickBEAM) do
-      vars =
-        assigns
-        |> Enum.filter(fn {k, _} -> is_atom(k) and k not in [:__changed__, :__components__] end)
-        |> Map.new(fn {k, v} -> {Atom.to_string(k), v} end)
+  # The globals a Vue template may use, from `GLOBALS_ALLOWED` in @vue/shared.
+  @globals ~w(Infinity undefined NaN isFinite isNaN parseFloat parseInt decodeURI
+              decodeURIComponent encodeURI encodeURIComponent Math Number Date Array
+              Object Boolean String RegExp Map Set JSON Intl BigInt console Error Symbol)
 
-      case QuickBEAM.eval(quickbeam_runtime(), expr, vars: vars) do
-        {:ok, result} -> result
-        _ -> nil
-      end
+  # Every other name the expression reads is defined, as `null` when it isn't
+  # an assign, as Vue resolves an unknown name rather than throwing.
+  defp quickbeam_eval(expr, assigns) do
+    vars =
+      expr
+      |> free_names()
+      |> Enum.reject(&(&1 in @globals))
+      |> Map.new(&{&1, get_assign(assigns, &1)})
+
+    case QuickBEAM.eval(quickbeam_runtime(), expr, vars: vars) do
+      {:ok, result} ->
+        result
+
+      {:error, error} ->
+        raise PhoenixVapor.ExpressionError, expression: expr, reason: Exception.message(error)
     end
   end
+
+  @doc """
+  The free names an expression reads: identifiers, but not property names
+  such as `name` in `user.name` or `{ name: value }`.
+  """
+  @spec free_names(String.t() | map()) :: [String.t()]
+  def free_names(expr) when is_binary(expr) do
+    case OXC.parse(expr, "e.js") do
+      {:ok, ast} -> free_names(ast)
+      _ -> []
+    end
+  end
+
+  def free_names(node), do: node |> collect_names([]) |> Enum.reverse() |> Enum.uniq()
+
+  defp collect_names(%{type: :identifier, name: name}, acc), do: [name | acc]
+
+  defp collect_names(%{type: :member_expression, object: object, property: property} = node, acc) do
+    acc = collect_names(object, acc)
+    if node[:computed], do: collect_names(property, acc), else: acc
+  end
+
+  defp collect_names(%{type: :property, key: key, value: value} = node, acc) do
+    acc = if node[:computed], do: collect_names(key, acc), else: acc
+    collect_names(value, acc)
+  end
+
+  defp collect_names(%{} = node, acc) do
+    node
+    |> Map.drop([:type, :start, :end])
+    |> Enum.reduce(acc, fn {_key, value}, acc -> collect_names(value, acc) end)
+  end
+
+  defp collect_names(list, acc) when is_list(list), do: Enum.reduce(list, acc, &collect_names/2)
+  defp collect_names(_value, acc), do: acc
 
   defp quickbeam_runtime do
     case Process.get(:phoenix_vapor_quickbeam_rt) do

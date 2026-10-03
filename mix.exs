@@ -98,11 +98,11 @@ defmodule PhoenixVapor.MixProject do
   defp deps do
     [
       {:phoenix_live_view, "~> 1.2"},
-      {:vize, "~> 0.16.1"},
+      {:vize, "~> 0.17.0"},
       {:oxc, "~> 0.18.1"},
       {:jason, "~> 1.4"},
       {:quickbeam, "~> 0.11.2", optional: true},
-      {:volt, "~> 0.19.4", runtime: false},
+      {:volt, "~> 0.20.0", runtime: false},
       {:ex_doc, "~> 0.40.3", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

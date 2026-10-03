@@ -34,11 +34,49 @@ PhoenixVapor supports these parts of [Vue's template syntax](https://vuejs.org/g
 
 ### Expressions
 
-Expressions read assigns by name; `user.name` and `items[0]` work on maps and lists. Most expressions are evaluated in Elixir: comparisons, arithmetic, `&&`, `||`, `!`, ternaries, template literals, `.length`, `join` and `includes` on lists, and `trim`, `toUpperCase`, `toLowerCase`, `includes`, `startsWith`, and `endsWith` on strings. Anything else, such as `.filter(...)` with a callback, is evaluated in QuickBEAM.
+Expressions read assigns by name; `user.name` and `items[0]` work on maps and lists. Most expressions are evaluated in Elixir: comparisons, arithmetic, `&&`, `||`, `!`, ternaries, template literals, `.length`, `join` and `includes` on lists, and `trim`, `toUpperCase`, `toLowerCase`, `includes`, `startsWith`, and `endsWith` on strings. Anything else, such as `.filter(...)` with a callback, is evaluated in QuickBEAM, with the [globals Vue allows](https://vuejs.org/guide/essentials/template-syntax.html#restricted-globals-access) such as `Math` and `JSON`. A name that isn't an assign is `null`, as Vue treats an unknown name; an expression that fails, such as a call to something that isn't a function, raises `PhoenixVapor.ExpressionError` with its file, line, and column.
+
+Values display as in Vue: `null` as nothing, and objects and lists as JSON. Attributes follow [Vue's server renderer](https://vuejs.org/guide/scaling-up/ssr.html): `null` and a false boolean attribute such as `disabled` leave the attribute out, and `class` and `style` take objects and arrays.
 
 ### Components
 
-A capitalized tag renders a component from the `__components__` assign, a map from tag name to a function that takes assigns and returns rendered content:
+In a `.vue` file, a component imported from another `.vue` file renders on the server: its template is compiled with the parent's, its [props](https://vuejs.org/guide/components/props.html) become its assigns, [slot](https://vuejs.org/guide/components/slots.html) content renders with the parent's assigns, and other attributes [fall through](https://vuejs.org/guide/components/attrs.html) to its root element, with `class` and `style` merged. Imports resolve as in the browser build, relative to the file or through [Volt aliases](https://hexdocs.pm/volt/features.html) such as `@/`.
+
+```vue
+<script setup>
+import Card from "@/ui/Card.vue"
+</script>
+
+<template>
+  <Card :title="post.title" class="mt-4">
+    <p>{{ post.body }}</p>
+  </Card>
+</template>
+```
+
+The server can't render a component imported from a package, such as a Reka UI primitive: its markup comes from its JavaScript. In hybrid mode it's left out of the first render, with a compile-time warning, and appears when the browser mounts the component. In other modes it's a compile error.
+
+### Macros
+
+A helper imported with the `type: "macro"` [import attribute](https://github.com/tc39/proposal-import-attributes), the convention [Bun](https://bun.sh/docs/bundler/macros) and [unplugin-macros](https://github.com/unplugin/unplugin-macros) use, may run while the template compiles:
+
+```vue
+<script setup lang="ts">
+import { button } from "./variants" with { type: "macro" }
+
+const props = defineProps<{ variant?: "solid" | "ghost" }>()
+</script>
+
+<template>
+  <button :class="button({ variant: props.variant })"><slot /></button>
+</template>
+```
+
+When everything a call reads is known at compile time, such as a prop a parent passes as a constant (`<Button variant="ghost">`) or doesn't pass at all, the call runs once in QuickBEAM and its result is compiled into the template, so rendering runs no JavaScript. This suits variant helpers such as [tailwind-variants](https://www.tailwind-variants.org). A call that depends on a value known only when rendering, such as `:variant="row.variant"`, is a compile error, or a warning in hybrid mode, where the browser renders it. The browser build imports the helper as usual.
+
+### Components from assigns
+
+Elsewhere, such as in `~VUE`, a capitalized tag renders a component from the `__components__` assign, a map from tag name to a function that takes assigns and returns rendered content. Default slot content is passed as `inner_block`:
 
 ```elixir
 assign(socket, __components__: %{"Card" => &MyAppWeb.Components.card/1})
@@ -90,6 +128,23 @@ end
 MyAppWeb.Components.__vue_css_card__()
 # ".card[data-v-7a7a37b1] { ... }"
 ```
+
+## Problems at compile time
+
+Templates compile when the module that uses them does, and problems point into the `.vue` file:
+
+```
+** (CompileError) lib/my_app_web/live/Settings.vue:12: can't parse the expression `user.`
+
+warning: <TabsRoot> is imported from "reka-ui", which the server can't render; the browser renders it when it mounts
+    │
+ 24 │     <TabsRoot v-model="tab">
+    │     ~~~~~~~~~~~~~~~~~~~~~~~~
+    │
+    └─ lib/my_app_web/live/Settings.vue:24: (file)
+```
+
+What the server can't render is a compile error, except in hybrid mode, where the browser renders it once it mounts, so it's a warning: a component from a package, a call to a function `<script setup>` defines or imports, and a [macro](#macros) call that depends on a value known only when rendering.
 
 ## Rendering at runtime
 

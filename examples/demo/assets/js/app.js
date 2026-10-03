@@ -8,11 +8,13 @@ import {getHybridHooks} from "../phoenix_vapor/hybrid-bridge.ts"
 import * as HybridContacts from "./hybrid/HybridContacts.hybrid.js"
 import * as HybridSearch from "./hybrid/HybridSearch.hybrid.js"
 import * as HybridUsers from "./hybrid/HybridUsers.hybrid.js"
+import * as ProjectSettings from "./hybrid/ProjectSettings.hybrid.js"
 
 const hybridHooks = getHybridHooks({
   HybridContacts,
   HybridSearch,
   HybridUsers,
+  ProjectSettings,
 })
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

@@ -28,4 +28,8 @@ defmodule PhoenixVapor.JS do
   @spec stop(t()) :: :ok
   def stop({:runtime, pid}), do: QuickBEAM.stop(pid)
   def stop({:context, pid}), do: QuickBEAM.Context.stop(pid)
+
+  @doc "An edit for `OXC.patch_string/2`: replace bytes `start` to `stop` with `change`."
+  @spec patch(non_neg_integer(), non_neg_integer(), String.t()) :: map()
+  def patch(start, stop, change), do: %{start: start, end: stop, change: change}
 end

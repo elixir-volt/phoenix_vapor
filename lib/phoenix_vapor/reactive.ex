@@ -51,11 +51,7 @@ defmodule PhoenixVapor.Reactive do
 
     desc = Vize.parse_sfc!(source)
 
-    template_content =
-      case desc.template do
-        %{content: c} -> String.trim(c)
-        nil -> raise "No <template> block found in #{file}"
-      end
+    {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
 
     script_content =
       case desc.script_setup do
@@ -63,7 +59,14 @@ defmodule PhoenixVapor.Reactive do
         nil -> nil
       end
 
-    split = template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+    {split, component_files} =
+      PhoenixVapor.Components.compile!(template_content,
+        file: full_path,
+        origin: origin,
+        script: script_content,
+        unrendered: :raise
+      )
+
     escaped_split = Macro.escape(split)
 
     {refs, computeds, functions, function_bodies, _props} =
@@ -85,6 +88,8 @@ defmodule PhoenixVapor.Reactive do
 
     quote do
       import PhoenixVapor.Sigil
+      @external_resource unquote(full_path)
+      for file <- unquote(component_files), do: @external_resource(file)
 
       unquote(mount_ast)
       unquote(render_ast)

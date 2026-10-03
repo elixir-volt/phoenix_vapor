@@ -3,7 +3,7 @@ defmodule PhoenixVapor.Hybrid.WrapperTest do
 
   alias PhoenixVapor.Hybrid.ServerCodegen
 
-  @split Vize.vapor_split!(~s(<p>{{ title }}</p>))
+  @split Vize.split_template!(~s(<p>{{ title }}</p>))
 
   defp render(assigns, component_name \\ "Counter") do
     ServerCodegen.build_rendered(@split, assigns, ["title"], %{}, %{}, component_name)

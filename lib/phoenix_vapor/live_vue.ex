@@ -152,7 +152,7 @@ defmodule PhoenixVapor.LiveVue do
          ]
        }} ->
         OXC.patch_string(code, [
-          %{start: start, end: start, change: "globalThis.__sfc_component = "}
+          PhoenixVapor.JS.patch(start, start, "globalThis.__sfc_component = ")
         ])
 
       _ ->
@@ -173,7 +173,7 @@ defmodule PhoenixVapor.LiveVue do
       inject = "globalThis.__pv_handlers = { #{handler_obj} };\n"
 
       OXC.patch_string(code, [
-        %{start: setup_return_pos, end: setup_return_pos, change: inject}
+        PhoenixVapor.JS.patch(setup_return_pos, setup_return_pos, inject)
       ])
     else
       code
@@ -216,10 +216,15 @@ defmodule PhoenixVapor.LiveVue do
     entry_plugin =
       {PhoenixVapor.LiveVue.EntryPlugin, entry_id: entry_id, source: compiled}
 
-    {:ok, bundle} =
+    # The project's Volt config supplies import aliases such as `@/` and its
+    # plugins, so the component resolves imports as it does in the browser.
+    config = Volt.Config.build()
+
+    result =
       Volt.Builder.bundle(
         entry: PhoenixVapor.LiveVue.EntryPlugin.entry_specifier(),
-        plugins: [entry_plugin],
+        plugins: [entry_plugin | config.plugins],
+        aliases: config.aliases,
         node_modules: find_node_modules(Path.dirname(sfc_path)),
         name: "sfc",
         minify: false,
@@ -228,7 +233,10 @@ defmodule PhoenixVapor.LiveVue do
         external: globals
       )
 
-    bundle.code
+    case result do
+      {:ok, bundle} -> bundle.code
+      {:error, reason} -> raise "Failed to bundle #{sfc_path}: #{inspect(reason)}"
+    end
   end
 
   defp extract_handlers(sfc_source) do

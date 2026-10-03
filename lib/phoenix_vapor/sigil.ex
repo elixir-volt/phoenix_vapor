@@ -3,7 +3,7 @@ defmodule PhoenixVapor.Sigil do
   Provides the `~VUE` sigil for embedding Vue templates in LiveView components.
 
   The Vue template is compiled to a statics/slots split at compile time via
-  `Vize.vapor_split!/1`. At runtime, slots are evaluated against assigns to
+  `Vize.split_template!/1`. At runtime, slots are evaluated against assigns to
   produce a `%Phoenix.LiveView.Rendered{}` struct with per-assign change tracking.
 
   ## Usage
@@ -34,8 +34,16 @@ defmodule PhoenixVapor.Sigil do
 
   Requires `assigns` to be in scope (same as `~H`).
   """
-  defmacro sigil_VUE({:<<>>, _meta, [template]}, _modifiers) do
-    split = template |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+  defmacro sigil_VUE({:<<>>, meta, [template]}, _modifiers) do
+    # A heredoc's content starts on the line after the sigil.
+    origin = {__CALLER__.line + if(meta[:indentation], do: 1, else: 0), 1}
+
+    {split, _files} =
+      PhoenixVapor.Components.compile!(template,
+        file: __CALLER__.file,
+        origin: origin,
+        unrendered: :raise
+      )
 
     quote do
       PhoenixVapor.Renderer.to_rendered(

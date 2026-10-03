@@ -117,13 +117,22 @@ defmodule PhoenixVapor do
     caller_dir = caller.file |> Path.dirname()
     full_path = Path.expand(file, caller_dir)
 
-    template_content =
-      case desc.template do
-        %{content: c} -> String.trim(c)
-        nil -> raise "No <template> block found in #{file}"
+    {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+
+    script_content =
+      case desc.script_setup do
+        %{content: c} -> c
+        nil -> ""
       end
 
-    split = template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+    {split, component_files} =
+      PhoenixVapor.Components.compile!(template_content,
+        file: full_path,
+        origin: origin,
+        script: script_content,
+        unrendered: :raise
+      )
+
     escaped_split = Macro.escape(split)
 
     elixir_block_ast = PhoenixVapor.SFC.elixir_block(desc, full_path)
@@ -132,6 +141,7 @@ defmodule PhoenixVapor do
       import PhoenixVapor.Sigil
       import PhoenixVapor.Component
       @external_resource unquote(full_path)
+      for file <- unquote(component_files), do: @external_resource(file)
 
       def render(var!(assigns)) do
         PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns))
@@ -144,12 +154,12 @@ defmodule PhoenixVapor do
   @doc """
   Render a Vue template as a `%Phoenix.LiveView.Rendered{}` struct.
   """
-  @spec render(String.t() | map(), map()) :: Phoenix.LiveView.Rendered.t()
+  @spec render(String.t() | PhoenixVapor.Template.t(), map()) :: Phoenix.LiveView.Rendered.t()
   def render(template, assigns) when is_binary(template) do
-    render(template |> Vize.vapor_split!() |> Renderer.compile(), assigns)
+    template |> Vize.split_template!() |> Renderer.compile() |> render(assigns)
   end
 
-  def render(%{statics: _, slots: _} = split, assigns) do
-    split |> Renderer.compile() |> Renderer.to_rendered(assigns)
+  def render(%PhoenixVapor.Template{} = template, assigns) do
+    Renderer.to_rendered(template, assigns)
   end
 end

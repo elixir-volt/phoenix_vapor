@@ -11,7 +11,7 @@ defmodule PhoenixVapor.Vue do
         PhoenixVapor.Vue.component :dashboard, "assets/vue/Dashboard.vue"
       end
 
-  This compiles the Vue template at compile time via `Vize.vapor_split!/1`
+  This compiles the Vue template at compile time via `Vize.split_template/2`
   and generates a function component that renders it against assigns.
 
   The SFC's `<template>` block becomes the component. A `<style scoped>`
@@ -30,8 +30,18 @@ defmodule PhoenixVapor.Vue do
     full_path = Path.expand(path, caller_dir)
 
     source = File.read!(full_path)
-    template = extract_template(source)
-    split = template |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile()
+    desc = Vize.parse_sfc!(source)
+    {template, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+    script = (desc.script_setup && desc.script_setup.content) || ""
+
+    {split, component_files} =
+      PhoenixVapor.Components.compile!(template,
+        file: full_path,
+        origin: origin,
+        script: script,
+        unrendered: :raise
+      )
+
     escaped_split = Macro.escape(split)
 
     {scope_id, scoped_css} = scoped_css(source, full_path)
@@ -39,6 +49,9 @@ defmodule PhoenixVapor.Vue do
     css_fn_name = :"__vue_css_#{name}__"
 
     quote do
+      @external_resource unquote(full_path)
+      for file <- unquote(component_files), do: @external_resource(file)
+
       def unquote(css_fn_name)(), do: unquote(scoped_css)
 
       def unquote(name)(var!(assigns)) do
@@ -50,13 +63,6 @@ defmodule PhoenixVapor.Vue do
           rendered
         end
       end
-    end
-  end
-
-  defp extract_template(sfc_source) do
-    case Vize.parse_sfc(sfc_source) do
-      {:ok, %{template: %{content: content}}} -> String.trim(content)
-      _ -> sfc_source
     end
   end
 

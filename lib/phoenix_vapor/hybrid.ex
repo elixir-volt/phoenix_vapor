@@ -30,18 +30,20 @@ defmodule PhoenixVapor.Hybrid do
         nil -> ""
       end
 
-    template_content =
-      case desc.template do
-        %{content: c} -> String.trim(c)
-        nil -> raise "No <template> block found in #{file}"
-      end
+    {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
 
     {refs, computeds, functions, function_bodies, props} =
       PhoenixVapor.ScriptSetup.parse(script_content)
 
     # The client component handles the template's events, so no phx-* attributes.
-    split =
-      template_content |> Vize.vapor_split!() |> PhoenixVapor.Renderer.compile(events: false)
+    {split, component_files} =
+      PhoenixVapor.Components.compile!(template_content,
+        file: full_path,
+        origin: origin,
+        script: script_content,
+        events: false,
+        unrendered: :warn
+      )
 
     template_names = PhoenixVapor.Renderer.assign_keys(split)
 
@@ -64,6 +66,7 @@ defmodule PhoenixVapor.Hybrid do
       @__hybrid_classification__ unquote(escaped_classification)
       @__hybrid_client_js__ unquote(escaped_client_js)
       @external_resource unquote(full_path)
+      for file <- unquote(component_files), do: @external_resource(file)
 
       import PhoenixVapor.Sigil
 
@@ -80,7 +83,9 @@ defmodule PhoenixVapor.Hybrid do
   end
 
   defp generate_client_js(sfc_source, classification, full_path, output_dir) do
-    case ClientCodegen.generate(sfc_source, classification) do
+    codegen_opts = [source_dir: Path.dirname(full_path), output_dir: output_dir]
+
+    case ClientCodegen.generate(sfc_source, classification, codegen_opts) do
       {:ok, js} ->
         if output_dir do
           basename = Path.basename(full_path, ".vue")
