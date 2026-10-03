@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Require vize 0.17, whose `vapor_split` renders a dynamic attribute as a whole slot. `data-vapor-keys` now accompanies `data-vapor-statics` on Reactive templates; the browser code in this release reads it.
+
+### Added
+
+- Components imported from `.vue` files render on the server, in every mode: props, slots and scoped slots, `<slot>` fallbacks, and fallthrough attributes merged into the root element. A component the server can't render, such as one from a package, is a compile error, or a warning in hybrid mode, where it was left out silently.
+- Helpers imported with `with { type: "macro" }` run at compile time when their arguments are known then, so variant helpers such as tailwind-variants cost nothing when rendering.
+- Function components from the `__components__` assign receive default slot content as `inner_block`.
+
+### Fixed
+
+- Dynamic attributes render as Vue's server renderer does: `null` and a false boolean attribute are left out, where `disabled="false"` made an element disabled, and `class` and `style` accept objects and arrays, which raised.
+- A `v-if`, `v-for` or component re-renders when an assign its content reads changes, not only its condition or source.
+- A component prop bound to a list or map keeps its value instead of raising.
+- Relative imports in a hybrid component's client module resolve from where the module is written.
+- Full-runtime components resolve imports through the project's Volt aliases, and a resolution failure raises a readable error.
+- Reactive LiveViews recompile when their `.vue` file changes.
+
 ## 0.4.0 - 2026-10-03
 
 ### Breaking changes
