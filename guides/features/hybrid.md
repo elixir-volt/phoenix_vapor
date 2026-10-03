@@ -45,7 +45,7 @@ defmodule MyAppWeb.ContactsLive do
 end
 ```
 
-A `.vue` file is hybrid when its `<script setup>` declares a `ref()`. Write the script as standard Vue: read props through `props.x` and refs through `.value`.
+A `.vue` file is hybrid when its [`<script setup>`](https://vuejs.org/api/sfc-script-setup.html) declares a [`ref()`](https://vuejs.org/api/reactivity-core.html#ref). Write the script as standard Vue: read [props](https://vuejs.org/guide/components/props.html) through `props.x` and refs through `.value`.
 
 ## What runs where
 

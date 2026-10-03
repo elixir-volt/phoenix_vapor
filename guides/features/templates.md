@@ -22,13 +22,15 @@ The template compiles at compile time to static HTML and dynamic slots. At rende
 
 ### Syntax
 
-- Interpolation: `{{ expr }}`
-- Attributes: `:class="expr"`, `:href="expr"`, and other bound attributes
-- Events: `@click="save"` becomes `phx-click="save"`; handle it with `handle_event/3`
-- Conditionals: `v-if`, `v-else-if`, `v-else`, and `v-show`
-- Lists: `v-for="item in items"` with `:key`
-- Forms: `v-model="name"` binds the value and sends `name_changed` on change
-- Raw HTML: `v-html`
+PhoenixVapor supports these parts of [Vue's template syntax](https://vuejs.org/guide/essentials/template-syntax.html):
+
+- [Interpolation](https://vuejs.org/guide/essentials/template-syntax.html#text-interpolation): `{{ expr }}`
+- [Attributes](https://vuejs.org/guide/essentials/template-syntax.html#attribute-bindings): `:class="expr"`, `:href="expr"`, and other bound attributes
+- [Events](https://vuejs.org/guide/essentials/event-handling.html): `@click="save"` becomes `phx-click="save"`; handle it with `handle_event/3`
+- [Conditionals](https://vuejs.org/guide/essentials/conditional.html): `v-if`, `v-else-if`, `v-else`, and `v-show`
+- [Lists](https://vuejs.org/guide/essentials/list.html): `v-for="item in items"` with `:key`
+- [Forms](https://vuejs.org/guide/essentials/forms.html): `v-model="name"` binds the value and sends `name_changed` on change
+- Raw HTML: [`v-html`](https://vuejs.org/api/built-in-directives.html#v-html)
 
 ### Expressions
 
@@ -73,7 +75,7 @@ A `<script lang="elixir">` block is compiled into the module, so a component can
 
 ## Function components from `.vue` files
 
-`PhoenixVapor.Vue.component/2` defines a function component from a `.vue` file's template. A `<style scoped>` block is compiled too: the root element gets the scope attribute, and the CSS is available from a generated function.
+`PhoenixVapor.Vue.component/2` defines a function component from a [`.vue` file](https://vuejs.org/guide/scaling-up/sfc.html)'s template. A [`<style scoped>`](https://vuejs.org/api/sfc-css-features.html#scoped-css) block is compiled too: the root element gets the scope attribute, and the CSS is available from a generated function.
 
 ```elixir
 defmodule MyAppWeb.Components do

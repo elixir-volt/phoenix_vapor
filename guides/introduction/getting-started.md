@@ -4,7 +4,7 @@
 
 ```elixir
 def deps do
-  [{:phoenix_vapor, "~> 0.3"}]
+  [{:phoenix_vapor, "~> 0.4"}]
 end
 ```
 
@@ -14,13 +14,13 @@ PhoenixVapor brings [Vize](https://hex.pm/packages/vize), which compiles Vue, an
 
 Start with the simplest mode that does what you need:
 
-1. **[`~VUE` templates](../features/templates.md)**: Vue syntax in place of HEEx. Assigns, events, and state stay ordinary LiveView.
-2. **[Server-only `.vue` files](../features/templates.md#vue-files)**: the same, with the template in a `.vue` file.
+1. **[`~VUE` templates](../features/templates.md)**: [Vue syntax](https://vuejs.org/guide/essentials/template-syntax.html) in place of HEEx. Assigns, events, and state stay ordinary LiveView.
+2. **[Server-only `.vue` files](../features/templates.md#vue-files)**: the same, with the template in a [single-file component](https://vuejs.org/guide/scaling-up/sfc.html).
 3. **[Reactive](../features/reactive.md)**: a `.vue` file whose `ref()` state, computeds, and handlers run on the server. The LiveView module can be empty.
 4. **[Hybrid](../features/hybrid.md)**: the server owns the data passed as props, and Vue in the browser owns UI state. Interactions such as filtering and sorting never reach the server.
 5. **[Full runtime](../features/full-runtime.md)**: render Vue component libraries on the server with the complete Vue runtime.
 
-`use PhoenixVapor, file: "X.vue"` picks the mode from the file: a `<script setup>` with `ref()` is hybrid, anything else is server-only. Pass `runtime: :reactive` or `runtime: :full` to choose those.
+`use PhoenixVapor, file: "X.vue"` picks the mode from the file: a [`<script setup>`](https://vuejs.org/api/sfc-script-setup.html) with `ref()` is hybrid, anything else is server-only. Pass `runtime: :reactive` or `runtime: :full` to choose those.
 
 ## Browser setup
 

@@ -1,6 +1,6 @@
 # Full Runtime
 
-The full runtime renders a `.vue` component on the server with the complete Vue runtime in QuickBEAM: `provide`/`inject`, slots, composition, and third-party component libraries such as [Reka UI](https://reka-ui.com). The rendered HTML is sent through LiveView, and events go back to the component's handlers, so the browser runs no Vue.
+The full runtime renders a `.vue` component on the server with the complete Vue runtime in QuickBEAM: [`provide`/`inject`](https://vuejs.org/guide/components/provide-inject.html), [slots](https://vuejs.org/guide/components/slots.html), composition, and third-party component libraries such as [Reka UI](https://reka-ui.com). The rendered HTML is sent through LiveView, and events go back to the component's handlers, so the browser runs no Vue.
 
 ```elixir
 defmodule MyAppWeb.DialogLive do

@@ -1,6 +1,6 @@
 # Reactive Mode
 
-In Reactive mode, a `.vue` file's `<script setup>` runs on the server. Each LiveView gets a QuickBEAM context with Vue's reactivity system loaded: `ref()`s hold the state, `computed()`s derive from it, and functions handle events. No JavaScript reaches the browser.
+In Reactive mode, a `.vue` file's [`<script setup>`](https://vuejs.org/api/sfc-script-setup.html) runs on the server. Each LiveView gets a QuickBEAM context with [Vue's reactivity system](https://vuejs.org/guide/essentials/reactivity-fundamentals.html) loaded: [`ref()`](https://vuejs.org/api/reactivity-core.html#ref)s hold the state, [`computed()`](https://vuejs.org/guide/essentials/computed.html)s derive from it, and functions handle events. No JavaScript reaches the browser.
 
 ```vue
 <script setup>
@@ -31,7 +31,7 @@ PhoenixVapor generates `mount/3`, `render/1`, and a `handle_event/3` clause per 
 
 ## How the script is read
 
-Reactive mode reads refs by name, without `.value`: write `count++` and `count * 2`, not `count.value++`. Each handler runs against copies of the refs, and its results are written back, so Vue's reactivity updates the computeds once per event.
+Unlike standard Vue, Reactive mode reads refs by name, without `.value`: write `count++` and `count * 2`, not `count.value++`. Each handler runs against copies of the refs, and its results are written back, so Vue's reactivity updates the computeds once per event.
 
 - **Refs**: `const name = ref(initial)`. The initial value is a JavaScript expression.
 - **Computeds**: `computed(() => expr)` or `computed(() => { ... return value })`. A computed may read refs and other computeds, in any declaration order.
