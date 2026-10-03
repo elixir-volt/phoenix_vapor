@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-10-03
+
 ### Breaking changes
 
-- Require vize 0.17, whose `Vize.split_template/2` replaces `vapor_split`. It works from Vize's L2 semantic IR instead of scanning Vapor's template HTML, so PhoenixVapor no longer depends on locating elements in generated HTML. `PhoenixVapor.render/2` takes a template string or a `PhoenixVapor.Template`.
+- Require vize 0.17 and Volt 0.20. Vize's `Vize.split_template/2` replaces `vapor_split`. It works from Vize's L2 semantic IR instead of scanning Vapor's template HTML, so PhoenixVapor no longer depends on locating elements in generated HTML. `PhoenixVapor.render/2` takes a template string or a `PhoenixVapor.Template`.
 - Compiled templates are `%PhoenixVapor.Template{}` structs, which inspect as their file and slot count, instead of maps.
 - An expression that fails when rendering, such as a call to something that isn't a function, raises `PhoenixVapor.ExpressionError` with its file, line, and column, where it rendered nothing.
 - A component, function call, or macro call the server can't render is a compile error outside hybrid mode, and a warning in it; it used to render nothing.

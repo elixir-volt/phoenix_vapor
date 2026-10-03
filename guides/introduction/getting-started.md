@@ -4,7 +4,7 @@
 
 ```elixir
 def deps do
-  [{:phoenix_vapor, "~> 0.4"}]
+  [{:phoenix_vapor, "~> 0.5"}]
 end
 ```
 
