@@ -438,8 +438,7 @@ defmodule PhoenixVapor.Renderer.Expr do
   end
 
   @doc """
-  The free names an expression reads: identifiers, but not property names
-  such as `name` in `user.name` or `{ name: value }`.
+  The free names an expression reads; see `PhoenixVapor.JS.FreeNames`.
   """
   @spec free_names(String.t() | map()) :: [String.t()]
   def free_names(expr) when is_binary(expr) do
@@ -449,26 +448,5 @@ defmodule PhoenixVapor.Renderer.Expr do
     end
   end
 
-  def free_names(node), do: node |> collect_names([]) |> Enum.reverse() |> Enum.uniq()
-
-  defp collect_names(%{type: :identifier, name: name}, acc), do: [name | acc]
-
-  defp collect_names(%{type: :member_expression, object: object, property: property} = node, acc) do
-    acc = collect_names(object, acc)
-    if node[:computed], do: collect_names(property, acc), else: acc
-  end
-
-  defp collect_names(%{type: :property, key: key, value: value} = node, acc) do
-    acc = if node[:computed], do: collect_names(key, acc), else: acc
-    collect_names(value, acc)
-  end
-
-  defp collect_names(%{} = node, acc) do
-    node
-    |> Map.drop([:type, :start, :end])
-    |> Enum.reduce(acc, fn {_key, value}, acc -> collect_names(value, acc) end)
-  end
-
-  defp collect_names(list, acc) when is_list(list), do: Enum.reduce(list, acc, &collect_names/2)
-  defp collect_names(_value, acc), do: acc
+  def free_names(node), do: PhoenixVapor.JS.FreeNames.of(node)
 end

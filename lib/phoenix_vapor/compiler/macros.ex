@@ -21,7 +21,7 @@ defmodule PhoenixVapor.Compiler.Macros do
   # can't be folded and is reported.
 
   alias PhoenixVapor.Compiler.{PropTypes, ScriptSetup}
-  alias PhoenixVapor.JS.Session
+  alias PhoenixVapor.JS.{FreeNames, Session}
   alias PhoenixVapor.Template
 
   @max_combinations 64
@@ -126,44 +126,7 @@ defmodule PhoenixVapor.Compiler.Macros do
 
   # The free names an expression reads. `props.x` is reported as such, so a
   # macro call can depend on one prop without depending on all of them.
-  defp refs(node), do: node |> collect_refs([]) |> Enum.reverse()
-
-  defp collect_refs(%{type: :identifier, name: name}, acc), do: [name | acc]
-
-  defp collect_refs(
-         %{
-           type: :member_expression,
-           object: %{type: :identifier, name: "props"},
-           property: %{name: prop},
-           computed: false
-         },
-         acc
-       ),
-       do: ["props." <> prop | acc]
-
-  defp collect_refs(%{type: :member_expression, object: object, property: property} = node, acc) do
-    acc = collect_refs(object, acc)
-    if node[:computed], do: collect_refs(property, acc), else: acc
-  end
-
-  defp collect_refs(%{type: :property, key: key, value: value} = node, acc) do
-    acc = if node[:computed], do: collect_refs(key, acc), else: acc
-    collect_refs(value, acc)
-  end
-
-  # Functions in the expression bind their own names; leave them alone.
-  defp collect_refs(%{type: type}, acc)
-       when type in [:arrow_function_expression, :function_expression],
-       do: ["(function)" | acc]
-
-  defp collect_refs(%{} = node, acc) do
-    node
-    |> Map.drop([:type, :start, :end])
-    |> Enum.reduce(acc, fn {_key, value}, acc -> collect_refs(value, acc) end)
-  end
-
-  defp collect_refs(list, acc) when is_list(list), do: Enum.reduce(list, acc, &collect_refs/2)
-  defp collect_refs(_value, acc), do: acc
+  defp refs(node), do: FreeNames.of(node, props: true)
 
   # ── Folding ──
 
