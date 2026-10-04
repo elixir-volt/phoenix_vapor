@@ -4,7 +4,7 @@ defmodule PhoenixVapor.Template do
   dynamic slots between it, the shape of `%Phoenix.LiveView.Rendered{}`.
 
   A template comes from `Vize.split_template/2` through
-  `PhoenixVapor.Renderer.compile/2`. Its expressions are parsed, and every
+  `PhoenixVapor.Compiler.Split.compile/2`. Its expressions are parsed, and every
   slot's `:position` is `{line, column}` in `:file`. Blocks inside it, such as
   a `v-if` branch, are templates too.
   """
@@ -19,6 +19,30 @@ defmodule PhoenixVapor.Template do
           fingerprint: non_neg_integer() | nil,
           file: Path.t() | nil
         }
+
+  @doc """
+  A template from its statics and compiled slots, with their fingerprint.
+  """
+  @spec new([String.t()], [map()], Path.t() | nil) :: t()
+  def new(statics, slots, file) do
+    %__MODULE__{
+      statics: statics,
+      slots: slots,
+      fingerprint: fingerprint(statics, slots),
+      file: file
+    }
+  end
+
+  @doc """
+  Identifies statics and slots, as the fingerprint of a
+  `%Phoenix.LiveView.Rendered{}` does, so LiveView sends statics only when
+  they change.
+  """
+  @spec fingerprint([String.t()], [map()]) :: non_neg_integer()
+  def fingerprint(statics, slots) do
+    <<fingerprint::8*16>> = [statics | slots] |> :erlang.term_to_binary() |> :erlang.md5()
+    fingerprint
+  end
 
   @doc """
   Maps every expression in a template, threading an accumulator: `fun` gets
@@ -114,6 +138,11 @@ defmodule PhoenixVapor.Template do
       end
 
     {%{slot | props: props, fallback: fallback}, acc}
+  end
+
+  defp map_children(%{kind: :fragment, template: template} = slot, acc, fun) do
+    {template, acc} = map_exprs(template, acc, fun)
+    {%{slot | template: template}, acc}
   end
 
   defp map_children(%{kind: :root_attrs} = slot, acc, fun) do

@@ -3,13 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./priv/ts/live-socket.ts",
-    "./hybrid": "./priv/ts/hybrid-bridge.ts",
-    "./vapor-patch": "./priv/ts/vapor-patch.ts"
+    ".": "./priv/ts/browser/live-socket.ts",
+    "./hybrid": "./priv/ts/browser/hybrid-bridge.ts",
+    "./vapor-patch": "./priv/ts/browser/vapor-patch.ts"
   },
   "devDependencies": {
     "oxlint-tsgolint": "0.22.1",
     "reka-ui": "^2.10.3",
+    "typescript": "^5.9.3",
     "vue": "^3.5.41"
   }
 }

@@ -17,9 +17,7 @@ defmodule PhoenixVapor.Hybrid do
   alias PhoenixVapor.Hybrid.{Classifier, ServerCodegen, ClientCodegen}
 
   defmacro __using__(opts) do
-    file = Keyword.fetch!(opts, :file)
-    caller_dir = __CALLER__.file |> Path.dirname()
-    full_path = Path.expand(file, caller_dir)
+    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.Compiler.SFC.path!(__CALLER__)
     sfc_source = File.read!(full_path)
 
     desc = Vize.parse_sfc!(sfc_source)
@@ -30,19 +28,25 @@ defmodule PhoenixVapor.Hybrid do
         nil -> ""
       end
 
-    {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+    {template_content, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
 
     {refs, computeds, functions, function_bodies, props} =
-      PhoenixVapor.ScriptSetup.parse(script_content)
+      PhoenixVapor.Compiler.ScriptSetup.parse(script_content)
 
     # The client component handles the template's events, so no phx-* attributes.
     {split, component_files} =
-      PhoenixVapor.Components.compile!(template_content,
+      PhoenixVapor.Compiler.compile!(template_content,
         file: full_path,
         origin: origin,
         script: script_content,
+        elixir: {__CALLER__.module, PhoenixVapor.Compiler.SFC.elixir_functions(desc, full_path)},
         events: false,
-        unrendered: :warn
+        unrendered: :warn,
+        # The browser's first render uses the refs' initial values, so package
+        # components can render with them on the server too.
+        known: initial_values(refs),
+        # The browser takes over, so package components render as they look.
+        fold: :all
       )
 
     template_names = PhoenixVapor.Renderer.assign_keys(split)
@@ -50,14 +54,14 @@ defmodule PhoenixVapor.Hybrid do
     classification =
       Classifier.classify(refs, computeds, functions, function_bodies, props, template_names)
 
-    component_name = Path.basename(file, ".vue")
+    component_name = Path.basename(full_path, ".vue")
     render_ast = ServerCodegen.gen_render(split, classification, props, computeds, component_name)
     event_asts = ServerCodegen.gen_handle_events(classification)
 
-    client_output_dir = Keyword.get(opts, :client_output, default_client_output(caller_dir))
+    client_output_dir = Keyword.get(opts, :client_output, default_client_output())
     client_js = generate_client_js(sfc_source, classification, full_path, client_output_dir)
 
-    elixir_block_ast = PhoenixVapor.SFC.elixir_block(desc, full_path)
+    elixir_block_ast = PhoenixVapor.Compiler.SFC.elixir_block(desc, full_path)
 
     escaped_classification = Macro.escape(classification)
     escaped_client_js = Macro.escape(client_js)
@@ -101,7 +105,13 @@ defmodule PhoenixVapor.Hybrid do
     end
   end
 
-  defp default_client_output(_caller_dir) do
+  defp initial_values(refs) do
+    refs
+    |> PhoenixVapor.Compiler.ScriptSetup.eval_initial_state()
+    |> Map.new(fn {name, value} -> {to_string(name), value} end)
+  end
+
+  defp default_client_output do
     project_root = File.cwd!()
     assets_dir = Path.join(project_root, "assets/js/hybrid")
 

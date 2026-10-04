@@ -1,11 +1,13 @@
 defmodule PhoenixVapor.Integration.Hybrid.SingleFileTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   @moduletag :integration
 
   defmodule FruitsLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../../fixtures/HybridSingleFile.vue", client_output: nil
+    use PhoenixVapor, file: Fixtures.path("HybridSingleFile.vue"), client_output: nil
   end
 
   describe "elixir block: mount" do

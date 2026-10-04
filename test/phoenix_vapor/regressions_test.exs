@@ -1,12 +1,14 @@
 defmodule PhoenixVapor.RegressionsTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen}
 
   describe "attributes injected into the root tag" do
     defmodule Scoped do
       require PhoenixVapor.Vue
-      PhoenixVapor.Vue.component(:card, "../fixtures/ScopedTitle.vue")
+      PhoenixVapor.Vue.component(:card, Fixtures.path("ScopedTitle.vue"))
     end
 
     test "the scope attribute matches the CSS and survives > in attribute values" do
@@ -31,9 +33,9 @@ defmodule PhoenixVapor.RegressionsTest do
   end
 
   test "the client module leaves out a <script lang=\"elixir\"> after <script setup>" do
-    sfc = File.read!("test/fixtures/ElixirAfterSetup.vue")
+    sfc = File.read!(Fixtures.path("ElixirAfterSetup.vue"))
     %{script_setup: %{content: script}} = Vize.parse_sfc!(sfc)
-    {refs, computeds, functions, bodies, props} = PhoenixVapor.ScriptSetup.parse(script)
+    {refs, computeds, functions, bodies, props} = PhoenixVapor.Compiler.ScriptSetup.parse(script)
 
     {:ok, js} =
       ClientCodegen.generate(sfc, Classifier.classify(refs, computeds, functions, bodies, props))
@@ -47,17 +49,17 @@ defmodule PhoenixVapor.RegressionsTest do
       Code.compile_quoted(
         quote do
           defmodule PhoenixVapor.RegressionsTest.Typo do
-            use PhoenixVapor, file: "test/fixtures/Counter.vue", runtime: :ful
+            use PhoenixVapor, file: Fixtures.path("Counter.vue"), runtime: :ful
           end
         end
       )
     end
   end
 
-  test "LiveVue.unwrap!/1 raises the JavaScript error itself" do
+  test "Full.unwrap!/1 raises the JavaScript error itself" do
     error = %QuickBEAM.JSError{message: "boom", name: "TypeError"}
-    assert_raise QuickBEAM.JSError, fn -> PhoenixVapor.LiveVue.unwrap!({:error, error}) end
-    assert PhoenixVapor.LiveVue.unwrap!({:ok, "<p></p>"}) == "<p></p>"
+    assert_raise QuickBEAM.JSError, fn -> PhoenixVapor.Full.unwrap!({:error, error}) end
+    assert PhoenixVapor.Full.unwrap!({:ok, "<p></p>"}) == "<p></p>"
   end
 
   describe "hybrid props" do
@@ -67,7 +69,7 @@ defmodule PhoenixVapor.RegressionsTest do
             ~s|const props = defineProps({ users: Array, title: { type: String } })|,
             ~s|const props = defineProps<{ users: string[]; title?: string }>()|
           ] do
-        assert {_, _, _, _, ["users", "title"]} = PhoenixVapor.ScriptSetup.parse(script)
+        assert {_, _, _, _, ["users", "title"]} = PhoenixVapor.Compiler.ScriptSetup.parse(script)
       end
     end
 
@@ -105,7 +107,7 @@ defmodule PhoenixVapor.RegressionsTest do
         |> Phoenix.HTML.Safe.to_iodata()
         |> IO.iodata_to_binary())
 
-    assert html.(PhoenixVapor.Renderer.compile(split)) == html.(split)
+    assert html.(PhoenixVapor.Compiler.Split.compile(split)) == html.(split)
     assert html.(split) =~ "A many"
     assert html.(split) =~ "1 with many"
   end
@@ -151,7 +153,7 @@ defmodule PhoenixVapor.RegressionsTest do
       split =
         ~S|<button @click="pick(c)">{{ label }}</button>|
         |> Vize.split_template!()
-        |> PhoenixVapor.Renderer.compile(events: false)
+        |> PhoenixVapor.Compiler.Split.compile(events: false)
 
       refute Enum.join(split.statics) =~ "phx-"
     end
@@ -177,7 +179,9 @@ defmodule PhoenixVapor.RegressionsTest do
 
   test "change tracking still skips slots whose assigns didn't change" do
     split =
-      "<p>{{ a }}</p><b>{{ b }}</b>" |> Vize.split_template!() |> PhoenixVapor.Renderer.compile()
+      "<p>{{ a }}</p><b>{{ b }}</b>"
+      |> Vize.split_template!()
+      |> PhoenixVapor.Compiler.Split.compile()
 
     rendered = PhoenixVapor.Renderer.to_rendered(split, %{a: 1, b: 2, __changed__: %{b: true}})
 

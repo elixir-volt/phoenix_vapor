@@ -1,16 +1,18 @@
 defmodule PhoenixVapor.Integration.HybridTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   @moduletag :integration
 
   defmodule SimpleLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/Hybrid.vue", client_output: nil
+    use PhoenixVapor, file: Fixtures.path("Hybrid.vue"), client_output: nil
   end
 
   defmodule ContactsLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/HybridContacts.vue", client_output: nil
+    use PhoenixVapor, file: Fixtures.path("HybridContacts.vue"), client_output: nil
   end
 
   @contacts [

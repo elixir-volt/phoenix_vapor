@@ -1,13 +1,13 @@
 defmodule PhoenixVapor.DiagnosticsTest do
   use ExUnit.Case, async: true
 
-  import ExUnit.CaptureIO
+  alias PhoenixVapor.Fixtures
 
-  @fixtures Path.expand("../fixtures/diagnostics", __DIR__)
+  import ExUnit.CaptureIO
 
   defmodule RenderErrorLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../fixtures/diagnostics/RenderError.vue"
+    use PhoenixVapor, file: Fixtures.path("diagnostics/RenderError.vue")
   end
 
   defp html(rendered), do: rendered |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
@@ -17,11 +17,11 @@ defmodule PhoenixVapor.DiagnosticsTest do
       assert_raise CompileError, fn ->
         defmodule ParseErrorLive do
           use Phoenix.LiveView
-          use PhoenixVapor, file: "../fixtures/diagnostics/ParseError.vue"
+          use PhoenixVapor, file: Fixtures.path("diagnostics/ParseError.vue")
         end
       end
 
-    assert error.file == Path.join(@fixtures, "ParseError.vue")
+    assert error.file == Fixtures.path("diagnostics/ParseError.vue")
     assert error.line == 3
     assert Exception.message(error) =~ "can't parse the expression `a +`"
   end
@@ -31,7 +31,7 @@ defmodule PhoenixVapor.DiagnosticsTest do
       capture_io(:stderr, fn ->
         defmodule DirectiveLive do
           use Phoenix.LiveView
-          use PhoenixVapor, file: "../fixtures/diagnostics/Directive.vue", client_output: nil
+          use PhoenixVapor, file: Fixtures.path("diagnostics/Directive.vue"), client_output: nil
         end
       end)
 
@@ -45,7 +45,7 @@ defmodule PhoenixVapor.DiagnosticsTest do
         %{title: "Hi"} |> RenderErrorLive.render() |> html()
       end
 
-    assert error.file == Path.join(@fixtures, "RenderError.vue")
+    assert error.file == Fixtures.path("diagnostics/RenderError.vue")
     assert error.position == {8, 11}
     assert Exception.message(error) =~ "RenderError.vue:8:11: can't evaluate `missing()`"
   end
@@ -55,7 +55,7 @@ defmodule PhoenixVapor.DiagnosticsTest do
       assert_raise CompileError, fn ->
         defmodule ScriptFunctionLive do
           use Phoenix.LiveView
-          use PhoenixVapor, file: "../fixtures/diagnostics/ScriptFunction.vue"
+          use PhoenixVapor, file: Fixtures.path("diagnostics/ScriptFunction.vue")
         end
       end
 
@@ -69,7 +69,7 @@ defmodule PhoenixVapor.DiagnosticsTest do
     template =
       "<p>{{ a }}</p>"
       |> Vize.split_template!()
-      |> PhoenixVapor.Renderer.compile(file: "Card.vue")
+      |> PhoenixVapor.Compiler.Split.compile(file: "Card.vue")
 
     assert inspect(template) == "#PhoenixVapor.Template<Card.vue, 1 slot>"
   end

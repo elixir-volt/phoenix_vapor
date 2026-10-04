@@ -7,9 +7,12 @@ defmodule PhoenixVapor.Vue do
       defmodule MyAppWeb.Components do
         use Phoenix.Component
 
-        PhoenixVapor.Vue.component :card, "assets/vue/Card.vue"
-        PhoenixVapor.Vue.component :dashboard, "assets/vue/Dashboard.vue"
+        PhoenixVapor.Vue.component :card, "vue/Card.vue"
+        PhoenixVapor.Vue.component :dashboard, "vue/Dashboard.vue"
       end
+
+  The path is relative to the module's file, and can be any expression known
+  at compile time, such as `Path.join(@templates, "Card.vue")`.
 
   This compiles the Vue template at compile time via `Vize.split_template/2`
   and generates a function component that renders it against assigns.
@@ -26,16 +29,15 @@ defmodule PhoenixVapor.Vue do
   the `data-v-*` scope attribute into the root element.
   """
   defmacro component(name, path) do
-    caller_dir = __CALLER__.file |> Path.dirname()
-    full_path = Path.expand(path, caller_dir)
+    full_path = PhoenixVapor.Compiler.SFC.path!(path, __CALLER__)
 
     source = File.read!(full_path)
     desc = Vize.parse_sfc!(source)
-    {template, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+    {template, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
     script = (desc.script_setup && desc.script_setup.content) || ""
 
     {split, component_files} =
-      PhoenixVapor.Components.compile!(template,
+      PhoenixVapor.Compiler.compile!(template,
         file: full_path,
         origin: origin,
         script: script,

@@ -46,7 +46,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     ref_values =
       classification
       |> extract_ref_defaults()
-      |> PhoenixVapor.ScriptSetup.eval_initial_state()
+      |> PhoenixVapor.Compiler.ScriptSetup.eval_initial_state()
 
     escaped_ref_values = Macro.escape(ref_values)
 
@@ -168,7 +168,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   defp seed_props_alias(assigns, client_props) do
     props_map =
       Enum.reduce(client_props, %{}, fn prop, acc ->
-        key = if is_atom(prop), do: prop, else: PhoenixVapor.Names.existing(prop)
+        key = if is_atom(prop), do: prop, else: PhoenixVapor.Renderer.Names.existing(prop)
         value = Map.get(assigns, key, Map.get(assigns, prop))
         Map.put(acc, prop, value)
       end)
@@ -242,7 +242,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   defp encode_client_props(assigns, client_props) do
     client_props
     |> Map.new(fn prop ->
-      key = if is_atom(prop), do: prop, else: PhoenixVapor.Names.existing(prop)
+      key = if is_atom(prop), do: prop, else: PhoenixVapor.Renderer.Names.existing(prop)
       value = Map.get(assigns, key, Map.get(assigns, prop))
       {prop, value}
     end)

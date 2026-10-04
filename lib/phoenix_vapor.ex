@@ -68,7 +68,7 @@ defmodule PhoenixVapor do
 
   defp do_use_file(_file, :full, opts, _caller) do
     quote do
-      use PhoenixVapor.LiveVue, unquote(opts)
+      use PhoenixVapor.Full, unquote(opts)
     end
   end
 
@@ -85,8 +85,7 @@ defmodule PhoenixVapor do
   end
 
   defp do_use_file(file, nil, opts, caller) do
-    caller_dir = caller.file |> Path.dirname()
-    full_path = Path.expand(file, caller_dir)
+    full_path = PhoenixVapor.Compiler.SFC.path!(file, caller)
     sfc_source = File.read!(full_path)
 
     desc = Vize.parse_sfc!(sfc_source)
@@ -98,26 +97,23 @@ defmodule PhoenixVapor do
       end
 
     {refs, _computeds, _functions, _function_bodies, _props} =
-      PhoenixVapor.ScriptSetup.parse(script_content)
+      PhoenixVapor.Compiler.ScriptSetup.parse(script_content)
 
     has_client_state = map_size(refs) > 0
 
     if has_client_state do
-      all_opts = Keyword.put(opts, :file, file)
+      all_opts = Keyword.put(opts, :file, full_path)
 
       quote do
         use PhoenixVapor.Hybrid, unquote(all_opts)
       end
     else
-      do_use_server_only(file, desc, caller)
+      do_use_server_only(full_path, desc, caller)
     end
   end
 
-  defp do_use_server_only(file, desc, caller) do
-    caller_dir = caller.file |> Path.dirname()
-    full_path = Path.expand(file, caller_dir)
-
-    {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+  defp do_use_server_only(full_path, desc, caller) do
+    {template_content, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
 
     script_content =
       case desc.script_setup do
@@ -126,16 +122,17 @@ defmodule PhoenixVapor do
       end
 
     {split, component_files} =
-      PhoenixVapor.Components.compile!(template_content,
+      PhoenixVapor.Compiler.compile!(template_content,
         file: full_path,
         origin: origin,
         script: script_content,
+        elixir: {caller.module, PhoenixVapor.Compiler.SFC.elixir_functions(desc, full_path)},
         unrendered: :raise
       )
 
     escaped_split = Macro.escape(split)
 
-    elixir_block_ast = PhoenixVapor.SFC.elixir_block(desc, full_path)
+    elixir_block_ast = PhoenixVapor.Compiler.SFC.elixir_block(desc, full_path)
 
     quote do
       import PhoenixVapor.Sigil
@@ -156,7 +153,7 @@ defmodule PhoenixVapor do
   """
   @spec render(String.t() | PhoenixVapor.Template.t(), map()) :: Phoenix.LiveView.Rendered.t()
   def render(template, assigns) when is_binary(template) do
-    template |> Vize.split_template!() |> Renderer.compile() |> render(assigns)
+    template |> Vize.split_template!() |> PhoenixVapor.Compiler.Split.compile() |> render(assigns)
   end
 
   def render(%PhoenixVapor.Template{} = template, assigns) do

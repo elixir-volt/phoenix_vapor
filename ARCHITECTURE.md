@@ -41,7 +41,7 @@ Expressions evaluate in Elixir. Events map to `phx-click`, `phx-submit`, etc. Th
 Server-side Vue reactivity via QuickBEAM. Zero client JS.
 
 ```
-SFC → ScriptSetup.parse → Runtime (GenServer + QuickBEAM)
+SFC → Compiler.ScriptSetup.parse → Reactive.Runtime (GenServer + QuickBEAM)
     → Template → %Rendered{} with reactive state from JS runtime
 ```
 
@@ -105,7 +105,7 @@ All standard LiveView callbacks work: `mount/3`, `handle_info/2`, `handle_params
 Third-party Vue component libraries rendered server-side in QuickBEAM.
 
 ```
-SFC + bundle → VueRuntime (GenServer + QuickBEAM + lexbor DOM)
+SFC + bundle → Full.Runtime (GenServer + QuickBEAM + lexbor DOM)
              → HTML string → %Rendered{} → LiveView diff
 ```
 
@@ -113,37 +113,51 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 
 ## Module Map
 
-### Template / Render
-- `PhoenixVapor` — main entry, `__using__` macro
+### Public
+- `PhoenixVapor` — `use PhoenixVapor`, which picks the mode from the `.vue` file, and `render/2`
 - `PhoenixVapor.Sigil` — `~VUE` sigil
-- `PhoenixVapor.Renderer` — Vapor IR → `%Rendered{}`
-- `PhoenixVapor.Expr` — JS expression evaluation in Elixir
-- `PhoenixVapor.Component` — component helpers
-- `PhoenixVapor.Vue` — `.vue` file loading
+- `PhoenixVapor.Component` — the `vue/1` helper for function components
+- `PhoenixVapor.Vue` — `.vue` files as function components
+- `PhoenixVapor.Template` — a compiled template
+- `PhoenixVapor.ExpressionError` — an expression that fails when rendering
+- `PhoenixVapor.Volt` — Volt plugin resolving `phoenix_vapor` imports from a path or umbrella dependency
 
-### Reactive
-- `PhoenixVapor.Reactive` — server-side reactivity implementation
-- `PhoenixVapor.Runtime` — QuickBEAM GenServer for reactive state
-- `PhoenixVapor.ScriptSetup` — `<script setup>` parsing
+### Compiler
+- `PhoenixVapor.Compiler` — compiles a template and resolves the components it uses
+- `PhoenixVapor.Compiler.Split` — `Vize.split_template/2` output → `PhoenixVapor.Template`
+- `PhoenixVapor.Compiler.SFC` — `.vue` file paths, the `<template>` block, `<script lang="elixir">`
+- `PhoenixVapor.Compiler.ScriptSetup` — what `<script setup>` declares
+- `PhoenixVapor.Compiler.Macros` — `with { type: "macro" }` calls run at compile time
+- `PhoenixVapor.Compiler.PropTypes` — prop types from TypeScript's checker, for macro calls
+- `PhoenixVapor.Compiler.Packages` — package components rendered with Vue's server renderer at compile time
 
-### Hybrid
-- `PhoenixVapor.Hybrid` — split reactivity implementation
+### Renderer
+- `PhoenixVapor.Renderer` — `PhoenixVapor.Template` → `%Rendered{}`
+- `PhoenixVapor.Renderer.Expr` — JS expression evaluation in Elixir
+- `PhoenixVapor.Renderer.Attrs` — dynamic attributes as Vue's server renderer writes them
+- `PhoenixVapor.Renderer.Names` — atoms for declared names, never created while rendering
+
+### Modes
+- `PhoenixVapor.Reactive` — reactive mode
+- `PhoenixVapor.Reactive.Runtime` — QuickBEAM GenServer for reactive state
+- `PhoenixVapor.Hybrid` — hybrid mode
 - `PhoenixVapor.Hybrid.Classifier` — binding classification via AST
 - `PhoenixVapor.Hybrid.ServerCodegen` — Elixir code generation
 - `PhoenixVapor.Hybrid.ClientCodegen` — Vue 3 JS generation
+- `PhoenixVapor.Full` — the full runtime (`runtime: :full`)
+- `PhoenixVapor.Full.Runtime` — QuickBEAM GenServer for the full Vue runtime
 
-### Full Runtime
-- `PhoenixVapor.LiveVue` — full Vue runtime (runtime: :full)
-- `PhoenixVapor.VueRuntime` — QuickBEAM GenServer for full Vue
-
-### Shared
-- `PhoenixVapor.JS` — a QuickBEAM runtime, or a context on a configured pool
-- `PhoenixVapor.SFC` — `<script lang="elixir">` extraction
-- `PhoenixVapor.LiveVue.EntryPlugin` — Volt plugin serving the full runtime's entry module
+### JavaScript
+- `PhoenixVapor.JS` — QuickBEAM runtimes and contexts, `priv/ts` templates, and bundling with Volt
+- `PhoenixVapor.JS.EntryPlugin` — Volt plugin serving a generated entry module
 - `Mix.Tasks.PhoenixVapor.Bundle` — bundles a Vue component library for the full runtime
 
 ### TypeScript (`priv/ts`)
-- `reactive-runtime.ts` — reactive mode's runtime in QuickBEAM, bundled with the vendored `@vue/reactivity` at compile time
-- `live-socket.ts` — `patchLiveSocket`, direct DOM writes for value-only diffs (`phoenix_vapor`)
-- `vapor-patch.ts` — slot analysis and DOM writes behind it (`phoenix_vapor/vapor-patch`)
-- `hybrid-bridge.ts` — LiveView hook for hybrid components (`phoenix_vapor/hybrid`)
+- `reactive/runtime.ts` — reactive mode's runtime in QuickBEAM, bundled with the vendored `@vue/reactivity` at compile time
+- `browser/live-socket.ts` — `patchLiveSocket`, direct DOM writes for value-only diffs (`phoenix_vapor`)
+- `browser/vapor-patch.ts` — slot analysis and DOM writes behind it (`phoenix_vapor/vapor-patch`)
+- `browser/hybrid-bridge.ts` — LiveView hook for hybrid components (`phoenix_vapor/hybrid`)
+- `compile/packages.ts` — renders package components with `vue/server-renderer`, for `PhoenixVapor.Compiler.Packages`
+- `compile/prop-types.ts` — prop types from TypeScript's checker, for `PhoenixVapor.Compiler.PropTypes`
+- `compile/macros/entry.ts`, `compile/macros/call.ts` — load macro modules and evaluate a call
+- `compile/globals.d.ts` — the placeholders and globals those share

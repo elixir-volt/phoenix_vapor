@@ -54,7 +54,37 @@ import Card from "@/ui/Card.vue"
 </template>
 ```
 
-The server can't render a component imported from a package, such as a Reka UI primitive: its markup comes from its JavaScript. In hybrid mode it's left out of the first render, with a compile-time warning, and appears when the browser mounts the component. In other modes it's a compile error.
+### Components from packages
+
+A component from a package, such as a [Reka UI](https://reka-ui.com) primitive, gets its markup from its JavaScript. In a hybrid component, when everything it receives is known at compile time, Vue's [server renderer](https://vuejs.org/guide/scaling-up/ssr.html) runs it once in QuickBEAM while the template compiles, and its HTML becomes part of the template. Rendering then runs no JavaScript.
+
+```vue
+<script setup>
+import { ref } from "vue"
+import { TooltipProvider, TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui"
+
+const tab = ref("general")
+</script>
+
+<template>
+  <TooltipProvider>
+    <TabsRoot v-model="tab">
+      <TabsList>
+        <TabsTrigger value="general">General</TabsTrigger>
+      </TabsList>
+      <TabsContent value="general"><p>{{ project.name }}</p></TabsContent>
+    </TabsRoot>
+  </TooltipProvider>
+</template>
+```
+
+`TooltipProvider` renders only its content, and the Tabs render with Reka's markup and ARIA attributes. Package components inside one another render together, so parts such as `TabsList` get their parent's context. The template's own content inside them, such as `{{ project.name }}`, stays dynamic. So does a `v-for` or `v-if` of the template's own: a package part inside it, such as a `TooltipRoot` per row, renders once in its ancestors' context, and the loop repeats that markup.
+
+This is for [hybrid mode](hybrid.md), where the server renders the first paint and Vue takes over in the browser. Known values are static props, literals, [macro](#macros) results, the initial values of refs, which the browser renders first too, and expressions of those, such as `:open="selected !== null"` while `selected` starts as `null`.
+
+In other modes nothing takes over in the browser, so frozen markup from a component with behavior, such as tabs whose triggers never switch, would look interactive and do nothing. There, a package component renders only when it renders just its content, as a provider such as `TooltipProvider` does, and any other is a compile error.
+
+A package component that receives a value known only when rendering, such as `:open="row.open"` inside a `v-for`, or that passes props to its slot content, can't render on the server. In hybrid mode it's left out of the first render, with a compile-time warning that says why, and appears when the browser mounts the component. In other modes it's a compile error.
 
 ### Macros
 
@@ -72,7 +102,20 @@ const props = defineProps<{ variant?: "solid" | "ghost" }>()
 </template>
 ```
 
-When everything a call reads is known at compile time, such as a prop a parent passes as a constant (`<Button variant="ghost">`) or doesn't pass at all, the call runs once in QuickBEAM and its result is compiled into the template, so rendering runs no JavaScript. This suits variant helpers such as [tailwind-variants](https://www.tailwind-variants.org). A call that depends on a value known only when rendering, such as `:variant="row.variant"`, is a compile error, or a warning in hybrid mode, where the browser renders it. The browser build imports the helper as usual.
+When everything a call reads is known at compile time, such as a prop a parent passes as a constant (`<Button variant="ghost">`) or doesn't pass at all, the call runs once in QuickBEAM and its result is compiled into the template, so rendering runs no JavaScript. This suits variant helpers such as [tailwind-variants](https://www.tailwind-variants.org). The browser build imports the helper as usual.
+
+When a call reads props known only when rendering, such as `<Button :variant="row.variant">`, and their TypeScript types are finite sets of literals, the call runs once for each combination of values, up to 64, and rendering looks the result up. The types are resolved with TypeScript's own checker from the project's `node_modules`, so a type derived from a variants config works too:
+
+```vue
+<script setup lang="ts">
+import { badge, type BadgeProps } from "./variants" with { type: "macro" }
+
+// "neutral" | "success" | "warning" | "danger"
+const props = defineProps<{ tone?: BadgeProps["tone"] }>()
+</script>
+```
+
+A value outside the type raises `PhoenixVapor.ExpressionError` when rendering. A call that depends on anything else, such as a prop typed `string`, is a compile error, or a warning in hybrid mode, where the browser renders it.
 
 ### Components from assigns
 
@@ -88,7 +131,7 @@ assign(socket, __components__: %{"Card" => &MyAppWeb.Components.card/1})
 
 ## `.vue` files
 
-`use PhoenixVapor, file: "Dashboard.vue"` makes a `.vue` file the LiveView's template. The path is relative to the module's file. Without `ref()` in `<script setup>`, the file is server-only: `render/1` comes from the template, and the rest of the LiveView is your Elixir.
+`use PhoenixVapor, file: "Dashboard.vue"` makes a `.vue` file the LiveView's template. The path is relative to the module's file, and can be any expression known at compile time, such as `Path.join(@templates, "Dashboard.vue")`. Without `ref()` in `<script setup>`, the file is server-only: `render/1` comes from the template, and the rest of the LiveView is your Elixir.
 
 ```vue
 <!-- lib/my_app_web/live/Dashboard.vue -->
@@ -110,6 +153,30 @@ end
 ```
 
 A `<script lang="elixir">` block is compiled into the module, so a component can live in a single file; see [Hybrid mode](hybrid.md#single-file-components).
+
+### Script functions on the server
+
+A function `<script setup>` defines is JavaScript, which the server doesn't run. When the template calls one, define the same function in `<script lang="elixir">`, named in snake_case with the same arity, and the server calls it instead:
+
+```vue
+<script setup lang="ts">
+function roleTone(role: string) {
+  return role === "owner" ? "warning" : role === "admin" ? "success" : "neutral"
+}
+</script>
+
+<script lang="elixir">
+def role_tone("owner"), do: "warning"
+def role_tone("admin"), do: "success"
+def role_tone(_role), do: "neutral"
+</script>
+
+<template>
+  <Badge v-for="member in members" :tone="roleTone(member.role)">{{ member.role }}</Badge>
+</template>
+```
+
+The server renders `roleTone(member.role)` with `role_tone/1`, and in hybrid mode the browser runs `roleTone` once it mounts, so the two should agree. Without an Elixir function, the call is reported, as below, with the name to define.
 
 ## Function components from `.vue` files
 
@@ -144,7 +211,7 @@ warning: <TabsRoot> is imported from "reka-ui", which the server can't render; t
     └─ lib/my_app_web/live/Settings.vue:24: (file)
 ```
 
-What the server can't render is a compile error, except in hybrid mode, where the browser renders it once it mounts, so it's a warning: a component from a package, a call to a function `<script setup>` defines or imports, and a [macro](#macros) call that depends on a value known only when rendering.
+What the server can't render is a compile error, except in hybrid mode, where the browser renders it once it mounts, so it's a warning: a [component from a package](#components-from-packages) that can't render on the server, a call to a function `<script setup>` defines or imports, unless `<script lang="elixir">` defines it for the [server](#script-functions-on-the-server), and a [macro](#macros) call that depends on a value known only when rendering.
 
 ## Rendering at runtime
 

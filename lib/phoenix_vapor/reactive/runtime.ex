@@ -1,0 +1,90 @@
+defmodule PhoenixVapor.Reactive.Runtime do
+  @moduledoc false
+
+  # Reactive mode's Vue reactivity in QuickBEAM, one per LiveView process:
+  # `ref()` values are state, `computed()` values update when what they read
+  # changes, and handlers run against the refs. With a `QuickBEAM.ContextPool`
+  # configured as `config :phoenix_vapor, pool: MyApp.JSPool`, each runtime is
+  # a context on the pool's threads rather than its own runtime.
+
+  use GenServer
+
+  alias PhoenixVapor.JS
+
+  @runtime_ts {:phoenix_vapor, "ts"}
+  @external_resource Volt.Priv.path(@runtime_ts, "reactive/runtime.ts")
+  @external_resource Volt.Priv.path(@runtime_ts, "npm.lock")
+  @runtime_js Volt.Priv.bundle!(@runtime_ts, "reactive/runtime.ts",
+                define: %{"process.env.NODE_ENV" => ~s("production")}
+              )
+
+  # ── Public API ──
+
+  def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
+
+  def get_state(runtime), do: GenServer.call(runtime, :get_state)
+
+  def call_handler(runtime, function_name, params \\ %{}),
+    do: GenServer.call(runtime, {:call_handler, function_name, params})
+
+  def set_state(runtime, updates) when is_map(updates),
+    do: GenServer.call(runtime, {:set_state, updates})
+
+  # ── GenServer callbacks ──
+
+  @impl true
+  def init(opts) do
+    pool = Keyword.get(opts, :pool) || Application.get_env(:phoenix_vapor, :pool)
+
+    config = %{
+      refs: Keyword.get(opts, :refs, %{}),
+      computeds: Keyword.get(opts, :computeds, %{}),
+      functions: build_functions_map(opts)
+    }
+
+    case setup_runtime(config, pool) do
+      {:ok, js} -> {:ok, %{js: js}}
+      {:error, reason} -> {:stop, reason}
+    end
+  end
+
+  @impl true
+  def handle_call(:get_state, _from, state) do
+    {:reply, JS.call(state.js, "__pv_getState", []), state}
+  end
+
+  def handle_call({:call_handler, name, params}, _from, state) do
+    {:reply, JS.call(state.js, "__pv_callHandler", [name, params]), state}
+  end
+
+  def handle_call({:set_state, updates}, _from, state) do
+    {:reply, JS.call(state.js, "__pv_setState", [updates]), state}
+  end
+
+  @impl true
+  def terminate(_reason, %{js: js}), do: JS.stop(js)
+
+  # ── Setup ──
+
+  defp setup_runtime(config, pool) do
+    with {:ok, js} <- JS.start(pool, apis: false) do
+      with {:ok, _} <- JS.eval(js, @runtime_js),
+           {:ok, _} <- JS.call(js, "__pv_setup", [config]) do
+        {:ok, js}
+      else
+        {:error, _} = error ->
+          JS.stop(js)
+          error
+      end
+    end
+  end
+
+  # ── Config helpers ──
+
+  defp build_functions_map(opts) do
+    bodies = Keyword.get(opts, :function_bodies, %{})
+
+    Keyword.get(opts, :functions, [])
+    |> Map.new(fn name -> {name, Map.get(bodies, name, "")} end)
+  end
+end

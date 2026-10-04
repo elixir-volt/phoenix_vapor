@@ -32,6 +32,8 @@ config :volt,
   hash: false,
   resolve_dirs: ["node_modules", "deps"],
   aliases: %{"@" => "assets/js"},
+  # PhoenixVapor is a path dependency, so `deps/` doesn't have it.
+  plugins: [PhoenixVapor.Volt],
 
   tailwind: [
     css: "assets/css/app.css",

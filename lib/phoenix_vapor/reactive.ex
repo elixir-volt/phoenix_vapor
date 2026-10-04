@@ -8,7 +8,7 @@ defmodule PhoenixVapor.Reactive do
   fully functional LiveView with auto-generated mount, render, and
   event handlers.
 
-  A persistent `PhoenixVapor.Runtime` (QuickBEAM + Vue reactivity) is
+  A persistent `PhoenixVapor.Reactive.Runtime` (QuickBEAM + Vue reactivity) is
   started per LiveView process. `ref()` values become reactive state,
   `computed()` auto-update when deps change, and functions execute in
   the persistent JS context — state survives across events.
@@ -44,14 +44,12 @@ defmodule PhoenixVapor.Reactive do
   """
 
   defmacro __using__(opts) do
-    file = Keyword.fetch!(opts, :file)
-    caller_dir = __CALLER__.file |> Path.dirname()
-    full_path = Path.expand(file, caller_dir)
+    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.Compiler.SFC.path!(__CALLER__)
     source = File.read!(full_path)
 
     desc = Vize.parse_sfc!(source)
 
-    {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+    {template_content, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
 
     script_content =
       case desc.script_setup do
@@ -60,7 +58,7 @@ defmodule PhoenixVapor.Reactive do
       end
 
     {split, component_files} =
-      PhoenixVapor.Components.compile!(template_content,
+      PhoenixVapor.Compiler.compile!(template_content,
         file: full_path,
         origin: origin,
         script: script_content,
@@ -71,7 +69,7 @@ defmodule PhoenixVapor.Reactive do
 
     {refs, computeds, functions, function_bodies, _props} =
       if script_content do
-        PhoenixVapor.ScriptSetup.parse(script_content)
+        PhoenixVapor.Compiler.ScriptSetup.parse(script_content)
       else
         {%{}, %{}, [], %{}, []}
       end
@@ -79,9 +77,13 @@ defmodule PhoenixVapor.Reactive do
     # Only URL params the template reads become assigns, so a request can't
     # create atoms.
     param_keys =
-      split |> PhoenixVapor.Renderer.assign_keys() |> Enum.map(&PhoenixVapor.Names.atom!/1)
+      split
+      |> PhoenixVapor.Renderer.assign_keys()
+      |> Enum.map(&PhoenixVapor.Renderer.Names.atom!/1)
 
-    state_keys = Enum.map(Map.keys(refs) ++ Map.keys(computeds), &PhoenixVapor.Names.atom!/1)
+    state_keys =
+      Enum.map(Map.keys(refs) ++ Map.keys(computeds), &PhoenixVapor.Renderer.Names.atom!/1)
+
     mount_ast = gen_mount(refs, computeds, functions, function_bodies, param_keys, state_keys)
     render_ast = gen_render(escaped_split)
     event_asts = gen_events(functions, state_keys)
@@ -106,14 +108,14 @@ defmodule PhoenixVapor.Reactive do
     quote do
       def mount(params, _session, socket) do
         {:ok, runtime} =
-          PhoenixVapor.Runtime.start_link(
+          PhoenixVapor.Reactive.Runtime.start_link(
             refs: unquote(escaped_refs),
             computeds: unquote(escaped_computeds),
             functions: unquote(escaped_functions),
             function_bodies: unquote(escaped_function_bodies)
           )
 
-        {:ok, state} = PhoenixVapor.Runtime.get_state(runtime)
+        {:ok, state} = PhoenixVapor.Reactive.Runtime.get_state(runtime)
         assigns = PhoenixVapor.Reactive.state_to_assigns(state, unquote(state_keys))
 
         param_assigns = PhoenixVapor.Reactive.param_assigns(params, unquote(param_keys))
@@ -148,7 +150,7 @@ defmodule PhoenixVapor.Reactive do
           runtime = socket.assigns.__vapor_runtime__
 
           {:ok, state} =
-            PhoenixVapor.Runtime.call_handler(runtime, unquote(func_name), params)
+            PhoenixVapor.Reactive.Runtime.call_handler(runtime, unquote(func_name), params)
 
           assigns = PhoenixVapor.Reactive.state_to_assigns(state, unquote(state_keys))
           {:noreply, Phoenix.Component.assign(socket, assigns)}
@@ -173,7 +175,7 @@ defmodule PhoenixVapor.Reactive do
   def param_assigns(_not_mounted_at_router, _keys), do: %{}
 
   @doc """
-  Converts the state a `PhoenixVapor.Runtime` returns into assigns.
+  Converts the state a `PhoenixVapor.Reactive.Runtime` returns into assigns.
 
   `keys` are the ref and computed names declared in the component, as atoms
   created when it compiled.

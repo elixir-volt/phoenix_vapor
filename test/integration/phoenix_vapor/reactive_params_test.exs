@@ -1,9 +1,11 @@
 defmodule PhoenixVapor.Integration.ReactiveParamsTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   defmodule GreetingLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/Greeting.vue", runtime: :reactive
+    use PhoenixVapor, file: Fixtures.path("Greeting.vue"), runtime: :reactive
   end
 
   defp mount(params) do

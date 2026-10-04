@@ -59,6 +59,13 @@ function confirmRemove() {
 }
 </script>
 
+<script lang="elixir">
+# roleTone for the server, which renders the first paint without JavaScript.
+def role_tone("owner"), do: "warning"
+def role_tone("admin"), do: "success"
+def role_tone(_role), do: "neutral"
+</script>
+
 <template>
   <div class="mx-auto max-w-3xl space-y-6">
     <div class="flex items-center justify-between">

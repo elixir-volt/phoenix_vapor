@@ -5,7 +5,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
 
   defp parse_and_classify(script, template) do
     {refs, computeds, functions, function_bodies, props} =
-      PhoenixVapor.ScriptSetup.parse(script)
+      PhoenixVapor.Compiler.ScriptSetup.parse(script)
 
     classification = Classifier.classify(refs, computeds, functions, function_bodies, props)
     split = Vize.split_template!(template)
