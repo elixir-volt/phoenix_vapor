@@ -76,6 +76,11 @@ defmodule PhoenixVapor.Renderer.Attrs do
   # Custom properties keep their case; others are hyphenated, as in Vue.
   defp css_property("--" <> _ = property), do: property
 
-  defp css_property(property),
-    do: Regex.replace(~r/\B([A-Z])/, property, "-\\1") |> String.downcase()
+  defp css_property(<<first::utf8, rest::binary>>) do
+    hyphenated = for <<char::utf8 <- rest>>, into: "", do: hyphenate(char)
+    String.downcase(<<first::utf8>> <> hyphenated)
+  end
+
+  defp hyphenate(char) when char in ?A..?Z, do: <<?-, char>>
+  defp hyphenate(char), do: <<char::utf8>>
 end

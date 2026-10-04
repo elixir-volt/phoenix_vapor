@@ -124,7 +124,7 @@ defmodule PhoenixVapor.Full do
 
   def compile_sfc(%SFC{file: path} = sfc, globals) do
     sfc_source = SFC.without_elixir_block(sfc)
-    handlers = extract_handlers(sfc_source)
+    handlers = sfc.setup.functions |> Map.keys() |> Enum.sort()
 
     # Compile SFC with Vize
     {:ok, result} = Vize.compile_sfc(sfc_source, filename: Path.basename(path))
@@ -218,19 +218,6 @@ defmodule PhoenixVapor.Full do
     case PhoenixVapor.JS.bundle(compiled, sfc_path, name: "sfc", minify: false, external: globals) do
       {:ok, code} -> code
       {:error, reason} -> raise "Failed to bundle #{sfc_path}: #{reason}"
-    end
-  end
-
-  defp extract_handlers(sfc_source) do
-    with {:ok, desc} <- Vize.parse_sfc(sfc_source),
-         %{content: content} <- desc.script_setup || desc.script,
-         {:ok, ast} <- OXC.parse(content, "setup.js") do
-      OXC.collect(ast, fn
-        %{type: :function_declaration, id: %{name: name}} -> {:keep, name}
-        _ -> :skip
-      end)
-    else
-      _ -> []
     end
   end
 end

@@ -92,65 +92,49 @@ defmodule PhoenixVapor.Hybrid.Classifier do
     |> Map.merge(computed_bindings)
   end
 
+  # Each body is parsed once: a `"use server"` directive, or a write to a
+  # prop, makes it a server action.
   defp build_handlers(function_bodies, prop_set, _client_set) do
     Map.new(function_bodies, fn {name, body} ->
       kind =
-        cond do
-          has_use_server_directive?(body) ->
-            {:server_action, strip_use_server(body)}
-
-          writes_to_prop?(body, prop_set) ->
-            {:server_action, body}
-
-          true ->
-            :client_handler
+        case OXC.parse(body, "fn.js") do
+          {:ok, ast} -> handler_kind(body, ast, prop_set)
+          {:error, _errors} -> :client_handler
         end
 
       {name, kind}
     end)
   end
 
-  defp has_use_server_directive?(body) do
-    case OXC.parse(body, "fn.js") do
-      {:ok, %{body: [%{type: :expression_statement, directive: "use server"} | _]}} ->
-        true
-
-      {:ok,
-       %{
-         body: [
-           %{type: :expression_statement, expression: %{type: :literal, value: "use server"}} | _
-         ]
-       }} ->
-        true
-
-      _ ->
-        false
+  defp handler_kind(body, %{body: [first | _]} = ast, prop_set) do
+    cond do
+      use_server?(first) -> {:server_action, after_directive(body, first)}
+      writes_to_prop?(ast, prop_set) -> {:server_action, body}
+      true -> :client_handler
     end
   end
 
-  defp strip_use_server(body) do
-    case OXC.parse(body, "fn.js") do
-      {:ok, %{body: [%{type: :expression_statement, end: directive_end} | _]}} ->
-        body
-        |> binary_part(directive_end, byte_size(body) - directive_end)
-        |> String.trim_leading(";")
-        |> String.trim()
+  defp handler_kind(_body, _ast, _prop_set), do: :client_handler
 
-      _ ->
-        body
-    end
+  defp use_server?(%{type: :expression_statement, directive: "use server"}), do: true
+
+  defp use_server?(%{
+         type: :expression_statement,
+         expression: %{type: :literal, value: "use server"}
+       }),
+       do: true
+
+  defp use_server?(_statement), do: false
+
+  defp after_directive(body, %{end: directive_end}) do
+    body
+    |> binary_part(directive_end, byte_size(body) - directive_end)
+    |> String.trim_leading(";")
+    |> String.trim()
   end
 
-  defp writes_to_prop?(body, prop_set) do
-    case OXC.parse(body, "fn.js") do
-      {:ok, ast} ->
-        assigned_names = collect_assignment_targets(ast)
-        Enum.any?(assigned_names, &MapSet.member?(prop_set, &1))
-
-      _ ->
-        false
-    end
-  end
+  defp writes_to_prop?(ast, prop_set),
+    do: ast |> collect_assignment_targets() |> Enum.any?(&MapSet.member?(prop_set, &1))
 
   defp collect_assignment_targets(ast) do
     OXC.collect(ast, fn

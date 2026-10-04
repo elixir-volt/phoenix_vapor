@@ -19,5 +19,11 @@ defmodule PhoenixVapor.Renderer.Names do
 
   @doc "Vue's `camelize`: a `side-offset` attribute is the `sideOffset` prop."
   @spec camelize(String.t()) :: String.t()
-  def camelize(name), do: Regex.replace(~r/-(\w)/, name, fn _, char -> String.upcase(char) end)
+  def camelize(name) do
+    [first | rest] = String.split(name, "-")
+    IO.iodata_to_binary([first | Enum.map(rest, &upcase_first/1)])
+  end
+
+  defp upcase_first(<<char::utf8, rest::binary>>), do: String.upcase(<<char::utf8>>) <> rest
+  defp upcase_first(""), do: ""
 end

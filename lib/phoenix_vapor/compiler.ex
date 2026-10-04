@@ -270,8 +270,8 @@ defmodule PhoenixVapor.Compiler do
   # The packages the file imports components from: imports named like
   # components, such as `TabsRoot`.
   defp package_sources(ctx) do
-    for {name, %{source: source}} <- ctx.setup.imports,
-        name =~ ~r/\A[A-Z]/,
+    for {<<first, _::binary>> = name, %{source: source}} <- ctx.setup.imports,
+        first in ?A..?Z,
         package(ctx, name) != nil,
         uniq: true,
         do: source

@@ -39,7 +39,7 @@ defmodule PhoenixVapor.Reactive do
   This generates:
 
   - `mount/3` — starts a `Runtime` with refs, computeds, and functions
-  - `render/1` — reads state from runtime, renders via Vapor split
+  - `render/1` — renders the template, compiled from Vize's split, with the runtime's state
   - `handle_event/3` — calls the function in the runtime, assigns new state
   """
 
