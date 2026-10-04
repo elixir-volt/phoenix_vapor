@@ -90,7 +90,8 @@ export function analyzeStatics(statics: string[], keys: (string | null)[] = []):
   template.innerHTML = statics
     .map((part, i) => {
       if (i === statics.length - 1) return part
-      return keys[i] ? `${part} ${marker(i)}` : part + marker(i)
+      // A slot with a key, even "", is in a tag: an attribute, or attributes.
+      return keys[i] == null ? part + marker(i) : `${part} ${marker(i)}`
     })
     .join("")
 

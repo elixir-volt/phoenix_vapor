@@ -7,31 +7,13 @@ defmodule PhoenixVapor.Renderer do
   alias PhoenixVapor.Compiler.Split
   alias PhoenixVapor.Renderer.{Attrs, Expr, Names, Value}
 
-  def inject_scope_id(%Phoenix.LiveView.Rendered{static: static} = rendered, scope_id) do
-    case static do
-      [first | rest] ->
-        %{rendered | static: [inject_attr_into_first_tag(first, scope_id) | rest]}
+  @doc """
+  Renders a template against assigns.
 
-      _ ->
-        rendered
-    end
-  end
-
-  # A tag name ends at whitespace, "/" or ">", so the attribute goes right
-  # after it; attribute values may contain ">".
-  defp inject_attr_into_first_tag(html, attr) do
-    case Regex.run(~r{\A\s*<[a-zA-Z][^\s/>]*}, html) do
-      [open] ->
-        open <>
-          " " <> attr <> binary_part(html, byte_size(open), byte_size(html) - byte_size(open))
-
-      nil ->
-        html
-    end
-  end
-
-  # ── Rendering ──
-
+    * `:root_attrs` — attributes to put on the root element of a template
+      compiled with `root_attrs: true`, as a parent's fall through to a child
+      component's
+  """
   @spec to_rendered(Template.t() | map(), map(), keyword()) :: Phoenix.LiveView.Rendered.t()
   def to_rendered(template, assigns, opts \\ [])
 
@@ -46,6 +28,12 @@ defmodule PhoenixVapor.Renderer do
   defp render_block(template, assigns), do: render(template, assigns, root: nil)
 
   defp render(%Template{statics: statics, slots: slots} = template, assigns, opts) do
+    assigns =
+      case opts[:root_attrs] do
+        nil -> assigns
+        attrs -> Map.put(assigns, :__vapor_attrs__, attrs)
+      end
+
     dynamic = fn track_changes? ->
       changed =
         case assigns do
@@ -64,11 +52,6 @@ defmodule PhoenixVapor.Renderer do
         end
       end)
     end
-
-    statics =
-      if Keyword.get(opts, :vapor_metadata, false),
-        do: inject_vapor_metadata(statics, slots),
-        else: statics
 
     %Phoenix.LiveView.Rendered{
       static: statics,
@@ -390,24 +373,20 @@ defmodule PhoenixVapor.Renderer do
 
   # ── Helpers ──
 
-  # The client patcher locates slots from the statics; an attribute slot is the
-  # whole attribute, so it also needs the attribute's name.
-  defp inject_vapor_metadata([first | rest], slots) do
-    if String.starts_with?(String.trim_leading(first), "<") do
-      statics_json = Jason.encode!([first | rest])
-      keys_json = Jason.encode!(Enum.map(slots, &attribute_name/1))
-
-      attr =
-        ~s(data-vapor data-vapor-statics="#{Phoenix.HTML.Engine.html_escape(statics_json)}") <>
-          ~s( data-vapor-keys="#{Phoenix.HTML.Engine.html_escape(keys_json)}")
-
-      [inject_attr_into_first_tag(first, attr) | rest]
-    else
-      [first | rest]
-    end
+  @doc """
+  The attributes reactive mode's client patcher reads from a template's root
+  element: the statics, to locate each slot, and each slot's attribute name,
+  since an attribute slot is the whole attribute. The root's own attributes
+  are one slot, `""`, which the patcher leaves to LiveView.
+  """
+  @spec vapor_metadata(Template.t()) :: [{String.t(), String.t()}]
+  def vapor_metadata(%Template{statics: statics, slots: slots}) do
+    [
+      {"data-vapor", ""},
+      {"data-vapor-statics", Jason.encode!(statics)},
+      {"data-vapor-keys", Jason.encode!(Enum.map(slots, &attribute_name/1))}
+    ]
   end
-
-  defp inject_vapor_metadata(static, _slots), do: static
 
   defp attribute_name(%{kind: :attr, name: name}), do: name
 
@@ -415,5 +394,6 @@ defmodule PhoenixVapor.Renderer do
        when type in ["checkbox", "radio"], do: "checked"
 
   defp attribute_name(%{kind: :model, tag: "input"}), do: "value"
+  defp attribute_name(%{kind: :root_attrs}), do: ""
   defp attribute_name(_slot), do: nil
 end

@@ -881,10 +881,17 @@ defmodule PhoenixVapor.Integration.RenderingTest do
   end
 
   describe "vapor metadata" do
-    test "injects data-vapor and data-vapor-statics when enabled" do
-      ir = Vize.split_template!("<div>{{ msg }}</div>")
-      rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "hello"}, vapor_metadata: true)
-      html = render_to_html(rendered)
+    defp with_metadata(source, assigns) do
+      template =
+        source |> Vize.split_template!(root_attrs: true) |> PhoenixVapor.Compiler.Split.compile()
+
+      PhoenixVapor.Renderer.to_rendered(template, assigns,
+        root_attrs: PhoenixVapor.Renderer.vapor_metadata(template)
+      )
+    end
+
+    test "goes on the root element as data-vapor and data-vapor-statics" do
+      html = "<div>{{ msg }}</div>" |> with_metadata(%{msg: "hello"}) |> render_to_html()
 
       assert html =~ "data-vapor"
       assert html =~ "data-vapor-statics="
@@ -892,14 +899,9 @@ defmodule PhoenixVapor.Integration.RenderingTest do
     end
 
     test "statics JSON is properly escaped" do
-      ir = Vize.split_template!("<div>{{ msg }}</div>")
-      rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "test"}, vapor_metadata: true)
+      html = "<div>{{ msg }}</div>" |> with_metadata(%{msg: "test"}) |> render_to_html()
 
-      [first | _] = rendered.static
-      assert first =~ "data-vapor-statics="
-
-      # Extract and unescape the statics JSON
-      [_, json] = Regex.run(~r/data-vapor-statics="([^"]*)"/, first)
+      [_, json] = Regex.run(~r/data-vapor-statics="([^"]*)"/, html)
 
       unescaped =
         json
@@ -908,9 +910,10 @@ defmodule PhoenixVapor.Integration.RenderingTest do
         |> String.replace("&gt;", ">")
         |> String.replace("&quot;", "\"")
 
-      decoded = Jason.decode!(unescaped)
-      assert is_list(decoded)
-      assert length(decoded) == 2
+      # The root's attributes are a slot of their own, keyed "".
+      assert ["<div", ">", "</div>"] = Jason.decode!(unescaped)
+      assert [_, keys] = Regex.run(~r/data-vapor-keys="([^"]*)"/, html)
+      assert keys |> String.replace("&quot;", "\"") |> Jason.decode!() == ["", nil]
     end
 
     test "not injected by default" do

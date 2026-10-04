@@ -31,12 +31,13 @@ defmodule PhoenixVapor.Vue do
   defmacro component(name, path) do
     sfc = PhoenixVapor.Compiler.SFC.load!(path, __CALLER__)
     full_path = sfc.file
-    {split, component_files} = PhoenixVapor.Compiler.compile!(sfc)
+    {split, component_files} = PhoenixVapor.Compiler.compile!(sfc, root_attrs: true)
     escaped_split = Macro.escape(split)
 
     {scope_id, scoped_css} = scoped_css(sfc.source, full_path)
 
     css_fn_name = :"__vue_css_#{name}__"
+    root_attrs = if scope_id, do: [{scope_id, ""}], else: []
 
     quote do
       @external_resource unquote(full_path)
@@ -45,13 +46,9 @@ defmodule PhoenixVapor.Vue do
       def unquote(css_fn_name)(), do: unquote(scoped_css)
 
       def unquote(name)(var!(assigns)) do
-        rendered = PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns))
-
-        if unquote(scope_id) do
-          PhoenixVapor.Renderer.inject_scope_id(rendered, unquote(scope_id))
-        else
-          rendered
-        end
+        PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns),
+          root_attrs: unquote(root_attrs)
+        )
       end
     end
   end

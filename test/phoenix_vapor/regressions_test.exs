@@ -22,15 +22,26 @@ defmodule PhoenixVapor.RegressionsTest do
 
       [scope] = Regex.run(~r/data-v-[0-9a-f]{8}/, Scoped.__vue_css_card__())
 
-      assert html =~ ~s(<div #{scope} title="a &gt; b" class="card">Hi</div>)
+      # As Vue's server renderer writes it, after the element's own attributes.
+      assert html =~ ~s(<div title="a &gt; b" class="card" #{scope}>Hi</div>)
     end
 
-    test "vapor metadata goes after the tag name" do
-      split = Vize.split_template!(~s(<div title="a > b"><p>{{ x }}</p></div>))
-      [first | _] = PhoenixVapor.Renderer.to_rendered(split, %{x: 1}, vapor_metadata: true).static
+    test "vapor metadata goes on the root element with its own attributes" do
+      template =
+        ~s(<div title="a > b"><p>{{ x }}</p></div>)
+        |> Vize.split_template!(root_attrs: true)
+        |> PhoenixVapor.Compiler.Split.compile()
 
-      assert first =~
-               ~r/\A<div data-vapor data-vapor-statics="[^"]*" data-vapor-keys="[^"]*" title="a &gt; b">/
+      metadata = PhoenixVapor.Renderer.vapor_metadata(template)
+
+      html =
+        template
+        |> PhoenixVapor.Renderer.to_rendered(%{x: 1}, root_attrs: metadata)
+        |> Phoenix.HTML.Safe.to_iodata()
+        |> IO.iodata_to_binary()
+
+      assert html =~
+               ~r/\A<div title="a &gt; b" data-vapor data-vapor-statics="[^"]*" data-vapor-keys="[^"]*">/
     end
   end
 

@@ -39,6 +39,8 @@ defmodule PhoenixVapor.Compiler do
       over: the client handles events, package components render into their
       markup with the refs' initial values, which the browser renders first
       too, and what the server can't render is left to the browser.
+    * `:root_attrs` — gives the root element a slot for attributes passed
+      when rendering, `PhoenixVapor.Renderer.to_rendered/3`'s `:root_attrs`
     * `:module` — the module the template renders in. A call to a `<script
       setup>` function renders through the function of the same name in
       snake_case that the SFC's `<script lang="elixir">` defines, such as
@@ -58,11 +60,7 @@ defmodule PhoenixVapor.Compiler do
   def compile(%SFC{} = sfc, opts) do
     elixir = if opts[:module], do: {opts[:module], SFC.elixir_functions(sfc)}
 
-    compile_sfc(
-      %{sfc | template: SFC.template!(sfc)},
-      elixir,
-      Keyword.get(opts, :target, :server)
-    )
+    compile_sfc(%{sfc | template: SFC.template!(sfc)}, [elixir: elixir] ++ opts)
   end
 
   def compile(template, opts) when is_binary(template) do
@@ -74,10 +72,12 @@ defmodule PhoenixVapor.Compiler do
       setup: ScriptSetup.parse(opts[:script])
     }
 
-    compile_sfc(sfc, nil, Keyword.get(opts, :target, :server))
+    compile_sfc(sfc, opts)
   end
 
-  defp compile_sfc(sfc, elixir, target) do
+  defp compile_sfc(sfc, opts) do
+    target = Keyword.get(opts, :target, :server)
+
     state = %{
       events: target == :server,
       fold: if(target == :browser, do: :all, else: :content),
@@ -93,7 +93,14 @@ defmodule PhoenixVapor.Compiler do
     {compiled, state} =
       Session.with_session(PropTypes.handlers(), fn session ->
         known = if target == :browser, do: initial_values(sfc.setup, session), else: %{}
-        compile_template(sfc, nil, known, %{state | js: session}, elixir: elixir)
+
+        compile_template(
+          sfc,
+          nil,
+          known,
+          %{state | js: session},
+          Keyword.take(opts, [:elixir, :root_attrs])
+        )
       end)
 
     diagnostics = state.diagnostics |> Enum.reverse() |> Enum.uniq_by(&{&1.file, &1.message})

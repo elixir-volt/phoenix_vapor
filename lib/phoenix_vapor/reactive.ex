@@ -56,8 +56,10 @@ defmodule PhoenixVapor.Reactive do
   # `render/1`, and a `handle_event/3` per function.
   @spec build(SFC.t()) :: Macro.t()
   def build(%SFC{setup: setup} = sfc) do
-    {split, component_files} = Compiler.compile!(sfc)
+    # The root element carries the statics for the browser's patcher.
+    {split, component_files} = Compiler.compile!(sfc, root_attrs: true)
     escaped_split = Macro.escape(split)
+    escaped_metadata = split |> Renderer.vapor_metadata() |> Macro.escape()
 
     # Only URL params the template reads become assigns, so a request can't
     # create atoms.
@@ -65,7 +67,7 @@ defmodule PhoenixVapor.Reactive do
     state_keys = Enum.map(Map.keys(setup.refs) ++ Map.keys(setup.computeds), &Names.atom!/1)
 
     mount_ast = gen_mount(setup, param_keys, state_keys)
-    render_ast = gen_render(escaped_split)
+    render_ast = gen_render(escaped_split, escaped_metadata)
     event_asts = gen_events(Map.keys(setup.functions), state_keys)
 
     quote do
@@ -109,13 +111,11 @@ defmodule PhoenixVapor.Reactive do
     end
   end
 
-  defp gen_render(escaped_split) do
+  defp gen_render(escaped_split, escaped_metadata) do
     quote do
       def render(var!(assigns)) do
-        PhoenixVapor.Renderer.to_rendered(
-          unquote(escaped_split),
-          var!(assigns),
-          vapor_metadata: true
+        PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns),
+          root_attrs: unquote(escaped_metadata)
         )
       end
     end
