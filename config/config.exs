@@ -17,5 +17,10 @@ config :volt, :lint,
   overrides: [
     # Compiles the component's <script setup> refs, computeds and handlers,
     # which arrive as source text.
-    %{files: ["reactive-runtime.ts"], rules: %{"typescript/no-implied-eval" => :allow}}
+    %{files: ["reactive-runtime.ts"], rules: %{"typescript/no-implied-eval" => :allow}},
+    # Templates whose `$name` placeholder statements PhoenixVapor replaces.
+    %{
+      files: ["fold-renderer.ts", "macro-call.ts", "macro-entry.ts"],
+      rules: %{"no-unused-expressions" => :allow}
+    }
   ]

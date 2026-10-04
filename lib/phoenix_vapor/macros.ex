@@ -17,7 +17,6 @@ defmodule PhoenixVapor.Macros do
   # A macro call that depends on anything else, such as a prop bound to an
   # assign, can't be folded and is reported.
 
-  alias PhoenixVapor.LiveVue.EntryPlugin
   alias PhoenixVapor.Template
 
   # `static_props` is nil for a template whose props are all only known when
@@ -212,44 +211,45 @@ defmodule PhoenixVapor.Macros do
     do: %{file: env.file, severity: severity, message: message, position: slot[:position] || 0}
 
   defp evaluate(runtime, source, env) do
-    bindings =
-      Enum.map_join(env.macros, "\n", fn {local, import} ->
-        module =
-          "globalThis.__pv_macros[#{Jason.encode!(env.bundle_id)}][#{Jason.encode!(import.source)}]"
+    {static, declared} =
+      case env.static_props do
+        nil -> {%{}, []}
+        %{static: static, declared: declared} -> {static, declared}
+      end
 
-        case import.imported do
-          :default -> "const #{local} = #{module}.default;"
-          :namespace -> "const #{local} = #{module};"
-          name -> "const #{local} = #{module}[#{Jason.encode!(name)}];"
-        end
-      end)
-
-    static = if env.static_props, do: env.static_props.static, else: %{}
-    props = Jason.encode!(static)
+    macro_bindings =
+      for {local, import} <- env.macros do
+        "const #{local} = #{macro_access(env.bundle_id, import)};"
+      end
 
     prop_bindings =
-      if(env.static_props, do: env.static_props.declared, else: [])
-      |> Enum.reject(&(Map.has_key?(env.macros, &1) or &1 == "props"))
-      |> Enum.map_join("\n", &"const #{&1} = props[#{Jason.encode!(&1)}];")
+      for name <- declared, not Map.has_key?(env.macros, name), name != "props" do
+        "const #{name} = props[#{Jason.encode!(name)}];"
+      end
 
-    consts = Enum.map_join(env.consts, "\n", fn {name, init} -> "const #{name} = (#{init});" end)
+    const_bindings = for {name, init} <- env.consts, do: "const #{name} = (#{init});"
 
-    code = """
-    (() => {
-    #{bindings}
-    const props = #{props};
-    #{prop_bindings}
-    #{consts}
-    return (#{source});
-    })()
-    """
+    code =
+      PhoenixVapor.JS.template!("macro-call.ts", [result: {:expr, source}],
+        bindings: macro_bindings ++ prop_bindings ++ const_bindings
+      )
 
-    case QuickBEAM.eval_ts(runtime, code) do
+    case QuickBEAM.eval_ts(runtime, code, vars: %{"props" => static}) do
       {:ok, value} ->
         if data?(value), do: {:ok, value}, else: {:error, "the result isn't data"}
 
       {:error, error} ->
         {:error, Exception.message(error)}
+    end
+  end
+
+  defp macro_access(bundle_id, %{source: source, imported: imported}) do
+    module = "globalThis.__pv_macros[#{Jason.encode!(bundle_id)}][#{Jason.encode!(source)}]"
+
+    case imported do
+      :default -> module <> ".default"
+      :namespace -> module
+      name -> "#{module}[#{Jason.encode!(name)}]"
     end
   end
 
@@ -272,56 +272,21 @@ defmodule PhoenixVapor.Macros do
   # Bundles the file's macro imports with Volt, resolved from the SFC's
   # directory as the browser build resolves them, and loads them under an id.
   defp load_bundle(runtime, macros, file) do
-    id = file
-    sources = macros |> Map.values() |> Enum.map(& &1.source) |> Enum.uniq() |> Enum.with_index()
+    sources = macros |> Map.values() |> Enum.map(& &1.source) |> Enum.uniq()
+    {imports, modules} = PhoenixVapor.JS.module_splices(sources)
 
-    imports =
-      Enum.map_join(sources, "\n", fn {source, i} ->
-        "import * as m#{i} from #{Jason.encode!(source)};"
-      end)
-
-    modules =
-      Enum.map_join(sources, ", ", fn {source, i} -> "#{Jason.encode!(source)}: m#{i}" end)
-
-    entry = """
-    #{imports}
-    globalThis.__pv_macros ??= {};
-    globalThis.__pv_macros[#{Jason.encode!(id)}] = {#{modules}};
-    """
-
-    entry_id = Path.rootname(file) <> ".phoenix-vapor-macros.js"
-    config = Volt.Config.build()
-
-    result =
-      Volt.Builder.bundle(
-        entry: EntryPlugin.entry_specifier(),
-        plugins: [{EntryPlugin, entry_id: entry_id, source: entry} | config.plugins],
-        aliases: config.aliases,
-        node_modules: find_node_modules(Path.dirname(file)),
-        name: "macros",
-        minify: false,
-        sourcemap: false,
-        code_splitting: false
+    entry =
+      Volt.Priv.render!({:phoenix_vapor, "ts"}, "macro-entry.ts", [id: file],
+        splices: [imports: imports, modules: modules]
       )
 
-    with {:ok, bundle} <- result,
-         {:ok, _} <- QuickBEAM.eval(runtime, bundle.code) do
-      id
+    with {:ok, code} <- PhoenixVapor.JS.bundle(entry, file, name: "macros", minify: false),
+         {:ok, _} <- QuickBEAM.eval(runtime, code) do
+      file
     else
       {:error, reason} ->
         raise CompileError,
-          description:
-            "can't load the macros #{inspect(Enum.map(sources, &elem(&1, 0)))} for #{file}: #{inspect(reason)}"
-    end
-  end
-
-  defp find_node_modules(dir) do
-    candidate = Path.join(dir, "node_modules")
-
-    cond do
-      File.dir?(candidate) -> candidate
-      dir == "/" -> nil
-      true -> find_node_modules(Path.dirname(dir))
+          description: "can't load the macros #{inspect(sources)} for #{file}: #{inspect(reason)}"
     end
   end
 

@@ -15,7 +15,6 @@ defmodule PhoenixVapor.Fold do
   # too. A component that receives a value known only when rendering, or a
   # scoped slot, can't be folded.
 
-  alias PhoenixVapor.LiveVue.EntryPlugin
   alias PhoenixVapor.{Renderer, Template}
 
   @marker_pattern ~r/\x{2063}H(\d+)\x{2063}/u
@@ -227,52 +226,18 @@ defmodule PhoenixVapor.Fold do
   end
 
   @doc """
-  Loads Vue's server renderer and the given packages into `runtime`, bundled
+  Loads Vue's server renderer and the given packages into `runtime`: the
+  `fold-renderer.ts` template in `priv/ts`, with the packages imported, bundled
   with Volt from the SFC's directory.
   """
   @spec load(pid(), [String.t()], Path.t()) :: :ok | {:error, String.t()}
   def load(runtime, sources, file) do
-    sources = Enum.with_index(sources)
+    {imports, modules} = PhoenixVapor.JS.module_splices(sources)
 
-    imports =
-      Enum.map_join(sources, "\n", fn {source, i} ->
-        "import * as m#{i} from #{Jason.encode!(source)};"
-      end)
-
-    modules =
-      Enum.map_join(sources, ", ", fn {source, i} -> "#{Jason.encode!(source)}: m#{i}" end)
-
-    entry = """
-    import { createSSRApp, h, createStaticVNode } from "vue";
-    import { renderToString } from "vue/server-renderer";
-    #{imports}
-    const modules = {#{modules}};
-
-    function build(node) {
-      const component = modules[node.source][node.name];
-      const slots = {};
-      for (const [name, parts] of Object.entries(node.slots)) {
-        slots[name] = () => parts.map((part) => typeof part === "string" ? createStaticVNode(part, 0) : build(part));
-      }
-      return h(component, node.props, slots);
-    }
-
-    // An error or warning while rendering means the output can't be trusted,
-    // such as a part rendered without the parent whose context it needs. Vue
-    // catches what its handlers throw, so they collect the problems instead.
-    function render(tree) {
-      const problems = [];
-      const app = createSSRApp({ render: () => build(tree) });
-      app.config.errorHandler = (error) => { problems.push(error && error.message ? error.message : String(error)); };
-      app.config.warnHandler = (message) => { problems.push(message); };
-      return renderToString(app).then((html) => {
-        if (problems.length > 0) throw new Error(problems[0]);
-        return html;
-      });
-    }
-
-    globalThis.__pv_fold = { render };
-    """
+    entry =
+      Volt.Priv.render!({:phoenix_vapor, "ts"}, "fold-renderer.ts", [],
+        splices: [imports: imports, modules: modules]
+      )
 
     with {:ok, code} <- bundle(entry, file),
          {:ok, _} <- QuickBEAM.eval(runtime, code) do
@@ -284,42 +249,15 @@ defmodule PhoenixVapor.Fold do
   end
 
   defp bundle(entry, file) do
-    config = Volt.Config.build()
-
-    result =
-      Volt.Builder.bundle(
-        entry: EntryPlugin.entry_specifier(),
-        plugins: [
-          {EntryPlugin, entry_id: Path.rootname(file) <> ".phoenix-vapor-fold.js", source: entry}
-          | config.plugins
-        ],
-        aliases: config.aliases,
-        node_modules: find_node_modules(Path.dirname(file)),
-        name: "fold",
-        minify: true,
-        sourcemap: false,
-        code_splitting: false,
-        define: %{
-          "process.env.NODE_ENV" => ~s("production"),
-          "__VUE_OPTIONS_API__" => "true",
-          "__VUE_PROD_DEVTOOLS__" => "false",
-          "__VUE_PROD_HYDRATION_MISMATCH_DETAILS__" => "false"
-        }
-      )
-
-    case result do
-      {:ok, bundle} -> {:ok, bundle.code}
-      error -> error
-    end
-  end
-
-  defp find_node_modules(dir) do
-    candidate = Path.join(dir, "node_modules")
-
-    cond do
-      File.dir?(candidate) -> candidate
-      dir == "/" -> nil
-      true -> find_node_modules(Path.dirname(dir))
-    end
+    PhoenixVapor.JS.bundle(entry, file,
+      name: "fold",
+      minify: true,
+      define: %{
+        "process.env.NODE_ENV" => ~s("production"),
+        "__VUE_OPTIONS_API__" => "true",
+        "__VUE_PROD_DEVTOOLS__" => "false",
+        "__VUE_PROD_HYDRATION_MISMATCH_DETAILS__" => "false"
+      }
+    )
   end
 end

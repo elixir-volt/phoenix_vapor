@@ -211,30 +211,8 @@ defmodule PhoenixVapor.LiveVue do
   end
 
   defp volt_bundle(compiled, sfc_path, globals) do
-    entry_id = PhoenixVapor.LiveVue.EntryPlugin.entry_id(sfc_path)
-
-    entry_plugin =
-      {PhoenixVapor.LiveVue.EntryPlugin, entry_id: entry_id, source: compiled}
-
-    # The project's Volt config supplies import aliases such as `@/` and its
-    # plugins, so the component resolves imports as it does in the browser.
-    config = Volt.Config.build()
-
-    result =
-      Volt.Builder.bundle(
-        entry: PhoenixVapor.LiveVue.EntryPlugin.entry_specifier(),
-        plugins: [entry_plugin | config.plugins],
-        aliases: config.aliases,
-        node_modules: find_node_modules(Path.dirname(sfc_path)),
-        name: "sfc",
-        minify: false,
-        sourcemap: false,
-        code_splitting: false,
-        external: globals
-      )
-
-    case result do
-      {:ok, bundle} -> bundle.code
+    case PhoenixVapor.JS.bundle(compiled, sfc_path, name: "sfc", minify: false, external: globals) do
+      {:ok, code} -> code
       {:error, reason} -> raise "Failed to bundle #{sfc_path}: #{inspect(reason)}"
     end
   end
@@ -249,16 +227,6 @@ defmodule PhoenixVapor.LiveVue do
       end)
     else
       _ -> []
-    end
-  end
-
-  defp find_node_modules(dir) do
-    candidate = Path.join(dir, "node_modules")
-
-    cond do
-      File.dir?(candidate) -> candidate
-      dir == "/" -> nil
-      true -> find_node_modules(Path.dirname(dir))
     end
   end
 end
