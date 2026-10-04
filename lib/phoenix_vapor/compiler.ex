@@ -220,51 +220,23 @@ defmodule PhoenixVapor.Compiler do
     {%{template | slots: slots}, state}
   end
 
-  defp resolve_slot(%{kind: :if, branches: branches} = slot, ctx, state) do
-    {branches, state} =
-      Enum.map_reduce(branches, state, fn branch, state ->
-        {block, state} = resolve_template(branch.block, ctx, state)
-        {%{branch | block: block}, state}
-      end)
-
-    {%{slot | branches: branches}, state}
-  end
-
-  defp resolve_slot(%{kind: :for, block: block} = slot, ctx, state) do
-    {block, state} = resolve_template(block, ctx, state)
-    {%{slot | block: block}, state}
-  end
-
-  defp resolve_slot(%{kind: :slot, fallback: %Template{} = fallback} = slot, ctx, state) do
-    {fallback, state} = resolve_template(fallback, ctx, state)
-    {%{slot | fallback: fallback}, state}
-  end
-
-  defp resolve_slot(%{kind: :fragment, template: template} = slot, ctx, state) do
-    {template, state} = resolve_template(template, ctx, state)
-    {%{slot | template: template}, state}
-  end
-
   # A package component renders at compile time, with any package components
   # inside it, before the template's own content inside it is resolved.
   defp resolve_slot(%{kind: :component, name: name} = slot, ctx, state) do
     case package(ctx, name) do
-      nil -> resolve_local(slot, ctx, state)
-      package -> fold(slot, package, ctx, state)
+      nil ->
+        {slot, state} = resolve_blocks(slot, ctx, state)
+        resolve_component(slot, ctx, state)
+
+      package ->
+        fold(slot, package, ctx, state)
     end
   end
 
-  defp resolve_slot(slot, _ctx, state), do: {slot, state}
+  defp resolve_slot(slot, ctx, state), do: resolve_blocks(slot, ctx, state)
 
-  defp resolve_local(%{slots: contents} = slot, ctx, state) do
-    {contents, state} =
-      Enum.map_reduce(contents, state, fn content, state ->
-        {block, state} = resolve_template(content.block, ctx, state)
-        {%{content | block: block}, state}
-      end)
-
-    resolve_component(%{slot | slots: contents}, ctx, state)
-  end
+  defp resolve_blocks(slot, ctx, state),
+    do: Template.map_blocks(slot, state, &resolve_template(&1, ctx, &2))
 
   # Vue's server renderer and the file's packages load once per file.
   defp fold(slot, package, ctx, state) do

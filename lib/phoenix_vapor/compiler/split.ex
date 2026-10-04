@@ -88,26 +88,15 @@ defmodule PhoenixVapor.Compiler.Split do
     slot
   end
 
-  defp compile_blocks(%{kind: :if, branches: branches} = slot, opts),
-    do: %{slot | branches: Enum.map(branches, &%{&1 | block: compile(&1.block, opts)})}
-
-  defp compile_blocks(%{kind: :for, block: block} = slot, opts),
-    do: %{slot | block: compile(block, opts)}
-
-  defp compile_blocks(%{kind: :component, slots: contents} = slot, opts) do
-    contents =
-      for content <- contents do
-        %{content | block: compile(content.block, opts)}
-        |> Map.put(:params, slot_params(content.params))
-      end
-
-    %{slot | slots: contents}
+  defp compile_blocks(slot, opts) do
+    {slot, nil} = Template.map_blocks(slot, nil, &{compile(&1, opts), &2})
+    compile_params(slot)
   end
 
-  defp compile_blocks(%{kind: :slot, fallback: fallback} = slot, opts),
-    do: %{slot | fallback: fallback && compile(fallback, opts)}
+  defp compile_params(%{kind: :component, slots: contents} = slot),
+    do: %{slot | slots: Enum.map(contents, &Map.put(&1, :params, slot_params(&1.params)))}
 
-  defp compile_blocks(slot, _opts), do: slot
+  defp compile_params(slot), do: slot
 
   defp position({line, column}, opts),
     do: Vize.Diagnostic.shift({line, column}, Keyword.get(opts, :origin, {1, 1}))
