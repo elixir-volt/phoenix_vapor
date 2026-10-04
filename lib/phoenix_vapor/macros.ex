@@ -286,7 +286,9 @@ defmodule PhoenixVapor.Macros do
     else
       {:error, reason} ->
         raise CompileError,
-          description: "can't load the macros #{inspect(sources)} for #{file}: #{inspect(reason)}"
+          description:
+            "can't load the macros #{inspect(sources)} for #{file}: " <>
+              PhoenixVapor.JS.error_message(reason)
     end
   end
 

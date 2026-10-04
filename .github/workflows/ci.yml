@@ -12,3 +12,6 @@ permissions:
 jobs:
   ci:
     uses: elixir-vibe/actions/.github/workflows/elixir-ci.yml@v1
+    with:
+      # The tests render Reka UI and Vue from node_modules.
+      min-command: mix npm.install && mix compile --warnings-as-errors && mix test

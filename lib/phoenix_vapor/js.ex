@@ -70,7 +70,7 @@ defmodule PhoenixVapor.JS do
   through the project's Volt aliases, as the browser build resolves them.
   Other options go to `Volt.Builder.bundle/1`.
   """
-  @spec bundle(String.t(), Path.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  @spec bundle(String.t(), Path.t(), keyword()) :: {:ok, String.t()} | {:error, String.t()}
   def bundle(source, file, opts \\ []) do
     {name, opts} = Keyword.pop(opts, :name, "entry")
     {plugins, opts} = Keyword.pop(opts, :plugins, [])
@@ -94,9 +94,20 @@ defmodule PhoenixVapor.JS do
 
     case result do
       {:ok, bundle} -> {:ok, bundle.code}
-      error -> error
+      {:error, reason} -> {:error, error_message(reason)}
     end
   end
+
+  @doc false
+  # A readable message for an error from bundling or from QuickBEAM.
+  @spec error_message(term()) :: String.t()
+  def error_message(reason) when is_binary(reason), do: reason
+  def error_message(%{__exception__: true} = error), do: Exception.message(error)
+
+  def error_message({:not_found, specifier}),
+    do: "can't find #{inspect(specifier)}; is it installed in node_modules?"
+
+  def error_message(reason), do: inspect(reason)
 
   defp find_node_modules(dir) do
     candidate = Path.join(dir, "node_modules")

@@ -197,7 +197,7 @@ defmodule PhoenixVapor.Fold do
     case QuickBEAM.eval(runtime, "globalThis.__pv_fold.render(#{Jason.encode!(tree)})") do
       {:ok, html} when is_binary(html) -> {:ok, html}
       {:ok, other} -> {:error, "rendering returned #{inspect(other)}"}
-      {:error, error} -> {:error, Exception.message(error)}
+      {:error, error} -> {:error, PhoenixVapor.JS.error_message(error)}
     end
   end
 
@@ -243,8 +243,7 @@ defmodule PhoenixVapor.Fold do
          {:ok, _} <- QuickBEAM.eval(runtime, code) do
       :ok
     else
-      {:error, %{__exception__: true} = error} -> {:error, Exception.message(error)}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, PhoenixVapor.JS.error_message(reason)}
     end
   end
 
