@@ -312,7 +312,7 @@ defmodule PhoenixVapor.Macros do
     const_bindings = for {name, init} <- env.consts, do: "const #{name} = (#{init});"
 
     code =
-      PhoenixVapor.JS.template!("macro-call.ts", [result: {:expr, source}],
+      PhoenixVapor.JS.template!("compile/macros/call.ts", [result: {:expr, source}],
         bindings: macro_bindings ++ prop_bindings ++ const_bindings
       )
 
@@ -358,7 +358,7 @@ defmodule PhoenixVapor.Macros do
     {imports, modules} = PhoenixVapor.JS.module_splices(sources)
 
     entry =
-      Volt.Priv.render!({:phoenix_vapor, "ts"}, "macro-entry.ts", [id: file],
+      Volt.Priv.render!({:phoenix_vapor, "ts"}, "compile/macros/entry.ts", [id: file],
         splices: [imports: imports, modules: modules]
       )
 

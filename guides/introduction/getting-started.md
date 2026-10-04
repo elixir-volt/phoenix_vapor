@@ -32,6 +32,8 @@ config :volt,
   resolve_dirs: ["node_modules", "deps"]
 ```
 
+For a path or umbrella dependency, which isn't under `deps/`, add `plugins: [PhoenixVapor.Volt]` instead; it resolves the imports from wherever Mix put PhoenixVapor.
+
 Then, in `assets/js/app.js`:
 
 ```js

@@ -43,9 +43,9 @@ defmodule PhoenixVapor.Runtime do
   alias PhoenixVapor.JS
 
   @runtime_ts {:phoenix_vapor, "ts"}
-  @external_resource Volt.Priv.path(@runtime_ts, "reactive-runtime.ts")
+  @external_resource Volt.Priv.path(@runtime_ts, "reactive/runtime.ts")
   @external_resource Volt.Priv.path(@runtime_ts, "npm.lock")
-  @runtime_js Volt.Priv.bundle!(@runtime_ts, "reactive-runtime.ts",
+  @runtime_js Volt.Priv.bundle!(@runtime_ts, "reactive/runtime.ts",
                 define: %{"process.env.NODE_ENV" => ~s("production")}
               )
 

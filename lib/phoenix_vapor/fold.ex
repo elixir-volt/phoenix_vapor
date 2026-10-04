@@ -332,7 +332,7 @@ defmodule PhoenixVapor.Fold do
 
   @doc """
   Loads Vue's server renderer and the given packages into `runtime`: the
-  `fold-renderer.ts` template in `priv/ts`, with the packages imported, bundled
+  `compile/packages.ts` template in `priv/ts`, with the packages imported, bundled
   with Volt from the SFC's directory.
   """
   @spec load(pid(), [String.t()], Path.t()) :: :ok | {:error, String.t()}
@@ -340,7 +340,7 @@ defmodule PhoenixVapor.Fold do
     {imports, modules} = PhoenixVapor.JS.module_splices(sources)
 
     entry =
-      Volt.Priv.render!({:phoenix_vapor, "ts"}, "fold-renderer.ts", [],
+      Volt.Priv.render!({:phoenix_vapor, "ts"}, "compile/packages.ts", [],
         splices: [imports: imports, modules: modules]
       )
 

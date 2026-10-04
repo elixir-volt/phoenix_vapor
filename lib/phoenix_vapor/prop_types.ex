@@ -45,7 +45,7 @@ defmodule PhoenixVapor.PropTypes do
   end
 
   # Loads TypeScript as published, which defines the global `ts`, then
-  # `prop-types.ts` against it, once per runtime. Returns the directory of
+  # `compile/prop-types.ts` against it, once per runtime. Returns the directory of
   # TypeScript's libs.
   defp load(runtime, file) do
     with {:ok, main} <- typescript(file),
@@ -63,7 +63,7 @@ defmodule PhoenixVapor.PropTypes do
         with {:ok, _} <- QuickBEAM.eval(runtime, File.read!(main)),
              {:ok, code} <-
                PhoenixVapor.JS.bundle(
-                 Volt.Priv.read!({:phoenix_vapor, "ts"}, "prop-types.ts"),
+                 Volt.Priv.read!({:phoenix_vapor, "ts"}, "compile/prop-types.ts"),
                  file,
                  name: "prop-types",
                  minify: false,

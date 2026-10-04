@@ -3,7 +3,7 @@ defmodule PhoenixVapor.Fixtures do
 
   # Paths to the shared `.vue` fixtures in `test/fixtures`.
 
-  @dir Path.expand("../fixtures", __DIR__)
+  @dir Path.expand("test/fixtures")
 
   @spec path(Path.t()) :: Path.t()
   def path(name), do: Path.join(@dir, name)

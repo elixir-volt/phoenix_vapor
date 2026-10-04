@@ -143,7 +143,7 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 - `Mix.Tasks.PhoenixVapor.Bundle` — bundles a Vue component library for the full runtime
 
 ### TypeScript (`priv/ts`)
-- `reactive-runtime.ts` — reactive mode's runtime in QuickBEAM, bundled with the vendored `@vue/reactivity` at compile time
-- `live-socket.ts` — `patchLiveSocket`, direct DOM writes for value-only diffs (`phoenix_vapor`)
-- `vapor-patch.ts` — slot analysis and DOM writes behind it (`phoenix_vapor/vapor-patch`)
-- `hybrid-bridge.ts` — LiveView hook for hybrid components (`phoenix_vapor/hybrid`)
+- `reactive/runtime.ts` — reactive mode's runtime in QuickBEAM, bundled with the vendored `@vue/reactivity` at compile time
+- `browser/live-socket.ts` — `patchLiveSocket`, direct DOM writes for value-only diffs (`phoenix_vapor`)
+- `browser/vapor-patch.ts` — slot analysis and DOM writes behind it (`phoenix_vapor/vapor-patch`)
+- `browser/hybrid-bridge.ts` — LiveView hook for hybrid components (`phoenix_vapor/hybrid`)

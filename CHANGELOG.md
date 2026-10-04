@@ -8,6 +8,7 @@
 - A macro call that reads props known only when rendering runs at compile time once per combination of the values their TypeScript types allow, up to 64, and rendering looks the result up. Types come from TypeScript's own checker, from the project's `node_modules`, so variant types derived from a tailwind-variants config work. A value outside the type raises `PhoenixVapor.ExpressionError`.
 - A package component's props may be expressions of known values, such as `:open="selected !== null"` over a ref's initial value, and package parts inside the template's own `v-for` or `v-if`, such as a tooltip per row, render in their ancestors' context.
 - A template's call to a `<script setup>` function renders on the server through the function of the same name in snake_case that `<script lang="elixir">` defines, such as `role_tone/1` for `roleTone(role)`. The full runtime now leaves a `<script lang="elixir">` block out of its browser bundle.
+- `PhoenixVapor.Volt`, a Volt plugin that resolves `phoenix_vapor` imports from a path or umbrella dependency, which `resolve_dirs: ["deps"]` doesn't find.
 - The `file:` option and `PhoenixVapor.Vue.component/2` take any expression known at compile time, such as `Path.join(@templates, "Card.vue")`, besides a path relative to the module's file.
 
 ## 0.5.0 - 2026-10-03

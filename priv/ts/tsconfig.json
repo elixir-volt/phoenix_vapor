@@ -11,5 +11,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["*.ts"]
+  "include": ["browser/**/*.ts", "reactive/**/*.ts", "compile/**/*.ts"]
 }

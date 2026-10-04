@@ -1,6 +1,6 @@
 // Placeholders PhoenixVapor fills in with `Volt.Priv.render!/4` before bundling
 // or evaluating a template, and the globals those templates share.
-import type { FoldNode } from "./fold-renderer.ts"
+import type { FoldNode } from "./packages.ts"
 import type { literalValues } from "./prop-types.ts"
 
 declare global {
@@ -16,7 +16,7 @@ declare global {
   // Entry points PhoenixVapor calls with `QuickBEAM.call/3`, which takes a
   // global function's name.
 
-  /** Renders package components, from `fold-renderer.ts`. */
+  /** Renders package components, from `packages.ts`. */
   var __pv_fold_render: (tree: FoldNode) => Promise<string>
 
   /** The values props can take, from `prop-types.ts`. */
