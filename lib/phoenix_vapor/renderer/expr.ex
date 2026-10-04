@@ -42,35 +42,51 @@ defmodule PhoenixVapor.Renderer.Expr do
       reason: "it isn't a JavaScript expression"
   end
 
-  def eval({:expr, source, node, keys}, assigns) do
+  # Only JavaScript can evaluate it, such as a call with a callback; the
+  # compiler reports it.
+  def eval({:js, source, _node, keys}, assigns), do: quickbeam_eval(source, keys, assigns)
+
+  # A method that isn't the value's, such as `trim()` on a number, throws in
+  # the browser.
+  def eval({:expr, source, node, _keys}, assigns) do
     node |> eval_node(assigns) |> Value.to_elixir()
   catch
-    :unsupported_node -> quickbeam_eval(source, keys, assigns)
+    {:not_a_function, method} ->
+      raise PhoenixVapor.ExpressionError,
+        expression: source,
+        reason: "`#{method}` isn't a function of that value"
   end
 
   @typedoc "An expression parsed ahead of time by `compile/1`."
   @type compiled ::
-          {:expr, String.t(), map() | nil, [String.t()]}
+          {:expr | :js, String.t(), map() | nil, [String.t()]}
           | {:value, term()}
           | {:lookup, String.t(), [String.t()], %{[term()] => term()}}
           | {:unrendered, String.t()}
 
   @doc """
   Parses an expression once, when compiling a template, so that rendering
-  doesn't parse it again.
+  doesn't parse it again. An expression Elixir evaluates is `{:expr, ...}`;
+  one only JavaScript can, such as `items.filter(i => i.on)` or
+  `Math.max(a, b)`, is `{:js, ...}` and runs in QuickBEAM when rendering.
   """
   @spec compile(String.t() | compiled()) :: compiled()
   def compile({:value, _} = value), do: value
   def compile({:lookup, _, _, _} = lookup), do: lookup
   def compile({:unrendered, _} = unrendered), do: unrendered
-  def compile({:expr, _, _, _} = compiled), do: compiled
+  def compile({tag, _, _, _} = compiled) when tag in [:expr, :js], do: compiled
 
   def compile(expr) when is_binary(expr) do
     case parse(expr) do
       nil -> {:expr, expr, nil, []}
-      node -> {:expr, expr, node, free_names(node)}
+      node -> from_node(expr, node)
     end
   end
+
+  @doc "A compiled expression for `node`, parsed from `source` and possibly rewritten."
+  @spec from_node(String.t(), map()) :: compiled()
+  def from_node(source, node),
+    do: {if(elixir?(node), do: :expr, else: :js), source, node, free_names(node)}
 
   # Vue parses an expression in parentheses, so `{ on: active }` is an object
   # rather than a block.
@@ -91,7 +107,74 @@ defmodule PhoenixVapor.Renderer.Expr do
   def assign_keys({:value, _}), do: []
   def assign_keys({:lookup, _source, keys, _table}), do: keys
   def assign_keys({:unrendered, _}), do: []
-  def assign_keys({:expr, _source, _node, keys}), do: keys
+  def assign_keys({tag, _source, _node, keys}) when tag in [:expr, :js], do: keys
+
+  # The globals a Vue template may use, from `GLOBALS_ALLOWED` in @vue/shared.
+  @globals ~w(Infinity undefined NaN isFinite isNaN parseFloat parseInt decodeURI
+              decodeURIComponent encodeURI encodeURIComponent Math Number Date Array
+              Object Boolean String RegExp Map Set JSON Intl BigInt console Error Symbol)
+
+  # The methods, operators and node types `eval_node/2` evaluates.
+  @methods ~w(join includes trim toUpperCase toLowerCase startsWith endsWith)
+  @binary ~w(+ - * / % === !== == != > >= < <=)
+  @unary ~w(! - + typeof)
+  @nodes [
+    :parenthesized_expression,
+    :identifier,
+    :literal,
+    :template_literal,
+    :template_element,
+    :member_expression,
+    :conditional_expression,
+    :logical_expression,
+    :array_expression,
+    :object_expression,
+    :property
+  ]
+
+  @doc false
+  # Whether Elixir evaluates the expression, rather than QuickBEAM.
+  @spec elixir?(map()) :: boolean()
+  def elixir?(%{type: :binary_expression, operator: op} = node),
+    do: op in @binary and elixir?(node.left) and elixir?(node.right)
+
+  def elixir?(%{type: :unary_expression, operator: op, argument: argument}),
+    do: op in @unary and elixir?(argument)
+
+  def elixir?(%{type: :property, computed: true}), do: false
+
+  def elixir?(%{type: :call_expression, callee: callee, arguments: args}) do
+    callable? =
+      case callee do
+        %{type: :member_expression, computed: false, object: object, property: %{name: method}} ->
+          method in @methods and not global?(object) and elixir?(object)
+
+        %{type: :identifier, name: name} ->
+          name not in @globals
+
+        %{type: :elixir_function} ->
+          true
+
+        _callee ->
+          false
+      end
+
+    callable? and Enum.all?(args, &elixir?/1)
+  end
+
+  def elixir?(%{type: :member_expression, object: object, property: property} = node),
+    do: not global?(object) and elixir?(object) and (not node[:computed] or elixir?(property))
+
+  def elixir?(%{type: type} = node) when type in @nodes do
+    Enum.all?(node, fn {key, value} -> key in [:type, :start, :end] or elixir?(value) end)
+  end
+
+  def elixir?(%{type: _type}), do: false
+  def elixir?(list) when is_list(list), do: Enum.all?(list, &elixir?/1)
+  def elixir?(_leaf), do: true
+
+  defp global?(%{type: :identifier, name: name}), do: name in @globals
+  defp global?(_node), do: false
 
   defp eval_node(%{type: :parenthesized_expression, expression: node}, assigns),
     do: eval_node(node, assigns)
@@ -167,7 +250,6 @@ defmodule PhoenixVapor.Renderer.Expr do
       "==" -> Value.loose_equal?(l, r)
       "!=" -> not Value.loose_equal?(l, r)
       op when op in [">", ">=", "<", "<="] -> Value.compare(op, l, r)
-      _other -> throw(:unsupported_node)
     end
   end
 
@@ -179,7 +261,6 @@ defmodule PhoenixVapor.Renderer.Expr do
       "-" -> Value.negate(val)
       "+" -> Value.to_number(val)
       "typeof" -> Value.typeof(val)
-      _other -> throw(:unsupported_node)
     end
   end
 
@@ -205,17 +286,8 @@ defmodule PhoenixVapor.Renderer.Expr do
     end)
   end
 
+  # `elixir?/1` has checked the call is one evaluated here.
   defp eval_node(%{type: :call_expression, callee: callee, arguments: args}, assigns) do
-    has_fn_args =
-      Enum.any?(args || [], fn
-        %{type: t} when t in [:arrow_function_expression, :function_expression] -> true
-        _ -> false
-      end)
-
-    if has_fn_args do
-      throw(:unsupported_node)
-    end
-
     case callee do
       %{type: :member_expression, object: obj, property: %{name: method}} ->
         receiver = obj |> eval_node(assigns) |> Value.to_elixir()
@@ -227,28 +299,11 @@ defmodule PhoenixVapor.Renderer.Expr do
       %{type: :elixir_function, module: module, function: function} ->
         apply(module, function, Enum.map(args, &(&1 |> eval_node(assigns) |> Value.to_elixir())))
 
-      # A call to a function: QuickBEAM runs it, or reports that it isn't one.
-      _ ->
-        throw(:unsupported_node)
+      # A name that isn't a function here, as `undefined()` in the browser.
+      %{type: :identifier, name: name} ->
+        throw({:not_a_function, name})
     end
   end
-
-  defp eval_node(%{type: type}, _assigns)
-       when type in [
-              :arrow_function_expression,
-              :function_expression,
-              :sequence_expression,
-              :assignment_expression,
-              :update_expression,
-              :new_expression,
-              :tagged_template_expression,
-              :yield_expression,
-              :await_expression
-            ] do
-    throw(:unsupported_node)
-  end
-
-  defp eval_node(_, _assigns), do: nil
 
   # Literal types are strings, numbers and booleans; an assign may hold an
   # atom for a string.
@@ -320,8 +375,10 @@ defmodule PhoenixVapor.Renderer.Expr do
   defp fetched({:ok, value}), do: value
   defp fetched(:error), do: :undefined
 
-  defp call_method(list, "join", [sep]) when is_list(list), do: Enum.join(list, to_string(sep))
-  defp call_method(list, "join", []) when is_list(list), do: Enum.join(list, ",")
+  defp call_method(list, "join", [sep]) when is_list(list),
+    do: Enum.map_join(list, Value.to_js_string(sep), &join_item/1)
+
+  defp call_method(list, "join", []) when is_list(list), do: Value.to_js_string(list)
   defp call_method(list, "includes", [val]) when is_list(list), do: val in list
   defp call_method(str, "trim", []) when is_binary(str), do: String.trim(str)
   defp call_method(str, "toUpperCase", []) when is_binary(str), do: String.upcase(str)
@@ -337,12 +394,10 @@ defmodule PhoenixVapor.Renderer.Expr do
     do: String.ends_with?(str, to_string(suf))
 
   # Anything else, such as filter/map with a callback, is evaluated in QuickBEAM.
-  defp call_method(_, _, _), do: throw(:unsupported_node)
+  defp call_method(_value, method, _args), do: throw({:not_a_function, method})
 
-  # The globals a Vue template may use, from `GLOBALS_ALLOWED` in @vue/shared.
-  @globals ~w(Infinity undefined NaN isFinite isNaN parseFloat parseInt decodeURI
-              decodeURIComponent encodeURI encodeURIComponent Math Number Date Array
-              Object Boolean String RegExp Map Set JSON Intl BigInt console Error Symbol)
+  defp join_item(item) when item in [nil, :undefined], do: ""
+  defp join_item(item), do: Value.to_js_string(item)
 
   # Every other name the expression reads is defined, as `null` when it isn't
   # an assign, as Vue resolves an unknown name rather than throwing.

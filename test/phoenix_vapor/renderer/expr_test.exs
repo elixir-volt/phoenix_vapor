@@ -132,4 +132,23 @@ defmodule PhoenixVapor.ExprTest do
       assert eval("`a${x}b`", %{x: 1}) == "a1b"
     end
   end
+
+  describe "compile/1" do
+    test "tags what only JavaScript evaluates" do
+      assert {:expr, _, _, ["name"]} = Expr.compile("name.trim().toUpperCase()")
+      assert {:expr, _, _, ["items"]} = Expr.compile(~s|items.join(", ")|)
+      assert {:js, _, _, ["items"]} = Expr.compile("items.filter(i => i.on)")
+      assert {:js, _, _, ["Math", "a", "b"]} = Expr.compile("Math.max(a, b)")
+      assert {:js, _, _, _} = Expr.compile("a ** 2")
+    end
+
+    test "evaluates a JavaScript-only expression in QuickBEAM" do
+      assert eval("items.filter(i => i.on).length", %{items: [%{on: true}, %{on: false}]}) == 1
+    end
+
+    test "a method the value doesn't have raises, as it throws in the browser" do
+      error = assert_raise PhoenixVapor.ExpressionError, fn -> eval("n.trim()", %{n: 1}) end
+      assert Exception.message(error) =~ "`trim` isn't a function of that value"
+    end
+  end
 end

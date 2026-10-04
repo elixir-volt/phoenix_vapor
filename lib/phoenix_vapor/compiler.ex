@@ -221,8 +221,25 @@ defmodule PhoenixVapor.Compiler do
     {compiled, state} = mark_script_calls(compiled, ctx, state)
     {compiled, state} = resolve_template(compiled, ctx, state)
 
+    state = report_js(compiled, ctx, state)
+
     # Macros, Elixir functions and package components changed what slots read.
     {Template.put_keys(compiled), state}
+  end
+
+  # An expression only JavaScript evaluates, such as a callback, runs in
+  # QuickBEAM on every render; the rest of rendering is Elixir.
+  defp report_js(template, ctx, state) do
+    template
+    |> Template.exprs()
+    |> Enum.reduce(state, fn
+      {{:js, source, _node, _keys}, slot}, state ->
+        message = "`#{source}` runs in QuickBEAM when rendering, as Elixir can't evaluate it"
+        diagnose(state, :warning, ctx.file, slot[:position], message)
+
+      _expr, state ->
+        state
+    end)
   end
 
   defp resolve_template(%Template{slots: slots} = template, ctx, state) do
@@ -339,7 +356,8 @@ defmodule PhoenixVapor.Compiler do
 
       functions ->
         Template.map_exprs(template, state, fn
-          {:expr, source, node, _keys} = expr, slot, state when is_map(node) ->
+          {tag, source, node, _keys} = expr, slot, state
+          when tag in [:expr, :js] and is_map(node) ->
             rewritten = elixir_calls(node, functions, ctx.elixir)
 
             case called(rewritten, functions) do
@@ -347,7 +365,7 @@ defmodule PhoenixVapor.Compiler do
                 {expr, state}
 
               nil ->
-                {{:expr, source, rewritten, Expr.free_names(rewritten)}, state}
+                {Expr.from_node(source, rewritten), state}
 
               name ->
                 message =

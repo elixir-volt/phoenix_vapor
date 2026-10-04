@@ -130,8 +130,8 @@ defmodule PhoenixVapor.Compiler.Macros do
 
   # ── Folding ──
 
-  defp fold_expr({:expr, source, node, _keys} = expr, slot, diagnostics, env, runtime)
-       when is_map(node) do
+  defp fold_expr({tag, source, node, _keys} = expr, slot, diagnostics, env, runtime)
+       when tag in [:expr, :js] and is_map(node) do
     case classify(refs(node), env.derived, env.static_props) do
       :none ->
         {expr, diagnostics}
