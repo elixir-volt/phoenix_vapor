@@ -5,6 +5,8 @@
 ### Added
 
 - In hybrid mode, components from packages, such as Reka UI, render on the server when everything they receive is known at compile time. Vue's server renderer runs them once in QuickBEAM while the template compiles, so rendering runs no JavaScript. Nested package components render together, providers such as `TooltipProvider` render only their content, and in hybrid mode the initial values of refs count as known. One that can't render is reported with the reason, such as a prop known only when rendering or an error from the component. Outside hybrid mode, where nothing takes over in the browser, only package components that render just their content, such as providers, render; others remain a compile error.
+- A macro call that reads props known only when rendering runs at compile time once per combination of the values their TypeScript types allow, up to 64, and rendering looks the result up. Types come from TypeScript's own checker, from the project's `node_modules`, so variant types derived from a tailwind-variants config work. A value outside the type raises `PhoenixVapor.ExpressionError`.
+- A package component's props may be expressions of known values, such as `:open="selected !== null"` over a ref's initial value, and package parts inside the template's own `v-for` or `v-if`, such as a tooltip per row, render in their ancestors' context.
 - The `file:` option and `PhoenixVapor.Vue.component/2` take any expression known at compile time, such as `Path.join(@templates, "Card.vue")`, besides a path relative to the module's file.
 
 ## 0.5.0 - 2026-10-03

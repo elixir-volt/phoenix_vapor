@@ -56,4 +56,4 @@ export function render(tree: FoldNode): Promise<string> {
   })
 }
 
-globalThis.__pv_fold = { render }
+globalThis.__pv_fold_render = render

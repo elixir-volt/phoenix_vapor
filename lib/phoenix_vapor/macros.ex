@@ -14,10 +14,15 @@ defmodule PhoenixVapor.Macros do
   # them, or props a parent passed as static values runs once in QuickBEAM, and
   # its result replaces the expression. Rendering then needs no JavaScript.
   #
-  # A macro call that depends on anything else, such as a prop bound to an
-  # assign, can't be folded and is reported.
+  # A macro call that reads props known only when rendering runs once for each
+  # combination of the values their TypeScript types allow, such as a variant
+  # prop's literals, up to 64 combinations; rendering looks the result up. A
+  # macro call that depends on anything else, such as a prop typed `string`,
+  # can't be folded and is reported.
 
-  alias PhoenixVapor.Template
+  alias PhoenixVapor.{PropTypes, Template}
+
+  @max_combinations 64
 
   # `static_props` is nil for a template whose props are all only known when
   # rendering, such as a LiveView's. For a component instance it has the
@@ -56,7 +61,7 @@ defmodule PhoenixVapor.Macros do
       bundle_id = load_bundle(runtime, macros, ctx.file)
       env = Map.put(env, :bundle_id, bundle_id)
 
-      env = Map.put(env, :file, ctx.file)
+      env = Map.merge(env, %{file: ctx.file, script: ctx.script})
       {split, diagnostics} = Template.map_exprs(split, [], &fold_expr(&1, &2, &3, env, runtime))
       {split, runtime, Enum.reverse(diagnostics)}
     end
@@ -200,12 +205,88 @@ defmodule PhoenixVapor.Macros do
         end
 
       :dynamic ->
-        message = "`#{source}` calls a macro with values known only when rendering"
-        {{:unrendered, source}, [diagnostic(env, slot, :unrendered, message) | diagnostics]}
+        case expand(node, source, env, runtime) do
+          {:ok, lookup} ->
+            {lookup, diagnostics}
+
+          {:error, reason} ->
+            message =
+              "`#{source}` calls a macro with values known only when rendering: #{reason}"
+
+            {{:unrendered, source}, [diagnostic(env, slot, :unrendered, message) | diagnostics]}
+        end
     end
   end
 
   defp fold_expr(expr, _slot, diagnostics, _env, _runtime), do: {expr, diagnostics}
+
+  # Runs the call for each combination of the values its props known only
+  # when rendering can take, as their types declare them.
+  defp expand(node, source, env, runtime) do
+    props =
+      node
+      |> refs()
+      |> Enum.reject(&foldable_ref?(&1, env.derived, env.static_props))
+      |> Enum.map(&prop_name/1)
+      |> Enum.uniq()
+
+    with {:ok, domains} <- PropTypes.literal_values(runtime, env.file, env.script, props),
+         {:ok, combinations} <- combinations(props, domains) do
+      Enum.reduce_while(combinations, {:ok, %{}}, fn values, {:ok, table} ->
+        case evaluate(runtime, source, with_props(env, props, values)) do
+          {:ok, value} -> {:cont, {:ok, Map.put(table, values, value)}}
+          {:error, message} -> {:halt, {:error, "with #{inspect(values)} it failed: #{message}"}}
+        end
+      end)
+      |> case do
+        {:ok, table} -> {:ok, {:lookup, source, props, table}}
+        error -> error
+      end
+    end
+  end
+
+  defp prop_name("props." <> prop), do: prop
+  defp prop_name(name), do: name
+
+  defp combinations(props, domains) do
+    case Enum.find(props, &(domains[&1] == nil)) do
+      nil ->
+        combinations =
+          Enum.reduce(Enum.reverse(props), [[]], &for(v <- domains[&1], c <- &2, do: [v | c]))
+
+        if length(combinations) <= @max_combinations,
+          do: {:ok, combinations},
+          else:
+            {:error,
+             "its props can take #{length(combinations)} combinations of values, more than #{@max_combinations}"}
+
+      prop ->
+        {:error, "the type of `#{prop}` isn't a set of literal values"}
+    end
+  end
+
+  # The environment with `props` known to have `values`; a nil value is a prop
+  # that wasn't passed, so it's `undefined`.
+  defp with_props(env, props, values) do
+    static_props = env.static_props || %{static: %{}, dynamic: MapSet.new(), declared: []}
+
+    static =
+      props
+      |> Enum.zip(values)
+      |> Enum.reject(fn {_prop, value} -> value == nil end)
+      |> Map.new()
+      |> then(&Map.merge(Map.drop(static_props.static, props), &1))
+
+    %{
+      env
+      | static_props: %{
+          static_props
+          | static: static,
+            dynamic: MapSet.difference(static_props.dynamic, MapSet.new(props)),
+            declared: Enum.uniq(static_props.declared ++ props)
+        }
+    }
+  end
 
   defp diagnostic(env, slot, severity, message),
     do: %{file: env.file, severity: severity, message: message, position: slot[:position] || 0}
@@ -265,7 +346,7 @@ defmodule PhoenixVapor.Macros do
   # ── The macro modules ──
 
   defp start_runtime do
-    {:ok, runtime} = QuickBEAM.start()
+    {:ok, runtime} = QuickBEAM.start(handlers: PropTypes.handlers())
     runtime
   end
 

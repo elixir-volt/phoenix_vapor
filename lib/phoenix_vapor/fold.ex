@@ -15,9 +15,10 @@ defmodule PhoenixVapor.Fold do
   # too. A component that receives a value known only when rendering, or a
   # scoped slot, can't be folded.
 
-  alias PhoenixVapor.{Renderer, Template}
+  alias PhoenixVapor.{Expr, Renderer, Template}
 
   @marker_pattern ~r/\x{2063}H(\d+)\x{2063}/u
+  @capture_pattern ~r/\x{2063}C(\d+)\.(\d+)\[\x{2063}(.*?)\x{2063}C\1\.\2\]\x{2063}/su
 
   @type package :: %{source: String.t(), imported: :default | :namespace | String.t()}
 
@@ -122,6 +123,15 @@ defmodule PhoenixVapor.Fold do
             {:error, _reason} -> {:cont, {:ok, [marker(holes) | parts], [slot | holes]}}
           end
 
+        # Our own `v-for` or `v-if` around package components, such as a
+        # tooltip per row, renders each block once here, in its ancestors'
+        # context, and stays a hole whose blocks are the rendered templates.
+        slot.kind in [:for, :if] and Enum.any?(blocks(slot), &packages?(&1, packages)) ->
+          case captures(slot, packages, known, holes, parts) do
+            {:ok, parts, holes} -> {:cont, {:ok, parts, holes}}
+            error -> {:halt, error}
+          end
+
         true ->
           {:cont, {:ok, [marker(holes) | parts], [slot | holes]}}
       end
@@ -130,6 +140,46 @@ defmodule PhoenixVapor.Fold do
       {:ok, parts, holes} -> {:ok, merge_html(Enum.reverse(parts)), holes}
       error -> error
     end
+  end
+
+  defp blocks(%{kind: :for, block: block}), do: [block]
+  defp blocks(%{kind: :if, branches: branches}), do: Enum.map(branches, & &1.block)
+
+  defp packages?(%{slots: slots}, packages) do
+    Enum.any?(slots, fn
+      %{kind: :component, name: name} = slot ->
+        packages.(name) != nil or Enum.any?(slot.slots, &packages?(&1.block, packages))
+
+      %{kind: kind} = slot when kind in [:for, :if] ->
+        Enum.any?(blocks(slot), &packages?(&1, packages))
+
+      _slot ->
+        false
+    end)
+  end
+
+  # Adds the parts for each of a slot's blocks between capture markers to
+  # `parts/4`'s accumulator, which is in reverse. The slot is the hole the
+  # captured blocks are put back into.
+  defp captures(slot, packages, known, holes, parts) do
+    index = length(holes)
+
+    slot
+    |> blocks()
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, parts, [slot | holes]}, fn {block, branch}, {:ok, acc, holes} ->
+      case parts(block, packages, known, holes) do
+        {:ok, inner, holes} ->
+          id = "#{index}.#{branch}"
+
+          {:cont,
+           {:ok, ["\u2063C#{id}]\u2063" | Enum.reverse(inner, ["\u2063C#{id}[\u2063" | acc])],
+            holes}}
+
+        error ->
+          {:halt, error}
+      end
+    end)
   end
 
   defp strip_fragments(html), do: String.replace(html, ["<!--[-->", "<!--]-->"], "")
@@ -146,8 +196,8 @@ defmodule PhoenixVapor.Fold do
     |> Enum.reject(&(&1 == ""))
   end
 
-  # A prop is known when it's static, a folded macro call, a literal, or a name
-  # in `known`.
+  # A prop is known when it's static, a folded macro call, or an expression of
+  # names in `known`.
   defp props(props, known) do
     Enum.reduce_while(props, {:ok, %{}}, fn prop, {:ok, acc} ->
       case prop_value(prop, known) do
@@ -171,22 +221,28 @@ defmodule PhoenixVapor.Fold do
 
   defp known_value({:value, value}, _known), do: {:ok, value}
 
-  defp known_value({:expr, _source, %{type: :literal, value: value}, _keys}, _known),
-    do: {:ok, value}
-
-  defp known_value({:expr, _source, %{type: :identifier, name: name}, _keys}, known) do
+  defp known_value(
+         {:expr, _source,
+          %{type: :member_expression, object: %{name: "props"}, property: %{name: name}}, _keys},
+         known
+       ) do
     case Map.fetch(known, name) do
       {:ok, value} -> {:ok, value}
       :error -> :unknown
     end
   end
 
-  defp known_value(
-         {:expr, source,
-          %{type: :member_expression, object: %{name: "props"}, property: %{name: name}}, keys},
-         known
-       ),
-       do: known_value({:expr, source, %{type: :identifier, name: name}, keys}, known)
+  # An expression of known names, such as `target !== null` over a ref's
+  # initial value, evaluates as the template's expressions do when rendering.
+  defp known_value({:expr, _source, node, keys} = expr, known) when is_map(node) do
+    if Enum.all?(keys, &Map.has_key?(known, &1)) do
+      {:ok, Expr.eval(expr, known)}
+    else
+      :unknown
+    end
+  rescue
+    _error in PhoenixVapor.ExpressionError -> :unknown
+  end
 
   defp known_value(_expr, _known), do: :unknown
 
@@ -194,7 +250,7 @@ defmodule PhoenixVapor.Fold do
   defp prop_label(_prop), do: "v-bind"
 
   defp render(runtime, tree) do
-    case QuickBEAM.eval(runtime, "globalThis.__pv_fold.render(#{Jason.encode!(tree)})") do
+    case QuickBEAM.call(runtime, "__pv_fold_render", [tree]) do
       {:ok, html} when is_binary(html) -> {:ok, html}
       {:ok, other} -> {:error, "rendering returned #{inspect(other)}"}
       {:error, error} -> {:error, PhoenixVapor.JS.error_message(error)}
@@ -202,27 +258,76 @@ defmodule PhoenixVapor.Fold do
   end
 
   # Vue's fragment markers are for hydration; the browser mounts fresh.
-  defp template(html, holes, file) do
-    html = strip_fragments(html)
-    [first | rest] = Regex.split(@marker_pattern, html, include_captures: true)
+  defp template(html, holes, file),
+    do: html |> strip_fragments() |> split(List.to_tuple(holes), file)
 
-    {statics, indices} =
-      rest
-      |> Enum.chunk_every(2)
-      |> Enum.reduce({[first], []}, fn [marker, static], {statics, indices} ->
-        [_, index] = Regex.run(@marker_pattern, marker)
-        {[static | statics], [String.to_integer(index) | indices]}
-      end)
+  defp split(html, holes, file) do
+    with {:ok, html, captured} <- extract_captures(html, holes, file) do
+      [first | rest] = Regex.split(@marker_pattern, html, include_captures: true)
 
-    indices = Enum.reverse(indices)
+      {statics, indices} =
+        rest
+        |> Enum.chunk_every(2)
+        |> Enum.reduce({[first], []}, fn [marker, static], {statics, indices} ->
+          [_, index] = Regex.run(@marker_pattern, marker)
+          {[static | statics], [String.to_integer(index) | indices]}
+        end)
 
-    if Enum.uniq(indices) == indices do
-      holes = List.to_tuple(holes)
-      slots = Enum.map(indices, &elem(holes, &1))
-      {:ok, Renderer.template(Enum.reverse(statics), slots, file)}
-    else
-      {:error, "its content renders more than once"}
+      indices = Enum.reverse(indices)
+
+      if Enum.uniq(indices) == indices do
+        slots = Enum.map(indices, &restore(elem(holes, &1), captured[&1]))
+        {:ok, Renderer.template(Enum.reverse(statics), slots, file)}
+      else
+        {:error, "its content renders more than once"}
+      end
     end
+  end
+
+  # The blocks rendered between capture markers, as templates by hole and
+  # branch, with the HTML left holding the hole's marker in their place.
+  defp extract_captures(html, holes, file) do
+    @capture_pattern
+    |> Regex.scan(html, capture: :all_but_first)
+    |> Enum.reduce_while({:ok, %{}}, fn [index, branch, body], {:ok, captured} ->
+      case split(body, holes, file) do
+        {:ok, template} ->
+          key = {String.to_integer(index), String.to_integer(branch)}
+          {:cont, {:ok, Map.put(captured, key, template)}}
+
+        error ->
+          {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, captured} ->
+        html =
+          Regex.replace(@capture_pattern, html, fn _match, index, branch, _body ->
+            if branch == "0", do: "\u2063H#{index}\u2063", else: ""
+          end)
+
+        by_hole =
+          Enum.group_by(captured, fn {{index, _}, _} -> index end, fn {{_, branch}, t} ->
+            {branch, t}
+          end)
+
+        {:ok, html, Map.new(by_hole, fn {index, blocks} -> {index, Map.new(blocks)} end)}
+
+      error ->
+        error
+    end
+  end
+
+  defp restore(slot, nil), do: slot
+  defp restore(%{kind: :for} = slot, %{0 => block}), do: %{slot | block: block}
+
+  defp restore(%{kind: :if, branches: branches} = slot, blocks) do
+    branches =
+      branches
+      |> Enum.with_index()
+      |> Enum.map(fn {branch, index} -> %{branch | block: Map.fetch!(blocks, index)} end)
+
+    %{slot | branches: branches}
   end
 
   @doc """

@@ -27,6 +27,24 @@ defmodule PhoenixVapor.Expr do
   # An expression only the browser can evaluate, reported when compiling.
   def eval({:unrendered, _source}, _assigns), do: nil
 
+  # A macro call computed at compile time for each value its props can take,
+  # looked up by their values.
+  def eval({:lookup, source, keys, table}, assigns) do
+    values = Enum.map(keys, &(assigns |> get_assign(&1) |> lookup_value()))
+
+    case Map.fetch(table, values) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        raise PhoenixVapor.ExpressionError,
+          expression: source,
+          reason:
+            "#{Enum.map_join(Enum.zip(keys, values), ", ", fn {key, value} -> "#{key} is #{inspect(value)}" end)}, " <>
+              "which its type doesn't allow"
+    end
+  end
+
   def eval({:expr, source, nil, _keys}, assigns), do: resolve_path(source, assigns)
 
   def eval({:expr, source, node, _keys}, assigns) do
@@ -47,6 +65,7 @@ defmodule PhoenixVapor.Expr do
   @type compiled ::
           {:expr, String.t(), map() | nil, [String.t()]}
           | {:value, term()}
+          | {:lookup, String.t(), [String.t()], %{[term()] => term()}}
           | {:unrendered, String.t()}
 
   @doc """
@@ -58,6 +77,7 @@ defmodule PhoenixVapor.Expr do
           compiled() | {:static_, String.t()}
   def compile({:static_, _} = static), do: static
   def compile({:value, _} = value), do: value
+  def compile({:lookup, _, _, _} = lookup), do: lookup
   def compile({:unrendered, _} = unrendered), do: unrendered
   def compile({:expr, _, _, _} = compiled), do: compiled
 
@@ -98,6 +118,7 @@ defmodule PhoenixVapor.Expr do
   @spec assign_keys(String.t() | {:static_, String.t()} | compiled()) :: [String.t()]
   def assign_keys({:static_, _}), do: []
   def assign_keys({:value, _}), do: []
+  def assign_keys({:lookup, _source, keys, _table}), do: keys
   def assign_keys({:unrendered, _}), do: []
   def assign_keys({:expr, _source, _node, keys}), do: keys
 
@@ -282,6 +303,13 @@ defmodule PhoenixVapor.Expr do
   end
 
   defp eval_node(_, _assigns), do: nil
+
+  # Literal types are strings, numbers and booleans; an assign may hold an
+  # atom for a string.
+  defp lookup_value(value) when is_atom(value) and not is_boolean(value) and value != nil,
+    do: Atom.to_string(value)
+
+  defp lookup_value(value), do: value
 
   defp get_assign(assigns, name) do
     case name do

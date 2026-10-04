@@ -69,17 +69,42 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
                Enum.find(props, &(&1.name == "class"))
     end
 
-    test "report calls whose arguments are only known when rendering" do
+    defmodule DynamicMacroLive do
+      use Phoenix.LiveView
+      use PhoenixVapor, file: Fixtures.path("components/DynamicMacro.vue")
+    end
+
+    test "run once per value a prop's literal type allows, and look the result up" do
+      # Button's `variant` is `"solid" | "ghost"`, passed an assign.
+      assert DynamicMacroLive.render(%{variant: "ghost"}) |> html() =~
+               ~s(class="btn btn-ghost btn-md")
+
+      assert DynamicMacroLive.render(%{variant: :solid}) |> html() =~
+               ~s(class="btn btn-solid btn-md")
+
       error =
-        assert_raise CompileError, fn ->
-          defmodule DynamicMacroLive do
-            use Phoenix.LiveView
-            use PhoenixVapor, file: Fixtures.path("components/DynamicMacro.vue")
-          end
+        assert_raise PhoenixVapor.ExpressionError, fn ->
+          DynamicMacroLive.render(%{variant: "huge"}) |> html()
         end
 
-      assert Exception.message(error) =~
-               "`button({ variant: props.variant, size: props.size })` calls a macro with values known only when rendering"
+      assert Exception.message(error) =~ ~s(variant is "huge", which its type doesn't allow)
+    end
+
+    test "report calls with props whose type isn't a set of literals" do
+      {_template, _files, [diagnostic]} =
+        PhoenixVapor.Components.compile(~S|<b :class="button({ variant: props.variant })" />|,
+          file: Fixtures.path("components/Button.vue"),
+          script: """
+          import { button } from "./variants" with { type: "macro" }
+          const props = defineProps<{ variant: string }>()
+          """
+        )
+
+      assert %{severity: :unrendered, message: message} = diagnostic
+
+      assert message =~
+               "`button({ variant: props.variant })` calls a macro with values known only when rendering: " <>
+                 "the type of `variant` isn't a set of literal values"
     end
   end
 
@@ -90,7 +115,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
     end
 
     test "render at compile time, with the template's content inside them" do
-      html = PackageFoldLive.render(%{name: "Ada"}) |> html()
+      html = PackageFoldLive.render(%{name: "Ada", tags: ["math", "poetry"]}) |> html()
 
       # TooltipProvider renders only its content; the Tabs render as Reka does,
       # on the tab the ref starts on.
@@ -99,6 +124,14 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
       assert html =~ ~r/aria-selected="true" data-state="active">Greeting/
       assert html =~ ~r/role="tabpanel" data-state="active"[^>]*><p>Hello Ada<\/p><\/div>/
       refute html =~ "<p>Other</p>"
+
+      # A tooltip per row renders in the provider's context, once per tag.
+      assert html =~ ~r/<li><button[^>]*data-state="closed"[^>]*>math<\/button><\/li>/
+      assert html =~ ~r/<li><button[^>]*data-state="closed"[^>]*>poetry<\/button><\/li>/
+
+      # The dialog's `open` is an expression of a ref's initial value: closed.
+      assert html =~ ~r/<button[^>]*aria-expanded="false"[^>]*>Remove<\/button>/
+      refute html =~ "Remove Ada?"
     end
 
     test "that need a parent they're rendered without are reported with Vue's reason" do

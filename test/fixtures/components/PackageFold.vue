@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref } from "vue"
-import { TooltipProvider, TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui"
+import {
+  TooltipProvider, TabsRoot, TabsList, TabsTrigger, TabsContent,
+  DialogRoot, DialogTrigger, DialogPortal, DialogContent,
+  TooltipRoot, TooltipTrigger,
+} from "reka-ui"
 
-defineProps<{ name: string }>()
+defineProps<{ name: string; tags: string[] }>()
 
 const tab = ref("greeting")
+const target = ref<string | null>(null)
 </script>
 
 <template>
@@ -17,5 +22,14 @@ const tab = ref("greeting")
       <TabsContent value="greeting"><p>Hello {{ name }}</p></TabsContent>
       <TabsContent value="other"><p>Other</p></TabsContent>
     </TabsRoot>
+    <ul>
+      <li v-for="tag in tags" :key="tag">
+        <TooltipRoot><TooltipTrigger>{{ tag }}</TooltipTrigger></TooltipRoot>
+      </li>
+    </ul>
+    <DialogRoot :open="target !== null" @update:open="open => { if (!open) target = null }">
+      <DialogTrigger>Remove</DialogTrigger>
+      <DialogPortal><DialogContent>Remove {{ name }}?</DialogContent></DialogPortal>
+    </DialogRoot>
   </TooltipProvider>
 </template>

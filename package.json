@@ -10,6 +10,7 @@
   "devDependencies": {
     "oxlint-tsgolint": "0.22.1",
     "reka-ui": "^2.10.3",
+    "typescript": "^5.9.3",
     "vue": "^3.5.41"
   }
 }

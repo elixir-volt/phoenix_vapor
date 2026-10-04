@@ -78,13 +78,13 @@ const tab = ref("general")
 </template>
 ```
 
-`TooltipProvider` renders only its content, and the Tabs render with Reka's markup and ARIA attributes. Package components inside one another render together, so parts such as `TabsList` get their parent's context. The template's own content inside them, such as `{{ project.name }}`, stays dynamic.
+`TooltipProvider` renders only its content, and the Tabs render with Reka's markup and ARIA attributes. Package components inside one another render together, so parts such as `TabsList` get their parent's context. The template's own content inside them, such as `{{ project.name }}`, stays dynamic. So does a `v-for` or `v-if` of the template's own: a package part inside it, such as a `TooltipRoot` per row, renders once in its ancestors' context, and the loop repeats that markup.
 
-This is for [hybrid mode](hybrid.md), where the server renders the first paint and Vue takes over in the browser. Known values are static props, literals, [macro](#macros) results, and the initial values of refs, which the browser renders first too.
+This is for [hybrid mode](hybrid.md), where the server renders the first paint and Vue takes over in the browser. Known values are static props, literals, [macro](#macros) results, the initial values of refs, which the browser renders first too, and expressions of those, such as `:open="selected !== null"` while `selected` starts as `null`.
 
 In other modes nothing takes over in the browser, so frozen markup from a component with behavior, such as tabs whose triggers never switch, would look interactive and do nothing. There, a package component renders only when it renders just its content, as a provider such as `TooltipProvider` does, and any other is a compile error.
 
-A package component that receives a value known only when rendering, such as `:open="selected !== null"`, or that passes props to its slot content, can't render on the server. In hybrid mode it's left out of the first render, with a compile-time warning that says why, and appears when the browser mounts the component. In other modes it's a compile error.
+A package component that receives a value known only when rendering, such as `:open="row.open"` inside a `v-for`, or that passes props to its slot content, can't render on the server. In hybrid mode it's left out of the first render, with a compile-time warning that says why, and appears when the browser mounts the component. In other modes it's a compile error.
 
 ### Macros
 
@@ -102,7 +102,20 @@ const props = defineProps<{ variant?: "solid" | "ghost" }>()
 </template>
 ```
 
-When everything a call reads is known at compile time, such as a prop a parent passes as a constant (`<Button variant="ghost">`) or doesn't pass at all, the call runs once in QuickBEAM and its result is compiled into the template, so rendering runs no JavaScript. This suits variant helpers such as [tailwind-variants](https://www.tailwind-variants.org). A call that depends on a value known only when rendering, such as `:variant="row.variant"`, is a compile error, or a warning in hybrid mode, where the browser renders it. The browser build imports the helper as usual.
+When everything a call reads is known at compile time, such as a prop a parent passes as a constant (`<Button variant="ghost">`) or doesn't pass at all, the call runs once in QuickBEAM and its result is compiled into the template, so rendering runs no JavaScript. This suits variant helpers such as [tailwind-variants](https://www.tailwind-variants.org). The browser build imports the helper as usual.
+
+When a call reads props known only when rendering, such as `<Button :variant="row.variant">`, and their TypeScript types are finite sets of literals, the call runs once for each combination of values, up to 64, and rendering looks the result up. The types are resolved with TypeScript's own checker from the project's `node_modules`, so a type derived from a variants config works too:
+
+```vue
+<script setup lang="ts">
+import { badge, type BadgeProps } from "./variants" with { type: "macro" }
+
+// "neutral" | "success" | "warning" | "danger"
+const props = defineProps<{ tone?: BadgeProps["tone"] }>()
+</script>
+```
+
+A value outside the type raises `PhoenixVapor.ExpressionError` when rendering. A call that depends on anything else, such as a prop typed `string`, is a compile error, or a warning in hybrid mode, where the browser renders it.
 
 ### Components from assigns
 
