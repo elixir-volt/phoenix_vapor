@@ -12,7 +12,7 @@ defmodule PhoenixVapor.Compiler do
 
   alias PhoenixVapor.Template
   alias PhoenixVapor.Compiler.{Macros, Packages, Split}
-  alias PhoenixVapor.Renderer.Expr
+  alias PhoenixVapor.Renderer.{Expr, Names}
 
   @typedoc """
   A problem found while compiling, in the shape of `t:Code.diagnostic/1`.
@@ -473,21 +473,19 @@ defmodule PhoenixVapor.Compiler do
   defp static_props(props) do
     Enum.reduce(props, %{static: %{}, dynamic: MapSet.new()}, fn
       %{name: name, static: static, value: nil, name_value: nil}, acc when name != nil ->
-        put_in(acc, [:static, camelize(name)], static)
+        put_in(acc, [:static, Names.camelize(name)], static)
 
       %{name: name, value: {:expr, _source, %{type: :literal, value: value}, _keys}}, acc
       when name != nil ->
-        put_in(acc, [:static, camelize(name)], value)
+        put_in(acc, [:static, Names.camelize(name)], value)
 
       %{name: name}, acc when name != nil ->
-        %{acc | dynamic: MapSet.put(acc.dynamic, camelize(name))}
+        %{acc | dynamic: MapSet.put(acc.dynamic, Names.camelize(name))}
 
       _spread_or_dynamic_name, acc ->
         acc
     end)
   end
-
-  defp camelize(key), do: Regex.replace(~r/-(\w)/, key, fn _, char -> String.upcase(char) end)
 
   defp compile_child(path, static_props, state) do
     source = File.read!(path)

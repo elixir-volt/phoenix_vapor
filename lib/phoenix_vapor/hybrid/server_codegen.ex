@@ -193,39 +193,35 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   end
 
   defp eval_computeds_via_quickbeam(assigns, computed_exprs, ref_values) do
-    if Code.ensure_loaded?(QuickBEAM) do
-      ref_names = MapSet.new(Map.keys(ref_values), &to_string/1)
+    ref_names = MapSet.new(Map.keys(ref_values), &to_string/1)
 
-      vars =
-        assigns
-        |> Enum.filter(fn {k, _} -> is_atom(k) and k not in [:__changed__, :__components__] end)
-        |> Map.new(fn {k, v} ->
-          name = Atom.to_string(k)
-
-          if MapSet.member?(ref_names, name) do
-            {name, %{"value" => v}}
-          else
-            {name, v}
-          end
-        end)
-
-      {:ok, rt} = QuickBEAM.start()
-
-      try do
-        Enum.reduce(computed_exprs, assigns, fn {name, expr}, acc ->
-          case QuickBEAM.eval(rt, wrap_computed_expr(expr), vars: vars) do
-            {:ok, value} ->
-              Map.put(acc, name, value)
-
-            _ ->
-              acc
-          end
-        end)
-      after
-        QuickBEAM.stop(rt)
-      end
-    else
+    vars =
       assigns
+      |> Enum.filter(fn {k, _} -> is_atom(k) and k not in [:__changed__, :__components__] end)
+      |> Map.new(fn {k, v} ->
+        name = Atom.to_string(k)
+
+        if MapSet.member?(ref_names, name) do
+          {name, %{"value" => v}}
+        else
+          {name, v}
+        end
+      end)
+
+    {:ok, rt} = QuickBEAM.start()
+
+    try do
+      Enum.reduce(computed_exprs, assigns, fn {name, expr}, acc ->
+        case QuickBEAM.eval(rt, wrap_computed_expr(expr), vars: vars) do
+          {:ok, value} ->
+            Map.put(acc, name, value)
+
+          _ ->
+            acc
+        end
+      end)
+    after
+      QuickBEAM.stop(rt)
     end
   end
 

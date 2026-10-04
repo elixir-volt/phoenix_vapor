@@ -4,6 +4,7 @@
 
 ### Breaking changes
 
+- Template expressions follow JavaScript's semantics, as Vue renders them in the browser: truthiness (`0`, `""` and `NaN` are falsy in `v-if`, `? :`, `!`, `&&` and `||`), `===` (`1 === 1.0`), `==`, relational comparison (`undefined > 0` is false), `+` concatenation and arithmetic with `NaN` and `Infinity`, and `typeof null`. A missing assign is `undefined` and `nil` is `null`. Before, Elixir's semantics leaked through, so `v-if="items.length > 0"` rendered with no `items`.
 - Modules are grouped by role: `PhoenixVapor.Compiler.*` compiles templates, `PhoenixVapor.Renderer.*` renders them, and each mode's modules sit under it. `PhoenixVapor.Runtime` is now `PhoenixVapor.Reactive.Runtime`, `PhoenixVapor.LiveVue` is `PhoenixVapor.Full`, `PhoenixVapor.VueRuntime` is `PhoenixVapor.Full.Runtime`, and `PhoenixVapor.ScriptSetup` is `PhoenixVapor.Compiler.ScriptSetup`; the runtimes and `ScriptSetup` are internal. `use PhoenixVapor`, `~VUE`, `PhoenixVapor.Vue`, `PhoenixVapor.Template` and `PhoenixVapor.ExpressionError` are unchanged.
 
 ### Added
@@ -14,6 +15,10 @@
 - A template's call to a `<script setup>` function renders on the server through the function of the same name in snake_case that `<script lang="elixir">` defines, such as `role_tone/1` for `roleTone(role)`. The full runtime now leaves a `<script lang="elixir">` block out of its browser bundle.
 - `PhoenixVapor.Volt`, a Volt plugin that resolves `phoenix_vapor` imports from a path or umbrella dependency, which `resolve_dirs: ["deps"]` doesn't find.
 - The `file:` option and `PhoenixVapor.Vue.component/2` take any expression known at compile time, such as `Path.join(@templates, "Card.vue")`, besides a path relative to the module's file.
+
+### Fixed
+
+- A template literal's text between expressions rendered empty: `` `a${x}b` `` gave `1`.
 
 ## 0.5.0 - 2026-10-03
 

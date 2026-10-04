@@ -31,23 +31,17 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
   Converts `ref(0)` → `%{count: 0}`, etc.
   """
   def eval_initial_state(refs, assigns \\ %{}) do
-    if Code.ensure_loaded?(QuickBEAM) do
-      {:ok, rt} = QuickBEAM.start()
+    {:ok, rt} = QuickBEAM.start()
 
-      try do
-        Enum.reduce(refs, assigns, fn {name, init_expr}, acc ->
-          case QuickBEAM.eval(rt, "(#{init_expr})") do
-            {:ok, value} -> Map.put(acc, PhoenixVapor.Renderer.Names.atom!(name), value)
-            _ -> Map.put(acc, PhoenixVapor.Renderer.Names.atom!(name), nil)
-          end
-        end)
-      after
-        QuickBEAM.stop(rt)
-      end
-    else
-      Enum.reduce(refs, assigns, fn {name, _}, acc ->
-        Map.put(acc, PhoenixVapor.Renderer.Names.atom!(name), nil)
+    try do
+      Enum.reduce(refs, assigns, fn {name, init_expr}, acc ->
+        case QuickBEAM.eval(rt, "(#{init_expr})") do
+          {:ok, value} -> Map.put(acc, PhoenixVapor.Renderer.Names.atom!(name), value)
+          _ -> Map.put(acc, PhoenixVapor.Renderer.Names.atom!(name), nil)
+        end
       end)
+    after
+      QuickBEAM.stop(rt)
     end
   end
 

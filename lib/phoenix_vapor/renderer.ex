@@ -5,7 +5,7 @@ defmodule PhoenixVapor.Renderer do
 
   alias PhoenixVapor.{ExpressionError, Template}
   alias PhoenixVapor.Compiler.Split
-  alias PhoenixVapor.Renderer.{Attrs, Expr, Names}
+  alias PhoenixVapor.Renderer.{Attrs, Expr, Names, Value}
 
   def inject_scope_id(%Phoenix.LiveView.Rendered{static: static} = rendered, scope_id) do
     case static do
@@ -106,7 +106,7 @@ defmodule PhoenixVapor.Renderer do
   # ── Slot evaluation ──
 
   defp eval_slot(%{kind: :text, value: value}, assigns),
-    do: value |> Expr.eval(assigns) |> display() |> escape()
+    do: value |> Expr.eval(assigns) |> Value.display() |> Attrs.escape()
 
   # A package component rendered at compile time, with the template's own
   # content inside it.
@@ -114,7 +114,7 @@ defmodule PhoenixVapor.Renderer do
     do: render_block(template, assigns)
 
   defp eval_slot(%{kind: :html, value: value}, assigns),
-    do: value |> Expr.eval(assigns) |> display()
+    do: value |> Expr.eval(assigns) |> Value.display()
 
   defp eval_slot(%{kind: :attr} = slot, assigns) do
     name = slot.name || to_string(Expr.eval(slot.name_value, assigns))
@@ -127,7 +127,7 @@ defmodule PhoenixVapor.Renderer do
 
       "style" ->
         Attrs.render("style", [
-          [slot.static, value, if(truthy?(show), do: nil, else: "display:none")]
+          [slot.static, value, if(Value.truthy?(show), do: nil, else: "display:none")]
         ])
 
       name when slot.value == nil ->
@@ -146,14 +146,14 @@ defmodule PhoenixVapor.Renderer do
   end
 
   defp eval_slot(%{kind: :model, tag: "textarea", value: value}, assigns),
-    do: value |> Expr.eval(assigns) |> display() |> escape()
+    do: value |> Expr.eval(assigns) |> Value.display() |> Attrs.escape()
 
   defp eval_slot(%{kind: :model} = slot, assigns) do
     value = Expr.eval(slot.value, assigns)
 
     case slot.type do
       "checkbox" when is_list(value) -> Attrs.render("checked", [slot.static_value in value])
-      "checkbox" -> Attrs.render("checked", [truthy?(value)])
+      "checkbox" -> Attrs.render("checked", [Value.truthy?(value)])
       "radio" -> Attrs.render("checked", [value == slot.static_value])
       _type -> Attrs.render("value", [value])
     end
@@ -161,7 +161,7 @@ defmodule PhoenixVapor.Renderer do
 
   defp eval_slot(%{kind: :if, branches: branches}, assigns) do
     Enum.find_value(branches, "", fn %{condition: condition, block: block} ->
-      if condition == nil or truthy?(Expr.eval(condition, assigns)),
+      if condition == nil or Value.truthy?(Expr.eval(condition, assigns)),
         do: render_block(block, assigns)
     end)
   end
@@ -204,9 +204,9 @@ defmodule PhoenixVapor.Renderer do
     {props, attrs} =
       slot.props
       |> eval_props(assigns)
-      |> Enum.split_with(fn {key, _value} -> camelize(key) in component.props end)
+      |> Enum.split_with(fn {key, _value} -> Names.camelize(key) in component.props end)
 
-    props = Map.new(props, fn {key, value} -> {camelize(key), value} end)
+    props = Map.new(props, fn {key, value} -> {Names.camelize(key), value} end)
     declared = Map.new(component.props, &{&1, Map.get(props, &1)})
 
     child_assigns =
@@ -239,7 +239,9 @@ defmodule PhoenixVapor.Renderer do
     name = slot.name || to_string(Expr.eval(slot.name_value, assigns))
 
     slot_props =
-      slot.props |> eval_props(assigns) |> Map.new(fn {key, value} -> {camelize(key), value} end)
+      slot.props
+      |> eval_props(assigns)
+      |> Map.new(fn {key, value} -> {Names.camelize(key), value} end)
 
     case Map.get(Map.get(assigns, :__vapor_slots__, %{}), name) do
       nil when slot.fallback == nil -> ""
@@ -262,7 +264,7 @@ defmodule PhoenixVapor.Renderer do
       end)
 
     own =
-      if show && not truthy?(Expr.eval(show, assigns)),
+      if show && not Value.truthy?(Expr.eval(show, assigns)),
         do: own ++ [{"style", "display:none"}],
         else: own
 
@@ -367,26 +369,6 @@ defmodule PhoenixVapor.Renderer do
 
   defp loop_items(n) when is_integer(n) and n > 0, do: Enum.map(1..n, &{&1, &1 - 1, nil})
   defp loop_items(_value), do: []
-
-  # Vue's `toDisplayString`.
-  defp display(nil), do: ""
-  defp display(value) when is_binary(value), do: value
-
-  # JavaScript prints a whole float without a fraction.
-  defp display(value) when is_float(value) do
-    whole = trunc(value)
-    if whole == value, do: Integer.to_string(whole), else: Float.to_string(value)
-  end
-
-  defp display(value) when is_map(value) or is_list(value), do: Jason.encode!(value, pretty: true)
-  defp display(value), do: to_string(value)
-
-  defp escape(text), do: text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
-
-  defp truthy?(value), do: value not in [false, nil, 0, "", +0.0]
-
-  # Vue matches `side-offset` to a `sideOffset` prop.
-  defp camelize(key), do: Regex.replace(~r/-(\w)/, key, fn _, char -> String.upcase(char) end)
 
   defp maybe_put_assign(assigns, nil, _value), do: assigns
   defp maybe_put_assign(assigns, name, value), do: put_assign(assigns, name, value)

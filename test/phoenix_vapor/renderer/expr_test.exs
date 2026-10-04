@@ -66,7 +66,9 @@ defmodule PhoenixVapor.ExprTest do
     test "evaluates typeof" do
       assert Expr.eval("typeof x", %{x: 42}) == "number"
       assert Expr.eval("typeof x", %{x: "hi"}) == "string"
-      assert Expr.eval("typeof x", %{x: nil}) == "undefined"
+      # `nil` is `null`, whose type is "object"; a missing name is `undefined`.
+      assert Expr.eval("typeof x", %{x: nil}) == "object"
+      assert Expr.eval("typeof x", %{}) == "undefined"
     end
 
     test "evaluates string and array methods" do
@@ -100,6 +102,43 @@ defmodule PhoenixVapor.ExprTest do
       assert "b" in keys
       assert "x" in keys
       assert "y" in keys
+    end
+  end
+
+  describe "JavaScript semantics" do
+    defp js(source, assigns), do: source |> Expr.compile() |> Expr.eval(assigns)
+
+    test "truthiness follows JavaScript" do
+      assert js(~s(count ? "yes" : "no"), %{count: 0}) == "no"
+      assert js(~s(count ? "yes" : "no"), %{count: 0.0}) == "no"
+      assert js("!name", %{name: ""}) == true
+      assert js(~s(label || "fallback"), %{label: ""}) == "fallback"
+      assert js(~s(items && items.length), %{items: []}) == 0
+      assert js(~s(x ?? "default"), %{}) == "default"
+      assert js(~s(x ?? "default"), %{x: 0}) == 0
+    end
+
+    test "comparisons convert as JavaScript does" do
+      # `undefined > 0` is false, though Elixir orders atoms after numbers.
+      assert js("items.length > 0", %{}) == false
+      assert js("count > 0", %{count: nil}) == false
+      assert js("count === 1", %{count: 1.0}) == true
+      assert js(~s(count == "1"), %{count: 1}) == true
+      assert js(~s(count === "1"), %{count: 1}) == false
+      assert js("x == null", %{}) == true
+      assert js(~s("b" > "a"), %{}) == true
+      assert js(~s("10" < 9), %{}) == false
+    end
+
+    test "arithmetic and concatenation convert as JavaScript does" do
+      assert js("a + b", %{a: "1", b: 2}) == "12"
+      assert js("a + b", %{a: 1, b: 2}) == 3
+      assert js("n + 1", %{n: nil}) == 1
+      assert js("n + 1", %{}) == :nan
+      assert js("1 / 0", %{}) == :infinity
+      assert js(~s("x" * 2), %{}) == :nan
+      assert js("`${a}-${b}`", %{a: 1.0, b: nil}) == "1-null"
+      assert js("`a${x}b`", %{x: 1}) == "a1b"
     end
   end
 end

@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.Renderer.Expr do
   @moduledoc false
 
+  alias PhoenixVapor.Renderer.Value
+
   @doc """
   Evaluate a Vapor IR expression against assigns.
 
@@ -30,7 +32,7 @@ defmodule PhoenixVapor.Renderer.Expr do
   # A macro call computed at compile time for each value its props can take,
   # looked up by their values.
   def eval({:lookup, source, keys, table}, assigns) do
-    values = Enum.map(keys, &(assigns |> get_assign(&1) |> lookup_value()))
+    values = Enum.map(keys, &(assigns |> get_assign(&1) |> Value.to_elixir() |> lookup_value()))
 
     case Map.fetch(table, values) do
       {:ok, value} ->
@@ -48,14 +50,14 @@ defmodule PhoenixVapor.Renderer.Expr do
   def eval({:expr, source, nil, _keys}, assigns), do: resolve_path(source, assigns)
 
   def eval({:expr, source, node, _keys}, assigns) do
-    eval_node(node, assigns)
+    node |> eval_node(assigns) |> Value.to_elixir()
   catch
     :unsupported_node -> quickbeam_eval(source, assigns)
   end
 
   def eval(expr, assigns) when is_binary(expr) do
     case parse_and_eval(expr, assigns) do
-      {:ok, value} -> value
+      {:ok, value} -> Value.to_elixir(value)
       :error -> resolve_path(expr, assigns)
       :fallback -> quickbeam_eval(expr, assigns)
     end
@@ -168,7 +170,9 @@ defmodule PhoenixVapor.Renderer.Expr do
 
     quasis
     |> Enum.zip(values)
-    |> Enum.map(fn {quasi, value} -> [quasi[:cooked] || quasi[:raw] || "", to_string(value)] end)
+    |> Enum.map(fn {quasi, value} ->
+      [quasi.value.cooked || quasi.value.raw, Value.to_js_string(value)]
+    end)
     |> IO.iodata_to_binary()
   end
 
@@ -189,22 +193,24 @@ defmodule PhoenixVapor.Renderer.Expr do
          %{type: :conditional_expression, test: test, consequent: cons, alternate: alt},
          assigns
        ) do
-    if eval_node(test, assigns), do: eval_node(cons, assigns), else: eval_node(alt, assigns)
+    if Value.truthy?(eval_node(test, assigns)),
+      do: eval_node(cons, assigns),
+      else: eval_node(alt, assigns)
   end
 
   defp eval_node(%{type: :logical_expression, operator: op, left: left, right: right}, assigns) do
     case op do
       "&&" ->
         l = eval_node(left, assigns)
-        if l, do: eval_node(right, assigns), else: l
+        if Value.truthy?(l), do: eval_node(right, assigns), else: l
 
       "||" ->
         l = eval_node(left, assigns)
-        if l, do: l, else: eval_node(right, assigns)
+        if Value.truthy?(l), do: l, else: eval_node(right, assigns)
 
       "??" ->
         l = eval_node(left, assigns)
-        if l == nil, do: eval_node(right, assigns), else: l
+        if l in [nil, :undefined], do: eval_node(right, assigns), else: l
     end
   end
 
@@ -213,20 +219,14 @@ defmodule PhoenixVapor.Renderer.Expr do
     r = eval_node(right, assigns)
 
     case op do
-      "+" -> numeric_or_string_add(l, r)
-      "-" -> to_number(l) - to_number(r)
-      "*" -> to_number(l) * to_number(r)
-      "/" -> safe_div(to_number(l), to_number(r))
-      "%" -> safe_rem(to_number(l), to_number(r))
-      "===" -> l === r
-      "!==" -> l !== r
-      "==" -> l == r
-      "!=" -> l != r
-      ">" -> l > r
-      ">=" -> l >= r
-      "<" -> l < r
-      "<=" -> l <= r
-      _ -> nil
+      "+" -> Value.add(l, r)
+      op when op in ["-", "*", "/", "%"] -> Value.arithmetic(op, l, r)
+      "===" -> Value.strict_equal?(l, r)
+      "!==" -> not Value.strict_equal?(l, r)
+      "==" -> Value.loose_equal?(l, r)
+      "!=" -> not Value.loose_equal?(l, r)
+      op when op in [">", ">=", "<", "<="] -> Value.compare(op, l, r)
+      _other -> throw(:unsupported_node)
     end
   end
 
@@ -234,11 +234,11 @@ defmodule PhoenixVapor.Renderer.Expr do
     val = eval_node(arg, assigns)
 
     case op do
-      "!" -> !val
-      "-" -> -to_number(val)
-      "+" -> to_number(val)
-      "typeof" -> js_typeof(val)
-      _ -> nil
+      "!" -> not Value.truthy?(val)
+      "-" -> Value.negate(val)
+      "+" -> Value.to_number(val)
+      "typeof" -> Value.typeof(val)
+      _other -> throw(:unsupported_node)
     end
   end
 
@@ -252,7 +252,7 @@ defmodule PhoenixVapor.Renderer.Expr do
       key =
         case prop.key do
           %{type: :identifier, name: name} -> name
-          %{type: :literal, value: value} -> to_string(value)
+          %{type: :literal, value: value} -> Value.to_js_string(value)
           _ -> nil
         end
 
@@ -277,14 +277,14 @@ defmodule PhoenixVapor.Renderer.Expr do
 
     case callee do
       %{type: :member_expression, object: obj, property: %{name: method}} ->
-        receiver = eval_node(obj, assigns)
-        evaluated_args = Enum.map(args || [], &eval_node(&1, assigns))
+        receiver = obj |> eval_node(assigns) |> Value.to_elixir()
+        evaluated_args = Enum.map(args || [], &(&1 |> eval_node(assigns) |> Value.to_elixir()))
         call_method(receiver, method, evaluated_args)
 
       # A `<script setup>` function the SFC's `<script lang="elixir">` defines
       # for the server too.
       %{type: :elixir_function, module: module, function: function} ->
-        apply(module, function, Enum.map(args, &eval_node(&1, assigns)))
+        apply(module, function, Enum.map(args, &(&1 |> eval_node(assigns) |> Value.to_elixir())))
 
       # A call to a function: QuickBEAM runs it, or reports that it isn't one.
       _ ->
@@ -328,44 +328,56 @@ defmodule PhoenixVapor.Renderer.Expr do
         nil
 
       "undefined" ->
-        nil
+        :undefined
+
+      "NaN" ->
+        :nan
+
+      "Infinity" ->
+        :infinity
 
       _ ->
-        atom_key = String.to_existing_atom(name)
-        Map.get(assigns, atom_key, Map.get(assigns, name))
+        fetch(assigns, name)
     end
-  rescue
-    ArgumentError -> Map.get(assigns, name)
   end
 
-  defp access_value(nil, _key), do: nil
+  # A key by its atom, if one exists, or its string; `undefined` if neither.
+  defp fetch(map, name) do
+    atom =
+      try do
+        String.to_existing_atom(name)
+      rescue
+        ArgumentError -> nil
+      end
 
+    case Map.fetch(map, atom) do
+      {:ok, value} -> value
+      :error -> Map.get(map, name, :undefined)
+    end
+  end
+
+  # Reading a property of `null` or `undefined` throws in the browser, where
+  # Vue renders nothing for the expression; here it's `undefined`.
   defp access_value(list, "length") when is_list(list), do: length(list)
   defp access_value(str, "length") when is_binary(str), do: String.length(str)
 
-  defp access_value(map, key) when is_map(map) and is_binary(key) do
-    case Map.get(map, key) do
-      nil ->
-        try do
-          Map.get(map, String.to_existing_atom(key))
-        rescue
-          ArgumentError -> nil
-        end
+  defp access_value(map, key) when is_map(map) and not is_struct(map),
+    do: fetch(map, Value.to_js_string(key))
 
-      val ->
-        val
+  defp access_value(struct, key) when is_struct(struct),
+    do: struct |> Map.from_struct() |> access_value(key)
+
+  defp access_value(list, index) when is_list(list) do
+    case Value.to_number(index) do
+      index when is_integer(index) and index >= 0 -> list |> Enum.fetch(index) |> fetched()
+      _other -> :undefined
     end
   end
 
-  defp access_value(list, index) when is_list(list) and is_integer(index) do
-    Enum.at(list, index)
-  end
+  defp access_value(_value, _key), do: :undefined
 
-  defp access_value(map, key) when is_map(map) do
-    Map.get(map, key) || Map.get(map, to_string(key))
-  end
-
-  defp access_value(_, _), do: nil
+  defp fetched({:ok, value}), do: value
+  defp fetched(:error), do: :undefined
 
   defp call_method(list, "join", [sep]) when is_list(list), do: Enum.join(list, to_string(sep))
   defp call_method(list, "join", []) when is_list(list), do: Enum.join(list, ",")
@@ -385,41 +397,6 @@ defmodule PhoenixVapor.Renderer.Expr do
 
   # Anything else, such as filter/map with a callback, is evaluated in QuickBEAM.
   defp call_method(_, _, _), do: throw(:unsupported_node)
-
-  defp numeric_or_string_add(l, r) when is_binary(l) or is_binary(r),
-    do: to_string(l) <> to_string(r)
-
-  defp numeric_or_string_add(l, r), do: to_number(l) + to_number(r)
-
-  defp to_number(n) when is_number(n), do: n
-  defp to_number(true), do: 1
-  defp to_number(false), do: 0
-  defp to_number(nil), do: 0
-
-  defp to_number(s) when is_binary(s) do
-    case Float.parse(s) do
-      {n, ""} -> n
-      _ -> 0
-    end
-  end
-
-  defp to_number(_), do: 0
-
-  defp safe_div(_, 0), do: nil
-  defp safe_div(_, +0.0), do: nil
-  defp safe_div(a, b), do: a / b
-
-  defp safe_rem(_, 0), do: nil
-  defp safe_rem(_, +0.0), do: nil
-  defp safe_rem(a, b) when is_integer(a) and is_integer(b), do: rem(a, b)
-  defp safe_rem(a, b), do: :math.fmod(a, b)
-
-  defp js_typeof(nil), do: "undefined"
-  defp js_typeof(v) when is_boolean(v), do: "boolean"
-  defp js_typeof(v) when is_number(v), do: "number"
-  defp js_typeof(v) when is_binary(v), do: "string"
-  defp js_typeof(v) when is_function(v), do: "function"
-  defp js_typeof(_), do: "object"
 
   defp resolve_path(expr, assigns) do
     parts = String.split(expr, ".")
@@ -449,7 +426,7 @@ defmodule PhoenixVapor.Renderer.Expr do
       expr
       |> free_names()
       |> Enum.reject(&(&1 in @globals))
-      |> Map.new(&{&1, get_assign(assigns, &1)})
+      |> Map.new(&{&1, assigns |> get_assign(&1) |> Value.to_elixir()})
 
     case QuickBEAM.eval(quickbeam_runtime(), expr, vars: vars) do
       {:ok, result} ->

@@ -972,4 +972,22 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       assert %Phoenix.LiveView.Comprehension{} = dynamic
     end
   end
+
+  describe "JavaScript semantics" do
+    test "v-if and {{ }} follow JavaScript, as Vue renders them" do
+      render = fn template, assigns ->
+        template
+        |> PhoenixVapor.render(assigns)
+        |> Phoenix.HTML.Safe.to_iodata()
+        |> IO.iodata_to_binary()
+      end
+
+      assert render.(~S|<p v-if="items.length > 0">shown</p>|, %{}) == ""
+      assert render.(~S|<p>{{ count ? "yes" : "no" }}</p>|, %{count: 0}) == "<p>no</p>"
+      assert render.(~S|<p>{{ !name }}</p>|, %{name: ""}) == "<p>true</p>"
+      assert render.(~S|<p>{{ label \|\| "fallback" }}</p>|, %{label: ""}) == "<p>fallback</p>"
+      assert render.(~S|<p>{{ count === 1 }}</p>|, %{count: 1.0}) == "<p>true</p>"
+      assert render.(~S|<p>{{ 1 / 0 }} {{ total / 2 }}</p>|, %{total: 3}) == "<p>Infinity 1.5</p>"
+    end
+  end
 end
