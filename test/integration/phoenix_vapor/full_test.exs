@@ -40,7 +40,7 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
 
   test "assigns the bundled component export before mounting" do
     {setup, handlers} =
-      PhoenixVapor.LiveVue.compile_sfc(Fixtures.path("Probe.vue"))
+      PhoenixVapor.Full.compile_sfc(Fixtures.path("Probe.vue"))
 
     assert handlers == []
     assert setup =~ "globalThis.__sfc_component = (function()"
@@ -49,7 +49,7 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
 
   test "resolves sibling Vue imports from the source component directory" do
     {setup, handlers} =
-      PhoenixVapor.LiveVue.compile_sfc(Fixtures.path("Parent.vue"))
+      PhoenixVapor.Full.compile_sfc(Fixtures.path("Parent.vue"))
 
     assert handlers == []
     assert setup =~ "child component"

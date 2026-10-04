@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.Names do
+defmodule PhoenixVapor.Renderer.Names do
   @moduledoc false
 
   # Atoms for names the developer declared in templates and `<script setup>`,

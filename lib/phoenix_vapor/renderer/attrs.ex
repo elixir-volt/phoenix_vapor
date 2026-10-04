@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.Attrs do
+defmodule PhoenixVapor.Renderer.Attrs do
   @moduledoc false
 
   # Renders a dynamic attribute the way Vue's server renderer does

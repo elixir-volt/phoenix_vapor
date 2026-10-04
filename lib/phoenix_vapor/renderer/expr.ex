@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.Expr do
+defmodule PhoenixVapor.Renderer.Expr do
   @moduledoc false
 
   @doc """

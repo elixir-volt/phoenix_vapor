@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.RuntimeComputedOrderTest do
   use ExUnit.Case, async: true
 
-  alias PhoenixVapor.Runtime
+  alias PhoenixVapor.Reactive.Runtime
 
   test "a computed can read one that sorts after it" do
     {:ok, rt} =

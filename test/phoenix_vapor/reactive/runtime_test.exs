@@ -1,6 +1,6 @@
 defmodule PhoenixVapor.RuntimeTest do
   use ExUnit.Case, async: false
-  alias PhoenixVapor.Runtime
+  alias PhoenixVapor.Reactive.Runtime
 
   describe "basic ref state" do
     test "initial state from refs" do

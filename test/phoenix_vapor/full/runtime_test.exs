@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.VueRuntimeTest do
   use ExUnit.Case, async: false
 
-  alias PhoenixVapor.VueRuntime
+  alias PhoenixVapor.Full.Runtime
 
   @moduletag :tmp_dir
 
@@ -11,7 +11,7 @@ defmodule PhoenixVapor.VueRuntimeTest do
 
     runtime =
       start_supervised!(
-        {VueRuntime,
+        {Runtime,
          bundle: bundle,
          setup: """
          document.body.innerHTML = '<p>ready</p>';
@@ -26,29 +26,29 @@ defmodule PhoenixVapor.VueRuntimeTest do
   end
 
   test "returns call errors without replacing them with successful HTML", %{runtime: runtime} do
-    assert {:error, error} = VueRuntime.call(runtime, "throw new Error('call failed')")
+    assert {:error, error} = Runtime.call(runtime, "throw new Error('call failed')")
     assert inspect(error) =~ "call failed"
-    assert {:ok, "<p>ready</p>"} = VueRuntime.render(runtime)
+    assert {:ok, "<p>ready</p>"} = Runtime.render(runtime)
 
     assert {:ok, "recovered"} =
-             VueRuntime.call(runtime, "document.body.textContent = 'recovered'")
+             Runtime.call(runtime, "document.body.textContent = 'recovered'")
   end
 
   test "returns handler errors and keeps successful dispatch working", %{runtime: runtime} do
-    assert {:error, error} = VueRuntime.dispatch(runtime, "fail")
+    assert {:error, error} = Runtime.dispatch(runtime, "fail")
     assert inspect(error) =~ "dispatch failed"
-    assert {:ok, "<p>ready</p>"} = VueRuntime.render(runtime)
-    assert {:ok, "updated"} = VueRuntime.dispatch(runtime, "update", %{"message" => "updated"})
+    assert {:ok, "<p>ready</p>"} = Runtime.render(runtime)
+    assert {:ok, "updated"} = Runtime.dispatch(runtime, "update", %{"message" => "updated"})
   end
 
   test "a changed bundle is read again", %{tmp_dir: tmp_dir} do
     bundle = Path.join(tmp_dir, "versioned.js")
-    start = &start_supervised!({VueRuntime, bundle: bundle, setup: ""}, id: &1)
+    start = &start_supervised!({Runtime, bundle: bundle, setup: ""}, id: &1)
 
     File.write!(bundle, "document.body.textContent = 'one';")
-    assert {:ok, "one"} = VueRuntime.render(start.(:first))
+    assert {:ok, "one"} = Runtime.render(start.(:first))
 
     File.write!(bundle, "document.body.textContent = 'two, longer';")
-    assert {:ok, "two, longer"} = VueRuntime.render(start.(:second))
+    assert {:ok, "two, longer"} = Runtime.render(start.(:second))
   end
 end

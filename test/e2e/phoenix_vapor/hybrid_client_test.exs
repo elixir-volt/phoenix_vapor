@@ -37,7 +37,7 @@ defmodule PhoenixVapor.E2E.HybridClientTest do
     rt = start_supervised!(QuickBEAM)
 
     %{script_setup: %{content: script}} = Vize.parse_sfc!(@sfc)
-    {refs, computeds, functions, bodies, props} = PhoenixVapor.ScriptSetup.parse(script)
+    {refs, computeds, functions, bodies, props} = PhoenixVapor.Compiler.ScriptSetup.parse(script)
     classification = Classifier.classify(refs, computeds, functions, bodies, props)
     {:ok, js} = ClientCodegen.generate(@sfc, classification)
 

@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.ScriptSetupTest do
   use ExUnit.Case, async: true
 
-  alias PhoenixVapor.ScriptSetup
+  alias PhoenixVapor.Compiler.ScriptSetup
 
   describe "parse/1" do
     test "extracts refs with initial values" do

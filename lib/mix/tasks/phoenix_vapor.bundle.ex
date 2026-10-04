@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.PhoenixVapor.Bundle do
-  @shortdoc "Bundle Vue + npm dependencies for PhoenixVapor.LiveVue"
+  @shortdoc "Bundle Vue + npm dependencies for PhoenixVapor.Full"
   @moduledoc """
   Bundles JavaScript dependencies for server-side Vue rendering.
 

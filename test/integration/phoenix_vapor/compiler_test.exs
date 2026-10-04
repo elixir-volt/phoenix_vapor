@@ -57,7 +57,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
   describe "macros" do
     test "fold calls with constant arguments at compile time" do
       {split, _files, []} =
-        PhoenixVapor.Components.compile(~S|<Button variant="ghost" />|,
+        PhoenixVapor.Compiler.compile(~S|<Button variant="ghost" />|,
           file: Fixtures.path("components/Page.vue"),
           script: ~s(import Button from "./Button.vue")
         )
@@ -92,7 +92,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
 
     test "report calls with props whose type isn't a set of literals" do
       {_template, _files, [diagnostic]} =
-        PhoenixVapor.Components.compile(~S|<b :class="button({ variant: props.variant })" />|,
+        PhoenixVapor.Compiler.compile(~S|<b :class="button({ variant: props.variant })" />|,
           file: Fixtures.path("components/Button.vue"),
           script: """
           import { button } from "./variants" with { type: "macro" }
@@ -124,7 +124,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
 
     test "without one, are reported with where to define it" do
       {_template, _files, [diagnostic]} =
-        PhoenixVapor.Components.compile(~S|<b>{{ roleLabel(role) }}</b>|,
+        PhoenixVapor.Compiler.compile(~S|<b>{{ roleLabel(role) }}</b>|,
           file: Fixtures.path("components/ElixirFunctions.vue"),
           script: "function roleLabel(role) { return role }",
           elixir: {__MODULE__, %{"role_tone" => MapSet.new([1])}}
@@ -164,7 +164,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
 
     test "that need a parent they're rendered without are reported with Vue's reason" do
       {_template, _files, [diagnostic]} =
-        PhoenixVapor.Components.compile(~S|<TabsList>Tabs</TabsList>|,
+        PhoenixVapor.Compiler.compile(~S|<TabsList>Tabs</TabsList>|,
           file: Fixtures.path("components/PackageFold.vue"),
           script: ~s(import { TabsList } from "reka-ui"),
           fold: :all

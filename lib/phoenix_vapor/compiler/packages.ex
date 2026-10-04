@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.Fold do
+defmodule PhoenixVapor.Compiler.Packages do
   @moduledoc false
 
   # Renders components from packages, such as Reka UI, at compile time.
@@ -15,7 +15,8 @@ defmodule PhoenixVapor.Fold do
   # too. A component that receives a value known only when rendering, or a
   # scoped slot, can't be folded.
 
-  alias PhoenixVapor.{Expr, Renderer, Template}
+  alias PhoenixVapor.Template
+  alias PhoenixVapor.Renderer.Expr
 
   @marker_pattern ~r/\x{2063}H(\d+)\x{2063}/u
   @capture_pattern ~r/\x{2063}C(\d+)\.(\d+)\[\x{2063}(.*?)\x{2063}C\1\.\2\]\x{2063}/su
@@ -277,7 +278,7 @@ defmodule PhoenixVapor.Fold do
 
       if Enum.uniq(indices) == indices do
         slots = Enum.map(indices, &restore(elem(holes, &1), captured[&1]))
-        {:ok, Renderer.template(Enum.reverse(statics), slots, file)}
+        {:ok, Template.new(Enum.reverse(statics), slots, file)}
       else
         {:error, "its content renders more than once"}
       end

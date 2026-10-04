@@ -26,7 +26,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   @spec generate(String.t(), Classifier.classification(), keyword()) ::
           {:ok, String.t()} | {:error, term()}
   def generate(sfc_source, classification, opts \\ []) do
-    sfc_source = PhoenixVapor.SFC.without_elixir_block(sfc_source)
+    sfc_source = PhoenixVapor.Compiler.SFC.without_elixir_block(sfc_source)
 
     case Vize.compile_sfc(sfc_source) do
       {:ok, result} ->

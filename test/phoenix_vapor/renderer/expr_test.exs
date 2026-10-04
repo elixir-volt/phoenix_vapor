@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.ExprTest do
   use ExUnit.Case, async: true
 
-  alias PhoenixVapor.Expr
+  alias PhoenixVapor.Renderer.Expr
 
   describe "eval/2" do
     test "resolves identifiers and nested access" do

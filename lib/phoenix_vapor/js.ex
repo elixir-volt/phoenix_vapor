@@ -80,9 +80,9 @@ defmodule PhoenixVapor.JS do
     result =
       Volt.Builder.bundle(
         [
-          entry: PhoenixVapor.LiveVue.EntryPlugin.entry_specifier(),
+          entry: PhoenixVapor.JS.EntryPlugin.entry_specifier(),
           plugins:
-            [{PhoenixVapor.LiveVue.EntryPlugin, entry_id: entry_id, source: source} | plugins] ++
+            [{PhoenixVapor.JS.EntryPlugin, entry_id: entry_id, source: source} | plugins] ++
               config.plugins,
           aliases: config.aliases,
           node_modules: find_node_modules(Path.dirname(file)),

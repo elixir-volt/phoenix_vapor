@@ -17,7 +17,7 @@ defmodule PhoenixVapor.Hybrid do
   alias PhoenixVapor.Hybrid.{Classifier, ServerCodegen, ClientCodegen}
 
   defmacro __using__(opts) do
-    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.SFC.path!(__CALLER__)
+    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.Compiler.SFC.path!(__CALLER__)
     sfc_source = File.read!(full_path)
 
     desc = Vize.parse_sfc!(sfc_source)
@@ -28,18 +28,18 @@ defmodule PhoenixVapor.Hybrid do
         nil -> ""
       end
 
-    {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+    {template_content, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
 
     {refs, computeds, functions, function_bodies, props} =
-      PhoenixVapor.ScriptSetup.parse(script_content)
+      PhoenixVapor.Compiler.ScriptSetup.parse(script_content)
 
     # The client component handles the template's events, so no phx-* attributes.
     {split, component_files} =
-      PhoenixVapor.Components.compile!(template_content,
+      PhoenixVapor.Compiler.compile!(template_content,
         file: full_path,
         origin: origin,
         script: script_content,
-        elixir: {__CALLER__.module, PhoenixVapor.SFC.elixir_functions(desc, full_path)},
+        elixir: {__CALLER__.module, PhoenixVapor.Compiler.SFC.elixir_functions(desc, full_path)},
         events: false,
         unrendered: :warn,
         # The browser's first render uses the refs' initial values, so package
@@ -61,7 +61,7 @@ defmodule PhoenixVapor.Hybrid do
     client_output_dir = Keyword.get(opts, :client_output, default_client_output())
     client_js = generate_client_js(sfc_source, classification, full_path, client_output_dir)
 
-    elixir_block_ast = PhoenixVapor.SFC.elixir_block(desc, full_path)
+    elixir_block_ast = PhoenixVapor.Compiler.SFC.elixir_block(desc, full_path)
 
     escaped_classification = Macro.escape(classification)
     escaped_client_js = Macro.escape(client_js)
@@ -107,7 +107,7 @@ defmodule PhoenixVapor.Hybrid do
 
   defp initial_values(refs) do
     refs
-    |> PhoenixVapor.ScriptSetup.eval_initial_state()
+    |> PhoenixVapor.Compiler.ScriptSetup.eval_initial_state()
     |> Map.new(fn {name, value} -> {to_string(name), value} end)
   end
 

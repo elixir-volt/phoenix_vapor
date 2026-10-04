@@ -1,42 +1,11 @@
-defmodule PhoenixVapor.Runtime do
-  @moduledoc """
-  Persistent Vue reactive context backed by QuickBEAM.
+defmodule PhoenixVapor.Reactive.Runtime do
+  @moduledoc false
 
-  Each Runtime holds a QuickBEAM process with Vue's reactivity system loaded.
-  `ref()` values become reactive state, `computed()` values auto-update when
-  dependencies change, and functions execute in-place against reactive refs.
-
-  State persists across calls — the same reactive graph lives for the lifetime
-  of the owning LiveView process.
-
-  ## Context Pool mode
-
-  When a `QuickBEAM.ContextPool` is configured, each Runtime uses a lightweight
-  context (~50KB) on a shared thread pool instead of a dedicated OS thread (~2MB).
-  This is the recommended mode for production — 10K LiveViews share 4 OS threads
-  instead of spawning 10K.
-
-      # In your application supervisor:
-      {QuickBEAM.ContextPool, name: MyApp.JSPool, size: 4}
-
-      # In config:
-      config :phoenix_vapor, pool: MyApp.JSPool
-
-  Without a pool, each Runtime gets its own QuickBEAM runtime (full isolation,
-  higher resource usage).
-
-  ## Usage
-
-      {:ok, rt} = Runtime.start_link(
-        refs: %{"count" => "0"},
-        computeds: %{"doubled" => "count * 2"},
-        functions: ["increment"],
-        function_bodies: %{"increment" => "count++"}
-      )
-
-      {:ok, state} = Runtime.get_state(rt)
-      {:ok, state} = Runtime.call_handler(rt, "increment", %{})
-  """
+  # Reactive mode's Vue reactivity in QuickBEAM, one per LiveView process:
+  # `ref()` values are state, `computed()` values update when what they read
+  # changes, and handlers run against the refs. With a `QuickBEAM.ContextPool`
+  # configured as `config :phoenix_vapor, pool: MyApp.JSPool`, each runtime is
+  # a context on the pool's threads rather than its own runtime.
 
   use GenServer
 

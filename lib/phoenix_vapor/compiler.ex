@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.Components do
+defmodule PhoenixVapor.Compiler do
   @moduledoc false
 
   # Compiles a template for the server and resolves the components it uses.
@@ -10,7 +10,9 @@ defmodule PhoenixVapor.Components do
   # as a diagnostic. A component that isn't imported at all is looked up in the
   # `__components__` assign when the template renders.
 
-  alias PhoenixVapor.{Expr, Fold, Macros, Renderer, Template}
+  alias PhoenixVapor.Template
+  alias PhoenixVapor.Compiler.{Macros, Packages, Split}
+  alias PhoenixVapor.Renderer.Expr
 
   @typedoc """
   A problem found while compiling, in the shape of `t:Code.diagnostic/1`.
@@ -37,12 +39,12 @@ defmodule PhoenixVapor.Components do
       component's initial ref values, for rendering package components
     * `:elixir` — `{module, functions}`: the module the template renders in
       and the functions its SFC's `<script lang="elixir">` defines, from
-      `PhoenixVapor.SFC.elixir_functions/2`. A call to a `<script setup>`
+      `PhoenixVapor.Compiler.SFC.elixir_functions/2`. A call to a `<script setup>`
       function renders through the Elixir function of the same name in
       snake_case, such as `role_tone/1` for `roleTone(role)`.
     * `:fold` — `:all` renders package components into their markup, for
       hybrid templates the browser takes over; `:content`, the default,
-      only those that render just their content. See `PhoenixVapor.Fold`.
+      only those that render just their content. See `PhoenixVapor.Compiler.Packages`.
 
   Returns the compiled template, the `.vue` files it read, and diagnostics.
   """
@@ -167,7 +169,7 @@ defmodule PhoenixVapor.Components do
       end)
 
     compiled =
-      Renderer.compile(split, events: state.events, file: source.file, origin: source.origin)
+      Split.compile(split, events: state.events, file: source.file, origin: source.origin)
 
     ctx = %{
       file: source.file,
@@ -239,7 +241,7 @@ defmodule PhoenixVapor.Components do
   defp fold(slot, package, ctx, state) do
     case ensure_fold(ctx, state) do
       {:ok, state} ->
-        case Fold.fold(
+        case Packages.fold(
                slot,
                &package(ctx, &1),
                ctx.known,
@@ -271,7 +273,7 @@ defmodule PhoenixVapor.Components do
     if MapSet.member?(loaded, ctx.file) do
       {:ok, state}
     else
-      case Fold.load(runtime, package_sources(ctx), ctx.file) do
+      case Packages.load(runtime, package_sources(ctx), ctx.file) do
         :ok -> {:ok, put_in(state.quickbeam.loaded, MapSet.put(loaded, ctx.file))}
         {:error, reason} -> {:error, reason, state}
       end
@@ -491,7 +493,7 @@ defmodule PhoenixVapor.Components do
     source = File.read!(path)
     desc = Vize.parse_sfc!(source)
     script = (desc.script_setup && desc.script_setup.content) || ""
-    {template, origin} = PhoenixVapor.SFC.template(desc) || {"", {1, 1}}
+    {template, origin} = PhoenixVapor.Compiler.SFC.template(desc) || {"", {1, 1}}
 
     parent_stack = state.stack
     state = %{state | stack: [path | parent_stack], resources: [path | state.resources]}

@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.Macros do
+defmodule PhoenixVapor.Compiler.Macros do
   @moduledoc false
 
   # Folds template expressions that call macro imports into their values at
@@ -20,7 +20,8 @@ defmodule PhoenixVapor.Macros do
   # macro call that depends on anything else, such as a prop typed `string`,
   # can't be folded and is reported.
 
-  alias PhoenixVapor.{PropTypes, Template}
+  alias PhoenixVapor.Compiler.PropTypes
+  alias PhoenixVapor.Template
 
   @max_combinations 64
 

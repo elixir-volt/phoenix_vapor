@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.LiveVue do
+defmodule PhoenixVapor.Full do
   @moduledoc """
   Full Vue component runtime in QuickBEAM.
 
@@ -47,7 +47,7 @@ defmodule PhoenixVapor.LiveVue do
 
   defmacro __using__(opts) do
     bundle = Keyword.fetch!(opts, :bundle)
-    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.SFC.path!(__CALLER__)
+    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.Compiler.SFC.path!(__CALLER__)
 
     {globals, _binding} = opts |> Keyword.get(:globals, Macro.escape(%{})) |> Code.eval_quoted()
     globals = Map.merge(@default_globals, globals)
@@ -63,11 +63,11 @@ defmodule PhoenixVapor.LiveVue do
 
       def mount(_params, _session, socket) do
         runtime =
-          PhoenixVapor.LiveVue.unwrap!(
-            PhoenixVapor.VueRuntime.start_link(bundle: @__vue_bundle__, setup: @__vue_setup__)
+          PhoenixVapor.Full.unwrap!(
+            PhoenixVapor.Full.Runtime.start_link(bundle: @__vue_bundle__, setup: @__vue_setup__)
           )
 
-        html = PhoenixVapor.LiveVue.unwrap!(PhoenixVapor.VueRuntime.render(runtime))
+        html = PhoenixVapor.Full.unwrap!(PhoenixVapor.Full.Runtime.render(runtime))
 
         socket =
           socket
@@ -90,14 +90,14 @@ defmodule PhoenixVapor.LiveVue do
         runtime = socket.assigns.__vue_runtime__
 
         html =
-          PhoenixVapor.LiveVue.unwrap!(PhoenixVapor.VueRuntime.dispatch(runtime, event, params))
+          PhoenixVapor.Full.unwrap!(PhoenixVapor.Full.Runtime.dispatch(runtime, event, params))
 
         {:noreply, Phoenix.Component.assign(socket, :__vue_html__, html)}
       end
 
       def terminate(_reason, socket) do
         if runtime = socket.assigns[:__vue_runtime__] do
-          PhoenixVapor.VueRuntime.stop(runtime)
+          PhoenixVapor.Full.Runtime.stop(runtime)
         end
       end
 
@@ -106,18 +106,18 @@ defmodule PhoenixVapor.LiveVue do
   end
 
   @doc """
-  Returns the value of a `PhoenixVapor.VueRuntime` result, or raises its
+  Returns the value of a `PhoenixVapor.Full.Runtime` result, or raises its
   error. Generated callbacks use it so a JavaScript exception surfaces as
   itself rather than as a `MatchError`.
   """
   @spec unwrap!({:ok, value} | {:error, term()}) :: value when value: term()
   def unwrap!({:ok, value}), do: value
   def unwrap!({:error, error}) when is_exception(error), do: raise(error)
-  def unwrap!({:error, reason}), do: raise("PhoenixVapor.VueRuntime failed: #{inspect(reason)}")
+  def unwrap!({:error, reason}), do: raise("PhoenixVapor.Full.Runtime failed: #{inspect(reason)}")
 
   @doc false
   def compile_sfc(path, globals \\ @default_globals) do
-    sfc_source = path |> File.read!() |> PhoenixVapor.SFC.without_elixir_block()
+    sfc_source = path |> File.read!() |> PhoenixVapor.Compiler.SFC.without_elixir_block()
     handlers = extract_handlers(sfc_source)
 
     # Compile SFC with Vize

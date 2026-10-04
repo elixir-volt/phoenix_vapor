@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.SFC do
+defmodule PhoenixVapor.Compiler.SFC do
   @moduledoc false
 
   # The expressions of a `<script lang="elixir">` block, to inject into the

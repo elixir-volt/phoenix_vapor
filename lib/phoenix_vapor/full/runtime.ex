@@ -1,16 +1,10 @@
-defmodule PhoenixVapor.VueRuntime do
-  @moduledoc """
-  Full Vue component runtime in QuickBEAM.
+defmodule PhoenixVapor.Full.Runtime do
+  @moduledoc false
 
-  Mounts a Vue application server-side with the complete component
-  runtime — `defineComponent`, `provide/inject`, `onMounted`, render
-  functions, slots, and third-party component libraries (Reka UI, etc.).
-
-  Unlike `PhoenixVapor.Runtime` (which uses only `@vue/reactivity`),
-  VueRuntime loads the full Vue runtime and renders into QuickBEAM's
-  lexbor DOM. The resulting HTML feeds into `%Phoenix.LiveView.Rendered{}`
-  for LiveView's diff protocol.
-  """
+  # The full runtime's Vue app in QuickBEAM: the complete Vue runtime, so
+  # `provide`/`inject`, lifecycle hooks, render functions, slots, and component
+  # libraries such as Reka UI work. It renders into QuickBEAM's DOM, and the
+  # HTML becomes a `%Phoenix.LiveView.Rendered{}`.
 
   use GenServer
 

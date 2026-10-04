@@ -39,7 +39,7 @@ defmodule PhoenixVapor.Sigil do
     origin = {__CALLER__.line + if(meta[:indentation], do: 1, else: 0), 1}
 
     {split, _files} =
-      PhoenixVapor.Components.compile!(template,
+      PhoenixVapor.Compiler.compile!(template,
         file: __CALLER__.file,
         origin: origin,
         unrendered: :raise

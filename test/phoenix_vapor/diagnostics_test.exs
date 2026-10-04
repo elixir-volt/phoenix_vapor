@@ -69,7 +69,7 @@ defmodule PhoenixVapor.DiagnosticsTest do
     template =
       "<p>{{ a }}</p>"
       |> Vize.split_template!()
-      |> PhoenixVapor.Renderer.compile(file: "Card.vue")
+      |> PhoenixVapor.Compiler.Split.compile(file: "Card.vue")
 
     assert inspect(template) == "#PhoenixVapor.Template<Card.vue, 1 slot>"
   end

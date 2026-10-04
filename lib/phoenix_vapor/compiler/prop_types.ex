@@ -1,4 +1,4 @@
-defmodule PhoenixVapor.PropTypes do
+defmodule PhoenixVapor.Compiler.PropTypes do
   @moduledoc false
 
   # The values a component's props can take, from TypeScript's own checker,

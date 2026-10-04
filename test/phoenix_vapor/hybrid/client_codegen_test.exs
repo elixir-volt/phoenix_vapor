@@ -5,7 +5,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
 
   defp classify(script) do
     {refs, computeds, functions, function_bodies, props} =
-      PhoenixVapor.ScriptSetup.parse(script)
+      PhoenixVapor.Compiler.ScriptSetup.parse(script)
 
     Classifier.classify(refs, computeds, functions, function_bodies, props)
   end

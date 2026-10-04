@@ -29,15 +29,15 @@ defmodule PhoenixVapor.Vue do
   the `data-v-*` scope attribute into the root element.
   """
   defmacro component(name, path) do
-    full_path = PhoenixVapor.SFC.path!(path, __CALLER__)
+    full_path = PhoenixVapor.Compiler.SFC.path!(path, __CALLER__)
 
     source = File.read!(full_path)
     desc = Vize.parse_sfc!(source)
-    {template, origin} = PhoenixVapor.SFC.template!(desc, full_path)
+    {template, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
     script = (desc.script_setup && desc.script_setup.content) || ""
 
     {split, component_files} =
-      PhoenixVapor.Components.compile!(template,
+      PhoenixVapor.Compiler.compile!(template,
         file: full_path,
         origin: origin,
         script: script,

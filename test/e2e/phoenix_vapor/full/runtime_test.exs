@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.E2E.VueRuntimeTest do
   use ExUnit.Case, async: false
 
-  alias PhoenixVapor.VueRuntime
+  alias PhoenixVapor.Full.Runtime
 
   @moduletag :e2e
 
@@ -15,7 +15,7 @@ defmodule PhoenixVapor.E2E.VueRuntimeTest do
   describe "basic Vue runtime" do
     test "mounts a simple Vue app" do
       {:ok, rt} =
-        VueRuntime.start_link(
+        Runtime.start_link(
           bundle: @bundle_path,
           setup: """
             const { createApp, ref, defineComponent, h } = Vue;
@@ -30,18 +30,18 @@ defmodule PhoenixVapor.E2E.VueRuntimeTest do
           """
         )
 
-      {:ok, html} = VueRuntime.render(rt)
+      {:ok, html} = Runtime.render(rt)
       assert html =~ "Count: 0"
 
-      {:ok, html} = VueRuntime.call(rt, "count.value = 42")
+      {:ok, html} = Runtime.call(rt, "count.value = 42")
       assert html =~ "Count: 42"
 
-      VueRuntime.stop(rt)
+      Runtime.stop(rt)
     end
 
     test "provide/inject between components" do
       {:ok, rt} =
-        VueRuntime.start_link(
+        Runtime.start_link(
           bundle: @bundle_path,
           setup: """
             const { createApp, ref, computed, defineComponent, h, provide, inject } = Vue;
@@ -61,20 +61,20 @@ defmodule PhoenixVapor.E2E.VueRuntimeTest do
           """
         )
 
-      {:ok, html} = VueRuntime.render(rt)
+      {:ok, html} = Runtime.render(rt)
       assert html =~ "Hello, World!"
 
-      {:ok, html} = VueRuntime.call(rt, ~s(name.value = "Vue"))
+      {:ok, html} = Runtime.call(rt, ~s(name.value = "Vue"))
       assert html =~ "Hello, Vue!"
 
-      VueRuntime.stop(rt)
+      Runtime.stop(rt)
     end
   end
 
   describe "Reka UI Dialog" do
     test "renders with ARIA attributes" do
       {:ok, rt} =
-        VueRuntime.start_link(
+        Runtime.start_link(
           bundle: @bundle_path,
           setup: """
             const { createApp, ref, defineComponent, h } = Vue;
@@ -102,19 +102,19 @@ defmodule PhoenixVapor.E2E.VueRuntimeTest do
           """
         )
 
-      {:ok, closed_html} = VueRuntime.render(rt)
+      {:ok, closed_html} = Runtime.render(rt)
       assert closed_html =~ ~s(data-state="closed") or closed_html =~ "<!---->"
 
-      {:ok, open_html} = VueRuntime.call(rt, "open.value = true")
+      {:ok, open_html} = Runtime.call(rt, "open.value = true")
       assert open_html =~ ~s(aria-expanded="true")
       assert open_html =~ ~s(data-state="open")
       assert open_html =~ ~s(role="dialog")
       assert open_html =~ "Title"
 
-      {:ok, closed_again} = VueRuntime.call(rt, "open.value = false")
+      {:ok, closed_again} = Runtime.call(rt, "open.value = false")
       assert closed_again =~ ~s(data-state="closed")
 
-      VueRuntime.stop(rt)
+      Runtime.stop(rt)
     end
   end
 end

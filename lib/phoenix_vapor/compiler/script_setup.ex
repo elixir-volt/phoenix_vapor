@@ -1,15 +1,9 @@
-defmodule PhoenixVapor.ScriptSetup do
-  @moduledoc """
-  Extracts reactive state and functions from `<script setup>` blocks.
+defmodule PhoenixVapor.Compiler.ScriptSetup do
+  @moduledoc false
 
-  Parses the script with OXC AST and extracts declarations for the
-  `PhoenixVapor.Runtime` (persistent QuickBEAM + Vue reactivity):
-
-  - `ref(value)` → initial expression passed to `Runtime`'s reactive context
-  - `computed(() => expr)` → expression body, auto-wired with `.value` access
-  - `defineProps([...])` → maps directly to LiveView assigns
-  - Functions → bodies extracted for execution in `with(scope)` context
-  """
+  # Reads what `<script setup>` declares, from its OXC AST: `ref()` initial
+  # expressions, `computed()` bodies, `defineProps`, and functions with their
+  # bodies, for reactive and hybrid mode.
 
   @doc """
   Parse a `<script setup>` block and extract initial state + event handlers.
@@ -43,8 +37,8 @@ defmodule PhoenixVapor.ScriptSetup do
       try do
         Enum.reduce(refs, assigns, fn {name, init_expr}, acc ->
           case QuickBEAM.eval(rt, "(#{init_expr})") do
-            {:ok, value} -> Map.put(acc, PhoenixVapor.Names.atom!(name), value)
-            _ -> Map.put(acc, PhoenixVapor.Names.atom!(name), nil)
+            {:ok, value} -> Map.put(acc, PhoenixVapor.Renderer.Names.atom!(name), value)
+            _ -> Map.put(acc, PhoenixVapor.Renderer.Names.atom!(name), nil)
           end
         end)
       after
@@ -52,7 +46,7 @@ defmodule PhoenixVapor.ScriptSetup do
       end
     else
       Enum.reduce(refs, assigns, fn {name, _}, acc ->
-        Map.put(acc, PhoenixVapor.Names.atom!(name), nil)
+        Map.put(acc, PhoenixVapor.Renderer.Names.atom!(name), nil)
       end)
     end
   end
