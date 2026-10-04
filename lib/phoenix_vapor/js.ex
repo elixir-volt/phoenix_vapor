@@ -25,6 +25,25 @@ defmodule PhoenixVapor.JS do
   def call({:runtime, pid}, fun, args), do: QuickBEAM.call(pid, fun, args)
   def call({:context, pid}, fun, args), do: QuickBEAM.Context.call(pid, fun, args)
 
+  @doc """
+  The calling process's runtime for what only JavaScript evaluates when
+  rendering, such as an expression with a callback or a hybrid component's
+  computed values: started on first use and kept for the process, so a
+  LiveView doesn't start one per render.
+  """
+  @spec process_runtime() :: pid()
+  def process_runtime do
+    case Process.get(__MODULE__) do
+      nil ->
+        {:ok, runtime} = QuickBEAM.start()
+        Process.put(__MODULE__, runtime)
+        runtime
+
+      runtime ->
+        runtime
+    end
+  end
+
   @spec stop(t()) :: :ok
   def stop({:runtime, pid}), do: QuickBEAM.stop(pid)
   def stop({:context, pid}), do: QuickBEAM.Context.stop(pid)

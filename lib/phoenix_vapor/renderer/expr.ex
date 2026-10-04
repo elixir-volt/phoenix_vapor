@@ -428,7 +428,7 @@ defmodule PhoenixVapor.Renderer.Expr do
       |> Enum.reject(&(&1 in @globals))
       |> Map.new(&{&1, assigns |> get_assign(&1) |> Value.to_elixir()})
 
-    case QuickBEAM.eval(quickbeam_runtime(), expr, vars: vars) do
+    case QuickBEAM.eval(PhoenixVapor.JS.process_runtime(), expr, vars: vars) do
       {:ok, result} ->
         result
 
@@ -471,16 +471,4 @@ defmodule PhoenixVapor.Renderer.Expr do
 
   defp collect_names(list, acc) when is_list(list), do: Enum.reduce(list, acc, &collect_names/2)
   defp collect_names(_value, acc), do: acc
-
-  defp quickbeam_runtime do
-    case Process.get(:phoenix_vapor_quickbeam_rt) do
-      nil ->
-        {:ok, rt} = QuickBEAM.start()
-        Process.put(:phoenix_vapor_quickbeam_rt, rt)
-        rt
-
-      rt ->
-        rt
-    end
-  end
 end

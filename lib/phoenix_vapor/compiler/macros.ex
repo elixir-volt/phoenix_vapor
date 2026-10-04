@@ -21,6 +21,7 @@ defmodule PhoenixVapor.Compiler.Macros do
   # can't be folded and is reported.
 
   alias PhoenixVapor.Compiler.PropTypes
+  alias PhoenixVapor.JS.Session
   alias PhoenixVapor.Template
 
   @max_combinations 64
@@ -47,32 +48,26 @@ defmodule PhoenixVapor.Compiler.Macros do
   defp macro?(%{attributes: attributes}), do: attributes["type"] == "macro"
 
   @doc """
-  Folds the macro calls in a compiled split. `runtime` is a QuickBEAM runtime
-  shared across one compile, or nil to start one; the runtime in use is
-  returned with the split and diagnostics, `{split, runtime, diagnostics}`.
+  Folds the macro calls in a compiled split, running them in the compile's
+  `PhoenixVapor.JS.Session`. Returns the split and diagnostics.
   """
-  @spec fold(Template.t(), context(), pid() | nil) :: {Template.t(), pid() | nil, [map()]}
-  def fold(split, ctx, runtime) do
+  @spec fold(Template.t(), context(), Session.t()) :: {Template.t(), [map()]}
+  def fold(split, ctx, session) do
     macros = for {local, import} <- ctx.imports, macro?(import), into: %{}, do: {local, import}
 
     if macros == %{} do
-      {split, runtime, []}
+      {split, []}
     else
       env = environment(macros, ctx)
-      runtime = runtime || start_runtime()
-      bundle_id = load_bundle(runtime, macros, ctx.file)
+      bundle_id = Session.once(session, {:macros, ctx.file}, &load_bundle(&1, macros, ctx.file))
+      runtime = Session.runtime(session)
       env = Map.put(env, :bundle_id, bundle_id)
 
-      env = Map.merge(env, %{file: ctx.file, script: ctx.script})
+      env = Map.merge(env, %{file: ctx.file, script: ctx.script, session: session})
       {split, diagnostics} = Template.map_exprs(split, [], &fold_expr(&1, &2, &3, env, runtime))
-      {split, runtime, Enum.reverse(diagnostics)}
+      {split, Enum.reverse(diagnostics)}
     end
   end
-
-  @doc "Stops a runtime `fold/3` started."
-  @spec stop(pid() | nil) :: :ok
-  def stop(nil), do: :ok
-  def stop(runtime), do: QuickBEAM.stop(runtime)
 
   # ── Which names can be folded ──
 
@@ -232,7 +227,7 @@ defmodule PhoenixVapor.Compiler.Macros do
       |> Enum.map(&prop_name/1)
       |> Enum.uniq()
 
-    with {:ok, domains} <- PropTypes.literal_values(runtime, env.file, env.script, props),
+    with {:ok, domains} <- PropTypes.literal_values(env.session, env.file, env.script, props),
          {:ok, combinations} <- combinations(props, domains) do
       Enum.reduce_while(combinations, {:ok, %{}}, fn values, {:ok, table} ->
         case evaluate(runtime, source, with_props(env, props, values)) do
@@ -346,11 +341,6 @@ defmodule PhoenixVapor.Compiler.Macros do
   defp data?(_value), do: false
 
   # ── The macro modules ──
-
-  defp start_runtime do
-    {:ok, runtime} = QuickBEAM.start(handlers: PropTypes.handlers())
-    runtime
-  end
 
   # Bundles the file's macro imports with Volt, resolved from the SFC's
   # directory as the browser build resolves them, and loads them under an id.

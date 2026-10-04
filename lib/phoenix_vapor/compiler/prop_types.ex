@@ -8,10 +8,11 @@ defmodule PhoenixVapor.Compiler.PropTypes do
   # value at compile time.
   #
   # TypeScript comes from the project's `node_modules`, as `vue-tsc` and
-  # editors use it, and runs in the compile's QuickBEAM runtime. It reads the
+  # editors use it, and runs in the compile's `PhoenixVapor.JS.Session`. It reads the
   # project's files through `handlers/0`.
 
   alias NPM.Resolution.PackageResolver
+  alias PhoenixVapor.JS.Session
 
   @doc "The QuickBEAM handlers TypeScript reads files through."
   @spec handlers() :: %{String.t() => ([term()] -> term())}
@@ -33,11 +34,14 @@ defmodule PhoenixVapor.Compiler.PropTypes do
   declares them, with nil for a prop whose type isn't a finite set of literals.
   `undefined` and `null` are both nil.
   """
-  @spec literal_values(pid(), Path.t(), String.t(), [String.t()]) ::
+  @spec literal_values(Session.t(), Path.t(), String.t(), [String.t()]) ::
           {:ok, %{String.t() => [term()] | nil}} | {:error, String.t()}
-  def literal_values(runtime, file, script, props) do
-    with {:ok, lib_dir} <- load(runtime, file) do
-      case QuickBEAM.call(runtime, "__pv_literal_values", [file <> ".ts", script, props, lib_dir]) do
+  def literal_values(session, file, script, props) do
+    with {:ok, main} <- typescript(file),
+         :ok <- Session.once(session, {:typescript, main}, &load(&1, main, file)) do
+      args = [file <> ".ts", script, props, Path.dirname(main)]
+
+      case QuickBEAM.call(Session.runtime(session), "__pv_literal_values", args) do
         {:ok, values} -> {:ok, values}
         {:error, error} -> {:error, PhoenixVapor.JS.error_message(error)}
       end
@@ -45,35 +49,21 @@ defmodule PhoenixVapor.Compiler.PropTypes do
   end
 
   # Loads TypeScript as published, which defines the global `ts`, then
-  # `compile/prop-types.ts` against it, once per runtime. Returns the directory of
-  # TypeScript's libs.
-  defp load(runtime, file) do
-    with {:ok, main} <- typescript(file),
-         :ok <- ensure_loaded(runtime, main, file) do
-      {:ok, Path.dirname(main)}
-    end
-  end
-
-  defp ensure_loaded(runtime, main, file) do
-    case QuickBEAM.eval(runtime, "typeof __pv_literal_values") do
-      {:ok, "function"} ->
-        :ok
-
-      _undefined ->
-        with {:ok, _} <- QuickBEAM.eval(runtime, File.read!(main)),
-             {:ok, code} <-
-               PhoenixVapor.JS.bundle(
-                 Volt.Priv.read!({:phoenix_vapor, "ts"}, "compile/prop-types.ts"),
-                 file,
-                 name: "prop-types",
-                 minify: false,
-                 external: %{"typescript" => "ts"}
-               ),
-             {:ok, _} <- QuickBEAM.eval(runtime, code) do
-          :ok
-        else
-          {:error, reason} -> {:error, PhoenixVapor.JS.error_message(reason)}
-        end
+  # `compile/prop-types.ts` against it.
+  defp load(runtime, main, file) do
+    with {:ok, _} <- QuickBEAM.eval(runtime, File.read!(main)),
+         {:ok, code} <-
+           PhoenixVapor.JS.bundle(
+             Volt.Priv.read!({:phoenix_vapor, "ts"}, "compile/prop-types.ts"),
+             file,
+             name: "prop-types",
+             minify: false,
+             external: %{"typescript" => "ts"}
+           ),
+         {:ok, _} <- QuickBEAM.eval(runtime, code) do
+      :ok
+    else
+      {:error, reason} -> {:error, PhoenixVapor.JS.error_message(reason)}
     end
   end
 

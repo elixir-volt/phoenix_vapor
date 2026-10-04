@@ -11,7 +11,8 @@ defmodule PhoenixVapor.Compiler do
   # `__components__` assign when the template renders.
 
   alias PhoenixVapor.Template
-  alias PhoenixVapor.Compiler.{Macros, Packages, Split}
+  alias PhoenixVapor.Compiler.{Macros, Packages, PropTypes, Split}
+  alias PhoenixVapor.JS.Session
   alias PhoenixVapor.Renderer.{Expr, Names}
 
   @typedoc """
@@ -57,8 +58,7 @@ defmodule PhoenixVapor.Compiler do
       cache: %{},
       resources: [],
       diagnostics: [],
-      macros: nil,
-      quickbeam: nil
+      js: nil
     }
 
     source = %{
@@ -71,15 +71,14 @@ defmodule PhoenixVapor.Compiler do
 
     known = Keyword.get(opts, :known, %{})
 
+    # Macros, package components and prop types share one QuickBEAM runtime,
+    # only while compiling.
     {compiled, state} =
-      try do
-        compile_template(source, [], nil, known, state)
-      after
-        # Each QuickBEAM runtime is only needed while compiling.
-        Macros.stop(state.macros)
-      end
+      Session.with_session(
+        PropTypes.handlers(),
+        &compile_template(source, [], nil, known, %{state | js: &1})
+      )
 
-    if state.quickbeam, do: QuickBEAM.stop(state.quickbeam.runtime)
     diagnostics = state.diagnostics |> Enum.reverse() |> Enum.uniq_by(&{&1.file, &1.message})
     {compiled, Enum.uniq(state.resources), diagnostics}
   end
@@ -180,8 +179,8 @@ defmodule PhoenixVapor.Compiler do
       elixir: source[:elixir]
     }
 
-    {compiled, runtime, macro_diagnostics} = Macros.fold(compiled, ctx, state.macros)
-    state = Enum.reduce(macro_diagnostics, %{state | macros: runtime}, &add(&2, &1))
+    {compiled, macro_diagnostics} = Macros.fold(compiled, ctx, state.js)
+    state = Enum.reduce(macro_diagnostics, state, &add(&2, &1))
 
     {compiled, state} = mark_script_calls(compiled, ctx, state)
     resolve_template(compiled, ctx, state)
@@ -238,46 +237,23 @@ defmodule PhoenixVapor.Compiler do
     resolve_component(%{slot | slots: contents}, ctx, state)
   end
 
+  # Vue's server renderer and the file's packages load once per file.
   defp fold(slot, package, ctx, state) do
-    case ensure_fold(ctx, state) do
-      {:ok, state} ->
-        case Packages.fold(
-               slot,
-               &package(ctx, &1),
-               ctx.known,
-               state.quickbeam.runtime,
-               ctx.file,
-               state.fold
-             ) do
-          {:ok, fragment} -> resolve_slot(fragment, ctx, state)
-          {:error, reason} -> unfoldable(slot, package, reason, ctx, state)
-        end
+    load = &Packages.load(&1, package_sources(ctx), ctx.file)
+    runtime = Session.runtime(state.js)
 
-      {:error, reason, state} ->
-        unfoldable(slot, package, reason, ctx, state)
+    with :ok <- Session.once(state.js, {:packages, ctx.file}, load),
+         {:ok, fragment} <-
+           Packages.fold(slot, &package(ctx, &1), ctx.known, runtime, ctx.file, state.fold) do
+      resolve_slot(fragment, ctx, state)
+    else
+      {:error, reason} -> unfoldable(slot, package, reason, ctx, state)
     end
   end
 
   defp unfoldable(%{name: name} = slot, package, reason, ctx, state) do
     message = "<#{name}> from #{inspect(package.source)} can't render on the server: #{reason}"
     {slot, diagnose(state, :unrendered, ctx.file, slot.position, message)}
-  end
-
-  # Vue's server renderer and the file's packages load once per file.
-  defp ensure_fold(ctx, state) do
-    %{runtime: runtime, loaded: loaded} =
-      state.quickbeam || %{runtime: elem(QuickBEAM.start(), 1), loaded: MapSet.new()}
-
-    state = %{state | quickbeam: %{runtime: runtime, loaded: loaded}}
-
-    if MapSet.member?(loaded, ctx.file) do
-      {:ok, state}
-    else
-      case Packages.load(runtime, package_sources(ctx), ctx.file) do
-        :ok -> {:ok, put_in(state.quickbeam.loaded, MapSet.put(loaded, ctx.file))}
-        {:error, reason} -> {:error, reason, state}
-      end
-    end
   end
 
   # The packages the file imports components from: imports named like

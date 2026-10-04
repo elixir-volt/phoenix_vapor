@@ -18,6 +18,8 @@
 
 ### Fixed
 
+- The QuickBEAM runtime that ran macro calls while compiling was never stopped, and the one for package components leaked when compiling raised. One runtime per compile now serves both and stops in an `after`.
+- A hybrid component started a QuickBEAM runtime on every render to evaluate its computed values. It now uses one per LiveView process and reuses the last values when their inputs are unchanged.
 - A template literal's text between expressions rendered empty: `` `a${x}b` `` gave `1`.
 
 ## 0.5.0 - 2026-10-03
