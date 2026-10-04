@@ -108,6 +108,34 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
     end
   end
 
+  describe "script functions" do
+    defmodule ElixirFunctionsLive do
+      use Phoenix.LiveView
+      use PhoenixVapor, file: Fixtures.path("components/ElixirFunctions.vue")
+    end
+
+    test "render through the Elixir function of the same name" do
+      members = [%{name: "Ada", role: "owner"}, %{name: "Grace", role: "admin"}]
+      html = ElixirFunctionsLive.render(%{members: members}) |> html()
+
+      assert html =~ "<li>Ada: Owner</li>"
+      assert html =~ "<li>Grace: Member</li>"
+    end
+
+    test "without one, are reported with where to define it" do
+      {_template, _files, [diagnostic]} =
+        PhoenixVapor.Components.compile(~S|<b>{{ roleLabel(role) }}</b>|,
+          file: Fixtures.path("components/ElixirFunctions.vue"),
+          script: "function roleLabel(role) { return role }",
+          elixir: {__MODULE__, %{"role_tone" => MapSet.new([1])}}
+        )
+
+      assert diagnostic.message ==
+               "`roleLabel(role)` calls roleLabel, which runs only in the browser; " <>
+                 ~s(define role_label in <script lang="elixir"> to render it on the server)
+    end
+  end
+
   describe "package components in hybrid mode" do
     defmodule PackageFoldLive do
       use Phoenix.LiveView

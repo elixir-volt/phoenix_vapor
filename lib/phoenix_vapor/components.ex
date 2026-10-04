@@ -10,7 +10,7 @@ defmodule PhoenixVapor.Components do
   # as a diagnostic. A component that isn't imported at all is looked up in the
   # `__components__` assign when the template renders.
 
-  alias PhoenixVapor.{Fold, Macros, Renderer, Template}
+  alias PhoenixVapor.{Expr, Fold, Macros, Renderer, Template}
 
   @typedoc """
   A problem found while compiling, in the shape of `t:Code.diagnostic/1`.
@@ -35,6 +35,11 @@ defmodule PhoenixVapor.Components do
     * `:events` — passed to `PhoenixVapor.Renderer.compile/2`
     * `:known` — values names have at compile time, such as a hybrid
       component's initial ref values, for rendering package components
+    * `:elixir` — `{module, functions}`: the module the template renders in
+      and the functions its SFC's `<script lang="elixir">` defines, from
+      `PhoenixVapor.SFC.elixir_functions/2`. A call to a `<script setup>`
+      function renders through the Elixir function of the same name in
+      snake_case, such as `role_tone/1` for `roleTone(role)`.
     * `:fold` — `:all` renders package components into their markup, for
       hybrid templates the browser takes over; `:content`, the default,
       only those that render just their content. See `PhoenixVapor.Fold`.
@@ -58,7 +63,8 @@ defmodule PhoenixVapor.Components do
       template: template,
       origin: Keyword.get(opts, :origin, {1, 1}),
       file: opts[:file],
-      script: opts[:script] || ""
+      script: opts[:script] || "",
+      elixir: opts[:elixir]
     }
 
     known = Keyword.get(opts, :known, %{})
@@ -168,7 +174,8 @@ defmodule PhoenixVapor.Components do
       imports: imports(source.script),
       script: source.script,
       static_props: static_props,
-      known: known
+      known: known,
+      elixir: source[:elixir]
     }
 
     {compiled, runtime, macro_diagnostics} = Macros.fold(compiled, ctx, state.macros)
@@ -334,7 +341,8 @@ defmodule PhoenixVapor.Components do
   end
 
   # A call to a function `<script setup>` defines or imports, other than a
-  # macro, runs only in the browser.
+  # macro, runs only in the browser, unless the SFC's `<script lang="elixir">`
+  # defines the same function, named in snake_case, for the server.
   defp mark_script_calls(template, ctx, state) do
     case browser_functions(ctx.script, ctx.imports) do
       [] ->
@@ -343,12 +351,19 @@ defmodule PhoenixVapor.Components do
       functions ->
         Template.map_exprs(template, state, fn
           {:expr, source, node, _keys} = expr, slot, state when is_map(node) ->
-            case called(node, functions) do
-              nil ->
+            rewritten = elixir_calls(node, functions, ctx.elixir)
+
+            case called(rewritten, functions) do
+              nil when rewritten == node ->
                 {expr, state}
 
+              nil ->
+                {{:expr, source, rewritten, Expr.free_names(rewritten)}, state}
+
               name ->
-                message = "`#{source}` calls #{name}, which runs only in the browser"
+                message =
+                  "`#{source}` calls #{name}, which runs only in the browser" <>
+                    elixir_hint(name, ctx)
 
                 {{:unrendered, source},
                  diagnose(state, :unrendered, ctx.file, slot[:position], message)}
@@ -359,6 +374,44 @@ defmodule PhoenixVapor.Components do
         end)
     end
   end
+
+  # Points calls to `functions` at their Elixir counterparts.
+  defp elixir_calls(node, _functions, nil), do: node
+
+  defp elixir_calls(node, functions, {module, elixir}) do
+    rewrite(node, fn
+      %{type: :call_expression, callee: %{type: :identifier, name: name}, arguments: args} = call ->
+        server = Macro.underscore(name)
+
+        if name in functions and
+             MapSet.member?(Map.get(elixir, server, MapSet.new()), length(args)),
+           do: %{
+             call
+             | callee: %{
+                 type: :elixir_function,
+                 module: module,
+                 function: String.to_existing_atom(server)
+               }
+           },
+           else: call
+
+      other ->
+        other
+    end)
+  end
+
+  defp rewrite(%{} = node, fun) do
+    node |> fun.() |> Map.new(fn {key, value} -> {key, rewrite(value, fun)} end)
+  end
+
+  defp rewrite(list, fun) when is_list(list), do: Enum.map(list, &rewrite(&1, fun))
+  defp rewrite(value, _fun), do: value
+
+  defp elixir_hint(name, %{elixir: {_module, _functions}}),
+    do:
+      "; define #{Macro.underscore(name)} in <script lang=\"elixir\"> to render it on the server"
+
+  defp elixir_hint(_name, _ctx), do: ""
 
   defp browser_functions(script, imports) do
     imported =

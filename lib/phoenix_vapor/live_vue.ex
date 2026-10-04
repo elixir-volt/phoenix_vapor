@@ -117,7 +117,7 @@ defmodule PhoenixVapor.LiveVue do
 
   @doc false
   def compile_sfc(path, globals \\ @default_globals) do
-    sfc_source = File.read!(path)
+    sfc_source = path |> File.read!() |> PhoenixVapor.SFC.without_elixir_block()
     handlers = extract_handlers(sfc_source)
 
     # Compile SFC with Vize

@@ -39,6 +39,7 @@ defmodule PhoenixVapor.Hybrid do
         file: full_path,
         origin: origin,
         script: script_content,
+        elixir: {__CALLER__.module, PhoenixVapor.SFC.elixir_functions(desc, full_path)},
         events: false,
         unrendered: :warn,
         # The browser's first render uses the refs' initial values, so package

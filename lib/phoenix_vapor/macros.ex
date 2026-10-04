@@ -30,6 +30,7 @@ defmodule PhoenixVapor.Macros do
   # a declared prop that is neither wasn't passed, so it's `undefined`.
   @type context :: %{
           optional(:known) => %{String.t() => term()},
+          optional(:elixir) => {module(), map()} | nil,
           file: Path.t(),
           imports: %{String.t() => map()},
           script: String.t(),

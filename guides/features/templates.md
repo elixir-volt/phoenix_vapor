@@ -154,6 +154,30 @@ end
 
 A `<script lang="elixir">` block is compiled into the module, so a component can live in a single file; see [Hybrid mode](hybrid.md#single-file-components).
 
+### Script functions on the server
+
+A function `<script setup>` defines is JavaScript, which the server doesn't run. When the template calls one, define the same function in `<script lang="elixir">`, named in snake_case with the same arity, and the server calls it instead:
+
+```vue
+<script setup lang="ts">
+function roleTone(role: string) {
+  return role === "owner" ? "warning" : role === "admin" ? "success" : "neutral"
+}
+</script>
+
+<script lang="elixir">
+def role_tone("owner"), do: "warning"
+def role_tone("admin"), do: "success"
+def role_tone(_role), do: "neutral"
+</script>
+
+<template>
+  <Badge v-for="member in members" :tone="roleTone(member.role)">{{ member.role }}</Badge>
+</template>
+```
+
+The server renders `roleTone(member.role)` with `role_tone/1`, and in hybrid mode the browser runs `roleTone` once it mounts, so the two should agree. Without an Elixir function, the call is reported, as below, with the name to define.
+
 ## Function components from `.vue` files
 
 `PhoenixVapor.Vue.component/2` defines a function component from a [`.vue` file](https://vuejs.org/guide/scaling-up/sfc.html)'s template. A [`<style scoped>`](https://vuejs.org/api/sfc-css-features.html#scoped-css) block is compiled too: the root element gets the scope attribute, and the CSS is available from a generated function.
@@ -187,7 +211,7 @@ warning: <TabsRoot> is imported from "reka-ui", which the server can't render; t
     └─ lib/my_app_web/live/Settings.vue:24: (file)
 ```
 
-What the server can't render is a compile error, except in hybrid mode, where the browser renders it once it mounts, so it's a warning: a [component from a package](#components-from-packages) that can't render on the server, a call to a function `<script setup>` defines or imports, and a [macro](#macros) call that depends on a value known only when rendering.
+What the server can't render is a compile error, except in hybrid mode, where the browser renders it once it mounts, so it's a warning: a [component from a package](#components-from-packages) that can't render on the server, a call to a function `<script setup>` defines or imports, unless `<script lang="elixir">` defines it for the [server](#script-functions-on-the-server), and a [macro](#macros) call that depends on a value known only when rendering.
 
 ## Rendering at runtime
 

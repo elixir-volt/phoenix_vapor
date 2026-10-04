@@ -26,7 +26,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   @spec generate(String.t(), Classifier.classification(), keyword()) ::
           {:ok, String.t()} | {:error, term()}
   def generate(sfc_source, classification, opts \\ []) do
-    sfc_source = strip_elixir_block(sfc_source)
+    sfc_source = PhoenixVapor.SFC.without_elixir_block(sfc_source)
 
     case Vize.compile_sfc(sfc_source) do
       {:ok, result} ->
@@ -256,16 +256,4 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   end
 
   defp slice(code, %{start: s, end: e}), do: binary_part(code, s, e - s)
-
-  # Vize would copy a `<script lang="elixir">` block into the module, so drop
-  # the block, tags included, using the span the SFC parser reports.
-  defp strip_elixir_block(sfc_source) do
-    case Vize.parse_sfc(sfc_source) do
-      {:ok, %{script: %{lang: "elixir", loc: %{tag_start: s, tag_end: e}}}} ->
-        binary_part(sfc_source, 0, s) <> binary_part(sfc_source, e, byte_size(sfc_source) - e)
-
-      _ ->
-        sfc_source
-    end
-  end
 end

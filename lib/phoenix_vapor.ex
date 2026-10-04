@@ -108,11 +108,11 @@ defmodule PhoenixVapor do
         use PhoenixVapor.Hybrid, unquote(all_opts)
       end
     else
-      do_use_server_only(full_path, desc)
+      do_use_server_only(full_path, desc, caller)
     end
   end
 
-  defp do_use_server_only(full_path, desc) do
+  defp do_use_server_only(full_path, desc, caller) do
     {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
 
     script_content =
@@ -126,6 +126,7 @@ defmodule PhoenixVapor do
         file: full_path,
         origin: origin,
         script: script_content,
+        elixir: {caller.module, PhoenixVapor.SFC.elixir_functions(desc, full_path)},
         unrendered: :raise
       )
 

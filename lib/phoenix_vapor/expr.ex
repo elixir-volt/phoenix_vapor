@@ -281,6 +281,11 @@ defmodule PhoenixVapor.Expr do
         evaluated_args = Enum.map(args || [], &eval_node(&1, assigns))
         call_method(receiver, method, evaluated_args)
 
+      # A `<script setup>` function the SFC's `<script lang="elixir">` defines
+      # for the server too.
+      %{type: :elixir_function, module: module, function: function} ->
+        apply(module, function, Enum.map(args, &eval_node(&1, assigns)))
+
       # A call to a function: QuickBEAM runs it, or reports that it isn't one.
       _ ->
         throw(:unsupported_node)
