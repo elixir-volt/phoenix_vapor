@@ -1,12 +1,14 @@
 defmodule PhoenixVapor.RegressionsTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen}
 
   describe "attributes injected into the root tag" do
     defmodule Scoped do
       require PhoenixVapor.Vue
-      PhoenixVapor.Vue.component(:card, "../fixtures/ScopedTitle.vue")
+      PhoenixVapor.Vue.component(:card, Fixtures.path("ScopedTitle.vue"))
     end
 
     test "the scope attribute matches the CSS and survives > in attribute values" do
@@ -31,7 +33,7 @@ defmodule PhoenixVapor.RegressionsTest do
   end
 
   test "the client module leaves out a <script lang=\"elixir\"> after <script setup>" do
-    sfc = File.read!("test/fixtures/ElixirAfterSetup.vue")
+    sfc = File.read!(Fixtures.path("ElixirAfterSetup.vue"))
     %{script_setup: %{content: script}} = Vize.parse_sfc!(sfc)
     {refs, computeds, functions, bodies, props} = PhoenixVapor.ScriptSetup.parse(script)
 
@@ -47,7 +49,7 @@ defmodule PhoenixVapor.RegressionsTest do
       Code.compile_quoted(
         quote do
           defmodule PhoenixVapor.RegressionsTest.Typo do
-            use PhoenixVapor, file: "test/fixtures/Counter.vue", runtime: :ful
+            use PhoenixVapor, file: Fixtures.path("Counter.vue"), runtime: :ful
           end
         end
       )

@@ -48,4 +48,13 @@ defmodule PhoenixVapor.SFC do
         line: 1,
         description: "no <template> block in #{Path.relative_to_cwd(file)}"
   end
+
+  # The `.vue` file a macro names: any expression known at compile time, such
+  # as a string or `Path.join(@dir, "Card.vue")`, relative to the caller's
+  # directory.
+  @spec path!(Macro.t(), Macro.Env.t()) :: Path.t()
+  def path!(file, caller) do
+    {file, _binding} = Code.eval_quoted(file, [], caller)
+    Path.expand(file, Path.dirname(caller.file))
+  end
 end

@@ -118,7 +118,7 @@ assign(socket, __components__: %{"Card" => &MyAppWeb.Components.card/1})
 
 ## `.vue` files
 
-`use PhoenixVapor, file: "Dashboard.vue"` makes a `.vue` file the LiveView's template. The path is relative to the module's file. Without `ref()` in `<script setup>`, the file is server-only: `render/1` comes from the template, and the rest of the LiveView is your Elixir.
+`use PhoenixVapor, file: "Dashboard.vue"` makes a `.vue` file the LiveView's template. The path is relative to the module's file, and can be any expression known at compile time, such as `Path.join(@templates, "Dashboard.vue")`. Without `ref()` in `<script setup>`, the file is server-only: `render/1` comes from the template, and the rest of the LiveView is your Elixir.
 
 ```vue
 <!-- lib/my_app_web/live/Dashboard.vue -->

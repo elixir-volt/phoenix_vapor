@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.Integration.LiveVueTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   @moduletag :integration
 
   unless File.regular?("priv/js/reka-dialog.js") do
@@ -12,7 +14,7 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
     use Phoenix.LiveView
 
     use PhoenixVapor,
-      file: "../../fixtures/Probe.vue",
+      file: Fixtures.path("Probe.vue"),
       runtime: :full,
       bundle: "priv/js/reka-dialog.js",
       globals: %{"reka-ui" => "RekaDialog"}
@@ -38,7 +40,7 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
 
   test "assigns the bundled component export before mounting" do
     {setup, handlers} =
-      PhoenixVapor.LiveVue.compile_sfc("test/fixtures/Probe.vue")
+      PhoenixVapor.LiveVue.compile_sfc(Fixtures.path("Probe.vue"))
 
     assert handlers == []
     assert setup =~ "globalThis.__sfc_component = (function()"
@@ -47,7 +49,7 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
 
   test "resolves sibling Vue imports from the source component directory" do
     {setup, handlers} =
-      PhoenixVapor.LiveVue.compile_sfc("test/fixtures/Parent.vue")
+      PhoenixVapor.LiveVue.compile_sfc(Fixtures.path("Parent.vue"))
 
     assert handlers == []
     assert setup =~ "child component"

@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.Integration.UnifiedAPITest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   @moduletag :integration
 
   # Mode 1: sigil only (no file)
@@ -18,19 +20,19 @@ defmodule PhoenixVapor.Integration.UnifiedAPITest do
   # Mode 2: server-only SFC (no script setup, elixir block)
   defmodule ServerOnlyLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/ServerOnly.vue"
+    use PhoenixVapor, file: Fixtures.path("ServerOnly.vue")
   end
 
   # Mode 3: server-only SFC with defineProps (no ref = no client JS)
   defmodule ServerOnlyPropsLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/ServerOnlyProps.vue"
+    use PhoenixVapor, file: Fixtures.path("ServerOnlyProps.vue")
   end
 
   # Mode 4: hybrid SFC (has ref() = client JS generated)
   defmodule HybridLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/Hybrid.vue", client_output: nil
+    use PhoenixVapor, file: Fixtures.path("Hybrid.vue"), client_output: nil
   end
 
   defp render_to_html(rendered) do

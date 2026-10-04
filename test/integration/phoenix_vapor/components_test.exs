@@ -1,9 +1,11 @@
 defmodule PhoenixVapor.Integration.ComponentsTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   defmodule PageLive do
     use Phoenix.LiveView
-    use PhoenixVapor, file: "../../fixtures/components/Page.vue"
+    use PhoenixVapor, file: Fixtures.path("components/Page.vue")
   end
 
   defp html(rendered), do: rendered |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
@@ -56,7 +58,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
     test "fold calls with constant arguments at compile time" do
       {split, _files, []} =
         PhoenixVapor.Components.compile(~S|<Button variant="ghost" />|,
-          file: Path.expand("../../fixtures/components/Page.vue", __DIR__),
+          file: Fixtures.path("components/Page.vue"),
           script: ~s(import Button from "./Button.vue")
         )
 
@@ -72,7 +74,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
         assert_raise CompileError, fn ->
           defmodule DynamicMacroLive do
             use Phoenix.LiveView
-            use PhoenixVapor, file: "../../fixtures/components/DynamicMacro.vue"
+            use PhoenixVapor, file: Fixtures.path("components/DynamicMacro.vue")
           end
         end
 
@@ -84,7 +86,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
   describe "package components in hybrid mode" do
     defmodule PackageFoldLive do
       use Phoenix.LiveView
-      use PhoenixVapor, file: "../../fixtures/components/PackageFold.vue", client_output: nil
+      use PhoenixVapor, file: Fixtures.path("components/PackageFold.vue"), client_output: nil
     end
 
     test "render at compile time, with the template's content inside them" do
@@ -102,7 +104,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
     test "that need a parent they're rendered without are reported with Vue's reason" do
       {_template, _files, [diagnostic]} =
         PhoenixVapor.Components.compile(~S|<TabsList>Tabs</TabsList>|,
-          file: Path.expand("../../fixtures/components/PackageFold.vue", __DIR__),
+          file: Fixtures.path("components/PackageFold.vue"),
           script: ~s(import { TabsList } from "reka-ui"),
           fold: :all
         )
@@ -116,7 +118,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
   describe "package components outside hybrid mode" do
     defmodule PackageProviderLive do
       use Phoenix.LiveView
-      use PhoenixVapor, file: "../../fixtures/components/PackageProvider.vue"
+      use PhoenixVapor, file: Fixtures.path("components/PackageProvider.vue")
     end
 
     test "render when they render just their content" do
@@ -128,7 +130,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
         assert_raise CompileError, fn ->
           defmodule PackageTabsLive do
             use Phoenix.LiveView
-            use PhoenixVapor, file: "../../fixtures/components/PackageTabs.vue"
+            use PhoenixVapor, file: Fixtures.path("components/PackageTabs.vue")
           end
         end
 
@@ -141,7 +143,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
         assert_raise CompileError, fn ->
           defmodule PackageComponentLive do
             use Phoenix.LiveView
-            use PhoenixVapor, file: "../../fixtures/components/PackageComponent.vue"
+            use PhoenixVapor, file: Fixtures.path("components/PackageComponent.vue")
           end
         end
 

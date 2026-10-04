@@ -47,9 +47,7 @@ defmodule PhoenixVapor.LiveVue do
 
   defmacro __using__(opts) do
     bundle = Keyword.fetch!(opts, :bundle)
-    file = Keyword.fetch!(opts, :file)
-    caller_dir = __CALLER__.file |> Path.dirname()
-    full_path = Path.expand(file, caller_dir)
+    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.SFC.path!(__CALLER__)
 
     {globals, _binding} = opts |> Keyword.get(:globals, Macro.escape(%{})) |> Code.eval_quoted()
     globals = Map.merge(@default_globals, globals)
@@ -213,7 +211,7 @@ defmodule PhoenixVapor.LiveVue do
   defp volt_bundle(compiled, sfc_path, globals) do
     case PhoenixVapor.JS.bundle(compiled, sfc_path, name: "sfc", minify: false, external: globals) do
       {:ok, code} -> code
-      {:error, reason} -> raise "Failed to bundle #{sfc_path}: #{inspect(reason)}"
+      {:error, reason} -> raise "Failed to bundle #{sfc_path}: #{reason}"
     end
   end
 

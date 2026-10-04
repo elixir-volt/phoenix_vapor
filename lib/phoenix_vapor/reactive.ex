@@ -44,9 +44,7 @@ defmodule PhoenixVapor.Reactive do
   """
 
   defmacro __using__(opts) do
-    file = Keyword.fetch!(opts, :file)
-    caller_dir = __CALLER__.file |> Path.dirname()
-    full_path = Path.expand(file, caller_dir)
+    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.SFC.path!(__CALLER__)
     source = File.read!(full_path)
 
     desc = Vize.parse_sfc!(source)

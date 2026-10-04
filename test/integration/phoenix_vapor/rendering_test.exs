@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.Integration.RenderingTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Fixtures
+
   @moduletag :integration
 
   defp render_to_html(rendered) do
@@ -463,7 +465,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
   describe "Vue SFC loading" do
     defmodule TestComponents do
       require PhoenixVapor.Vue
-      PhoenixVapor.Vue.component(:card, "../../fixtures/Card.vue")
+      PhoenixVapor.Vue.component(:card, Fixtures.path("Card.vue"))
     end
 
     test "component from .vue file" do
@@ -571,7 +573,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
   describe "scoped CSS" do
     defmodule ScopedComponents do
       require PhoenixVapor.Vue
-      PhoenixVapor.Vue.component(:scoped, "../../fixtures/Scoped.vue")
+      PhoenixVapor.Vue.component(:scoped, Fixtures.path("Scoped.vue"))
     end
 
     test "injects scope attribute into root element" do
@@ -813,7 +815,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
   describe "Reactive macro" do
     defmodule ReactiveCounter do
       use Phoenix.LiveView
-      use PhoenixVapor, file: "../../fixtures/Counter.vue", runtime: :reactive
+      use PhoenixVapor, file: Fixtures.path("Counter.vue"), runtime: :reactive
     end
 
     test "generates mount with initial state" do

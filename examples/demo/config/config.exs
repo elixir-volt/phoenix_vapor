@@ -31,7 +31,12 @@ config :volt,
   minify: false,
   hash: false,
   resolve_dirs: ["node_modules", "deps"],
-  aliases: %{"@" => "assets/js"},
+  # PhoenixVapor's browser code comes from this checkout, as its Mix dep does.
+  aliases: %{
+    "@" => "assets/js",
+    "phoenix_vapor" => "../../priv/ts/live-socket.ts",
+    "phoenix_vapor/hybrid" => "../../priv/ts/hybrid-bridge.ts"
+  },
 
   tailwind: [
     css: "assets/css/app.css",

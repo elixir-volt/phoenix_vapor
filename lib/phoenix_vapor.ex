@@ -85,8 +85,7 @@ defmodule PhoenixVapor do
   end
 
   defp do_use_file(file, nil, opts, caller) do
-    caller_dir = caller.file |> Path.dirname()
-    full_path = Path.expand(file, caller_dir)
+    full_path = PhoenixVapor.SFC.path!(file, caller)
     sfc_source = File.read!(full_path)
 
     desc = Vize.parse_sfc!(sfc_source)
@@ -103,20 +102,17 @@ defmodule PhoenixVapor do
     has_client_state = map_size(refs) > 0
 
     if has_client_state do
-      all_opts = Keyword.put(opts, :file, file)
+      all_opts = Keyword.put(opts, :file, full_path)
 
       quote do
         use PhoenixVapor.Hybrid, unquote(all_opts)
       end
     else
-      do_use_server_only(file, desc, caller)
+      do_use_server_only(full_path, desc)
     end
   end
 
-  defp do_use_server_only(file, desc, caller) do
-    caller_dir = caller.file |> Path.dirname()
-    full_path = Path.expand(file, caller_dir)
-
+  defp do_use_server_only(full_path, desc) do
     {template_content, origin} = PhoenixVapor.SFC.template!(desc, full_path)
 
     script_content =
