@@ -35,6 +35,9 @@ defmodule PhoenixVapor.Components do
     * `:events` — passed to `PhoenixVapor.Renderer.compile/2`
     * `:known` — values names have at compile time, such as a hybrid
       component's initial ref values, for rendering package components
+    * `:fold` — `:all` renders package components into their markup, for
+      hybrid templates the browser takes over; `:content`, the default,
+      only those that render just their content. See `PhoenixVapor.Fold`.
 
   Returns the compiled template, the `.vue` files it read, and diagnostics.
   """
@@ -42,12 +45,13 @@ defmodule PhoenixVapor.Components do
   def compile(template, opts \\ []) do
     state = %{
       events: Keyword.get(opts, :events, true),
+      fold: Keyword.get(opts, :fold, :content),
       stack: [],
       cache: %{},
       resources: [],
       diagnostics: [],
       macros: nil,
-      fold: nil
+      quickbeam: nil
     }
 
     source = %{
@@ -67,7 +71,7 @@ defmodule PhoenixVapor.Components do
         Macros.stop(state.macros)
       end
 
-    if state.fold, do: QuickBEAM.stop(state.fold.runtime)
+    if state.quickbeam, do: QuickBEAM.stop(state.quickbeam.runtime)
     diagnostics = state.diagnostics |> Enum.reverse() |> Enum.uniq_by(&{&1.file, &1.message})
     {compiled, Enum.uniq(state.resources), diagnostics}
   end
@@ -228,7 +232,14 @@ defmodule PhoenixVapor.Components do
   defp fold(slot, package, ctx, state) do
     case ensure_fold(ctx, state) do
       {:ok, state} ->
-        case Fold.fold(slot, &package(ctx, &1), ctx.known, state.fold.runtime, ctx.file) do
+        case Fold.fold(
+               slot,
+               &package(ctx, &1),
+               ctx.known,
+               state.quickbeam.runtime,
+               ctx.file,
+               state.fold
+             ) do
           {:ok, fragment} -> resolve_slot(fragment, ctx, state)
           {:error, reason} -> unfoldable(slot, package, reason, ctx, state)
         end
@@ -245,24 +256,16 @@ defmodule PhoenixVapor.Components do
 
   # Vue's server renderer and the file's packages load once per file.
   defp ensure_fold(ctx, state) do
-    runtime =
-      case state.fold do
-        nil ->
-          {:ok, runtime} = QuickBEAM.start()
-          runtime
+    %{runtime: runtime, loaded: loaded} =
+      state.quickbeam || %{runtime: elem(QuickBEAM.start(), 1), loaded: MapSet.new()}
 
-        %{runtime: runtime} ->
-          runtime
-      end
-
-    loaded = if state.fold, do: state.fold.loaded, else: MapSet.new()
-    state = %{state | fold: %{runtime: runtime, loaded: loaded}}
+    state = %{state | quickbeam: %{runtime: runtime, loaded: loaded}}
 
     if MapSet.member?(loaded, ctx.file) do
       {:ok, state}
     else
       case Fold.load(runtime, package_sources(ctx), ctx.file) do
-        :ok -> {:ok, put_in(state.fold.loaded, MapSet.put(loaded, ctx.file))}
+        :ok -> {:ok, put_in(state.quickbeam.loaded, MapSet.put(loaded, ctx.file))}
         {:error, reason} -> {:error, reason, state}
       end
     end

@@ -45,7 +45,9 @@ defmodule PhoenixVapor.Hybrid do
         unrendered: :warn,
         # The browser's first render uses the refs' initial values, so package
         # components can render with them on the server too.
-        known: initial_values(refs)
+        known: initial_values(refs),
+        # The browser takes over, so package components render as they look.
+        fold: :all
       )
 
     template_names = PhoenixVapor.Renderer.assign_keys(split)

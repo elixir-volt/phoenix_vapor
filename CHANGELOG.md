@@ -4,7 +4,7 @@
 
 ### Added
 
-- Components from packages, such as Reka UI, render on the server when everything they receive is known at compile time. Vue's server renderer runs them once in QuickBEAM while the template compiles, so rendering runs no JavaScript. Nested package components render together, providers such as `TooltipProvider` render only their content, and in hybrid mode the initial values of refs count as known. One that can't render is reported with the reason, such as a prop known only when rendering or an error from the component.
+- In hybrid mode, components from packages, such as Reka UI, render on the server when everything they receive is known at compile time. Vue's server renderer runs them once in QuickBEAM while the template compiles, so rendering runs no JavaScript. Nested package components render together, providers such as `TooltipProvider` render only their content, and in hybrid mode the initial values of refs count as known. One that can't render is reported with the reason, such as a prop known only when rendering or an error from the component. Outside hybrid mode, where nothing takes over in the browser, only package components that render just their content, such as providers, render; others remain a compile error.
 
 ## 0.5.0 - 2026-10-03
 

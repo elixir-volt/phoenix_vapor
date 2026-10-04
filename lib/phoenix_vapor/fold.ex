@@ -26,18 +26,40 @@ defmodule PhoenixVapor.Fold do
   Folds a component slot whose component comes from a package.
 
   `packages` returns a tag's package import, or nil for a tag that isn't a
-  package component, for the component and the ones inside it. `known` holds the values names have at compile
-  time. Returns a `:fragment` slot, whose holes still need resolving, or the
-  reason it can't fold.
+  package component, for the component and the ones inside it. `known` holds
+  the values names have at compile time. Returns a `:fragment` slot, whose
+  holes still need resolving, or the reason it can't fold.
+
+  In `:all` mode, for hybrid templates, whose browser takes over, a component
+  folds into whatever markup it renders. In `:content` mode, for templates
+  nothing takes over in the browser, it folds only when it renders just its
+  content, as a provider does: frozen markup from a component with behavior,
+  such as tabs, would look interactive and do nothing.
   """
-  @spec fold(map(), (String.t() -> package() | nil), map(), pid(), Path.t()) ::
+  @spec fold(map(), (String.t() -> package() | nil), map(), pid(), Path.t(), :all | :content) ::
           {:ok, map()} | {:error, String.t()}
-  def fold(slot, packages, known, runtime, file) do
+  def fold(slot, packages, known, runtime, file, mode \\ :all) do
+    # Each component is checked on its own when only content may render.
+    packages = if mode == :content, do: &if(&1 == slot.name, do: packages.(&1)), else: packages
+
     with {:ok, tree, holes} <- tree(slot, packages, known, []),
          {:ok, html} <- render(runtime, tree),
+         :ok <- check_content(mode, html, tree),
          {:ok, template} <- template(html, Enum.reverse(holes), file) do
       {:ok, %{kind: :fragment, template: template, position: slot.position}}
     end
+  end
+
+  defp check_content(:all, _html, _tree), do: :ok
+
+  defp check_content(:content, html, tree) do
+    content = tree.slots |> Map.get("default", []) |> Enum.join()
+
+    if map_size(Map.delete(tree.slots, "default")) == 0 and strip_fragments(html) == content,
+      do: :ok,
+      else:
+        {:error,
+         "it has markup and behavior of its own, which work only in hybrid mode, where Vue runs in the browser"}
   end
 
   # The component as a tree for Vue: its props, and each slot's content as
@@ -111,6 +133,8 @@ defmodule PhoenixVapor.Fold do
     end
   end
 
+  defp strip_fragments(html), do: String.replace(html, ["<!--[-->", "<!--]-->"], "")
+
   defp marker(holes), do: "\u2063H#{length(holes)}\u2063"
 
   defp merge_html(parts) do
@@ -180,7 +204,7 @@ defmodule PhoenixVapor.Fold do
 
   # Vue's fragment markers are for hydration; the browser mounts fresh.
   defp template(html, holes, file) do
-    html = String.replace(html, ["<!--[-->", "<!--]-->"], "")
+    html = strip_fragments(html)
     [first | rest] = Regex.split(@marker_pattern, html, include_captures: true)
 
     {statics, indices} =

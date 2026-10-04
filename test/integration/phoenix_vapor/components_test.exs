@@ -81,35 +81,62 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
     end
   end
 
-  describe "package components" do
+  describe "package components in hybrid mode" do
     defmodule PackageFoldLive do
       use Phoenix.LiveView
-      use PhoenixVapor, file: "../../fixtures/components/PackageFold.vue"
+      use PhoenixVapor, file: "../../fixtures/components/PackageFold.vue", client_output: nil
     end
 
     test "render at compile time, with the template's content inside them" do
       html = PackageFoldLive.render(%{name: "Ada"}) |> html()
 
-      # TooltipProvider renders only its content; the Tabs render as Reka does.
+      # TooltipProvider renders only its content; the Tabs render as Reka does,
+      # on the tab the ref starts on.
       assert html =~ ~s(<div dir="ltr" data-orientation="horizontal">)
       assert html =~ ~s(role="tablist")
-      assert html =~ ~s(aria-selected="true" data-state="active")
+      assert html =~ ~r/aria-selected="true" data-state="active">Greeting/
       assert html =~ ~r/role="tabpanel" data-state="active"[^>]*><p>Hello Ada<\/p><\/div>/
+      refute html =~ "<p>Other</p>"
     end
 
     test "that need a parent they're rendered without are reported with Vue's reason" do
       {_template, _files, [diagnostic]} =
         PhoenixVapor.Components.compile(~S|<TabsList>Tabs</TabsList>|,
           file: Path.expand("../../fixtures/components/PackageFold.vue", __DIR__),
-          script: ~s(import { TabsList } from "reka-ui")
+          script: ~s(import { TabsList } from "reka-ui"),
+          fold: :all
         )
 
       assert %{severity: :unrendered, message: message} = diagnostic
       assert message =~ "<TabsList> from \"reka-ui\" can't render on the server"
       assert message =~ "TabsRootContext"
     end
+  end
 
-    test "with a prop known only when rendering are a compile error outside hybrid mode" do
+  describe "package components outside hybrid mode" do
+    defmodule PackageProviderLive do
+      use Phoenix.LiveView
+      use PhoenixVapor, file: "../../fixtures/components/PackageProvider.vue"
+    end
+
+    test "render when they render just their content" do
+      assert PackageProviderLive.render(%{name: "Ada"}) |> html() == "<p>Hello Ada</p>"
+    end
+
+    test "with markup and behavior of their own are a compile error" do
+      error =
+        assert_raise CompileError, fn ->
+          defmodule PackageTabsLive do
+            use Phoenix.LiveView
+            use PhoenixVapor, file: "../../fixtures/components/PackageTabs.vue"
+          end
+        end
+
+      assert Exception.message(error) =~
+               "<TabsRoot> from \"reka-ui\" can't render on the server: it has markup and behavior of its own, which work only in hybrid mode"
+    end
+
+    test "with a prop known only when rendering are a compile error" do
       error =
         assert_raise CompileError, fn ->
           defmodule PackageComponentLive do

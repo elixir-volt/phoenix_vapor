@@ -56,7 +56,7 @@ import Card from "@/ui/Card.vue"
 
 ### Components from packages
 
-A component from a package, such as a [Reka UI](https://reka-ui.com) primitive, gets its markup from its JavaScript. When everything it receives is known at compile time, Vue's [server renderer](https://vuejs.org/guide/scaling-up/ssr.html) runs it once in QuickBEAM while the template compiles, and its HTML becomes part of the template. Rendering then runs no JavaScript.
+A component from a package, such as a [Reka UI](https://reka-ui.com) primitive, gets its markup from its JavaScript. In a hybrid component, when everything it receives is known at compile time, Vue's [server renderer](https://vuejs.org/guide/scaling-up/ssr.html) runs it once in QuickBEAM while the template compiles, and its HTML becomes part of the template. Rendering then runs no JavaScript.
 
 ```vue
 <script setup>
@@ -80,7 +80,11 @@ const tab = ref("general")
 
 `TooltipProvider` renders only its content, and the Tabs render with Reka's markup and ARIA attributes. Package components inside one another render together, so parts such as `TabsList` get their parent's context. The template's own content inside them, such as `{{ project.name }}`, stays dynamic.
 
-Known values are static props, literals, [macro](#macros) results, and, in hybrid mode, the initial values of refs, which the browser renders first too. A package component that receives a value known only when rendering, such as `:open="selected !== null"`, or that passes props to its slot content, can't render on the server. In hybrid mode it's left out of the first render, with a compile-time warning that says why, and appears when the browser mounts the component. In other modes it's a compile error.
+This is for [hybrid mode](hybrid.md), where the server renders the first paint and Vue takes over in the browser. Known values are static props, literals, [macro](#macros) results, and the initial values of refs, which the browser renders first too.
+
+In other modes nothing takes over in the browser, so frozen markup from a component with behavior, such as tabs whose triggers never switch, would look interactive and do nothing. There, a package component renders only when it renders just its content, as a provider such as `TooltipProvider` does, and any other is a compile error.
+
+A package component that receives a value known only when rendering, such as `:open="selected !== null"`, or that passes props to its slot content, can't render on the server. In hybrid mode it's left out of the first render, with a compile-time warning that says why, and appears when the browser mounts the component. In other modes it's a compile error.
 
 ### Macros
 
