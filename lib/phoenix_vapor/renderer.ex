@@ -84,8 +84,6 @@ defmodule PhoenixVapor.Renderer do
     |> Enum.uniq()
   end
 
-  defp slot_keys(slot), do: slot |> Template.slot_exprs() |> Enum.flat_map(&Expr.assign_keys/1)
-
   # ── Slot evaluation ──
 
   defp eval_slot(%{kind: :text, value: value}, assigns),
@@ -368,8 +366,8 @@ defmodule PhoenixVapor.Renderer do
 
   # A slot re-renders when anything it reads changes, including what the
   # blocks inside it read.
-  defp slot_changed?(slot, changed),
-    do: slot |> slot_keys() |> Enum.any?(&MapSet.member?(changed, &1))
+  # The keys are stored when compiling; see `PhoenixVapor.Template.put_keys/1`.
+  defp slot_changed?(%{keys: keys}, changed), do: Enum.any?(keys, &MapSet.member?(changed, &1))
 
   # ── Helpers ──
 

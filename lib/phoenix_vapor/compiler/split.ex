@@ -25,7 +25,7 @@ defmodule PhoenixVapor.Compiler.Split do
     statics = render_bindings(statics, Map.get(split, :bindings, []), opts)
     slots = Enum.map(slots, &compile_slot(&1, opts))
 
-    Template.new(statics, slots, opts[:file])
+    statics |> Template.new(slots, opts[:file]) |> Template.put_keys()
   end
 
   defp render_bindings(statics, bindings, opts) do

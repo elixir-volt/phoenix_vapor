@@ -9,6 +9,8 @@ defmodule PhoenixVapor.Template do
   a `v-if` branch, are templates too.
   """
 
+  alias PhoenixVapor.Renderer.Expr
+
   defstruct statics: [], slots: [], fingerprint: nil, file: nil
 
   @type position :: {pos_integer(), pos_integer()}
@@ -55,6 +57,31 @@ defmodule PhoenixVapor.Template do
     {slots, acc} = Enum.map_reduce(slots, acc, &map_slot(&1, &2, fun))
     {%{template | slots: slots}, acc}
   end
+
+  @doc """
+  Stores on every slot, in this template and the blocks inside it, the root
+  assign keys its expressions read, its own and its blocks', as `:keys`.
+  Rendering skips a slot none of whose keys changed. Call it again after
+  replacing a template's expressions.
+  """
+  @spec put_keys(block) :: block when block: t() | map()
+  def put_keys(%{slots: slots} = template) do
+    slots =
+      Enum.map(slots, fn slot ->
+        {slot, nil} = map_blocks(slot, nil, &{put_keys(&1), &2})
+        keys = slot |> slot_exprs() |> Enum.flat_map(&Expr.assign_keys/1) |> Enum.uniq()
+        Map.put(slot, :keys, keys -- bound_names(slot))
+      end)
+
+    %{template | slots: slots}
+  end
+
+  # A `v-for` binds its item, key and index names inside its block; they
+  # aren't assigns.
+  defp bound_names(%{kind: :for} = slot),
+    do: for(name <- [slot.value, slot[:key], slot[:index]], is_binary(name), do: name)
+
+  defp bound_names(_slot), do: []
 
   @doc "Every expression in a template, in document order. See `map_exprs/3`."
   @spec exprs(t()) :: [{term(), map()}]

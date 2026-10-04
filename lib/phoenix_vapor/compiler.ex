@@ -219,7 +219,10 @@ defmodule PhoenixVapor.Compiler do
     state = Enum.reduce(macro_diagnostics, state, &add(&2, &1))
 
     {compiled, state} = mark_script_calls(compiled, ctx, state)
-    resolve_template(compiled, ctx, state)
+    {compiled, state} = resolve_template(compiled, ctx, state)
+
+    # Macros, Elixir functions and package components changed what slots read.
+    {Template.put_keys(compiled), state}
   end
 
   defp resolve_template(%Template{slots: slots} = template, ctx, state) do

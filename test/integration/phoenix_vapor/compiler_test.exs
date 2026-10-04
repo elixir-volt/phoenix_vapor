@@ -122,6 +122,15 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
       assert html =~ "<li>Grace: Member</li>"
     end
 
+    test "store the assign keys each slot reads, for change tracking" do
+      sfc = PhoenixVapor.Compiler.SFC.read!(Fixtures.path("components/ElixirFunctions.vue"))
+      {template, _files, []} = PhoenixVapor.Compiler.compile(sfc, module: ElixirFunctionsLive)
+
+      # roleLabel renders through role_tone/1, so it isn't an assign.
+      assert [%{kind: :for, keys: ["members"], block: block}] = template.slots
+      assert [%{keys: ["member"]}, %{keys: ["member"]}] = block.slots
+    end
+
     test "without one, are reported with where to define it" do
       sfc = PhoenixVapor.Compiler.SFC.read!(Fixtures.path("components/ElixirFunctions.vue"))
 
