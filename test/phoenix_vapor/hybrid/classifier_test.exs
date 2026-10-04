@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.Hybrid.ClassifierTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Compiler.ScriptSetup
+
   alias PhoenixVapor.Hybrid.Classifier
 
   describe "free_variables/1" do
@@ -102,16 +104,15 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
   describe "classify/5" do
     test "basic classification" do
       result =
-        Classifier.classify(
-          %{"search" => ~s(""), "page" => "1"},
-          %{"filtered" => "users.filter(u => u.name.includes(search.value))"},
-          ["clearSearch", "deleteUser"],
-          %{
+        Classifier.classify(%ScriptSetup{
+          refs: %{"search" => ~s(""), "page" => "1"},
+          computeds: %{"filtered" => "users.filter(u => u.name.includes(search.value))"},
+          functions: %{
             "clearSearch" => ~s[search.value = ""; page.value = 1],
             "deleteUser" => ~s["use server"; users = users.filter(u => u.id !== id)]
           },
-          ["users", "currentUser"]
-        )
+          props: ["users", "currentUser"]
+        })
 
       assert result.bindings["users"] == :server_prop
       assert result.bindings["currentUser"] == :server_prop
@@ -123,13 +124,12 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
 
     test "classifies server action via use server directive" do
       result =
-        Classifier.classify(
-          %{},
-          %{},
-          ["deleteUser"],
-          %{"deleteUser" => ~s["use server"; users = users.filter(u => u.id !== id)]},
-          ["users"]
-        )
+        Classifier.classify(%ScriptSetup{
+          refs: %{},
+          computeds: %{},
+          functions: %{"deleteUser" => ~s["use server"; users = users.filter(u => u.id !== id)]},
+          props: ["users"]
+        })
 
       assert {:server_action, body} = result.handlers["deleteUser"]
       assert body =~ "users = users.filter"
@@ -138,39 +138,38 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
 
     test "classifies server action via prop write (no directive)" do
       result =
-        Classifier.classify(
-          %{},
-          %{},
-          ["banUser"],
-          %{"banUser" => "users = users.map(u => u.id === id ? {...u, banned: true} : u)"},
-          ["users"]
-        )
+        Classifier.classify(%ScriptSetup{
+          refs: %{},
+          computeds: %{},
+          functions: %{
+            "banUser" => "users = users.map(u => u.id === id ? {...u, banned: true} : u)"
+          },
+          props: ["users"]
+        })
 
       assert {:server_action, _body} = result.handlers["banUser"]
     end
 
     test "classifies client handler" do
       result =
-        Classifier.classify(
-          %{"search" => ~s(""), "page" => "1"},
-          %{},
-          ["clearSearch"],
-          %{"clearSearch" => ~s[search.value = ""; page.value = 1]},
-          ["users"]
-        )
+        Classifier.classify(%ScriptSetup{
+          refs: %{"search" => ~s(""), "page" => "1"},
+          computeds: %{},
+          functions: %{"clearSearch" => ~s[search.value = ""; page.value = 1]},
+          props: ["users"]
+        })
 
       assert result.handlers["clearSearch"] == :client_handler
     end
 
     test "identifies client props" do
       result =
-        Classifier.classify(
-          %{"search" => ~s("")},
-          %{"filtered" => "users.filter(u => u.name.includes(search.value))"},
-          [],
-          %{},
-          ["users", "currentUser"]
-        )
+        Classifier.classify(%ScriptSetup{
+          refs: %{"search" => ~s("")},
+          computeds: %{"filtered" => "users.filter(u => u.name.includes(search.value))"},
+          functions: %{},
+          props: ["users", "currentUser"]
+        })
 
       assert "users" in result.client_props
       refute "currentUser" in result.client_props
@@ -179,26 +178,26 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
 
     test "pure client computed (no server deps)" do
       result =
-        Classifier.classify(
-          %{"search" => ~s(""), "items" => "[]"},
-          %{"upper" => "search.value.toUpperCase()"},
-          [],
-          %{},
-          ["users"]
-        )
+        Classifier.classify(%ScriptSetup{
+          refs: %{"search" => ~s(""), "items" => "[]"},
+          computeds: %{"upper" => "search.value.toUpperCase()"},
+          functions: %{},
+          props: ["users"]
+        })
 
       assert result.bindings["upper"] == :client_computed
     end
 
     test "multiple server deps in computed" do
       result =
-        Classifier.classify(
-          %{"filter" => ~s("")},
-          %{"combined" => "users.concat(admins).filter(u => u.name.includes(filter.value))"},
-          [],
-          %{},
-          ["users", "admins", "currentUser"]
-        )
+        Classifier.classify(%ScriptSetup{
+          refs: %{"filter" => ~s("")},
+          computeds: %{
+            "combined" => "users.concat(admins).filter(u => u.name.includes(filter.value))"
+          },
+          functions: %{},
+          props: ["users", "admins", "currentUser"]
+        })
 
       assert {:mixed_computed, server_deps, ["filter"]} = result.bindings["combined"]
       assert "users" in server_deps
@@ -210,19 +209,25 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
 
     test "function calling update expression on prop" do
       result =
-        Classifier.classify(
-          %{},
-          %{},
-          ["increment"],
-          %{"increment" => "count++"},
-          ["count"]
-        )
+        Classifier.classify(%ScriptSetup{
+          refs: %{},
+          computeds: %{},
+          functions: %{"increment" => "count++"},
+          props: ["count"]
+        })
 
       assert {:server_action, "count++"} = result.handlers["increment"]
     end
 
     test "empty script setup" do
-      result = Classifier.classify(%{}, %{}, [], %{}, [])
+      result =
+        Classifier.classify(%ScriptSetup{
+          refs: %{},
+          computeds: %{},
+          functions: %{},
+          props: []
+        })
+
       assert result.bindings == %{}
       assert result.handlers == %{}
       assert result.client_props == []

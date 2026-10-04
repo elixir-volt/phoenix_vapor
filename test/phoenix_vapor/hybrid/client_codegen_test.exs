@@ -4,10 +4,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
   alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen}
 
   defp classify(script) do
-    {refs, computeds, functions, function_bodies, props} =
-      PhoenixVapor.Compiler.ScriptSetup.parse(script)
-
-    Classifier.classify(refs, computeds, functions, function_bodies, props)
+    script |> PhoenixVapor.Compiler.ScriptSetup.parse() |> Classifier.classify()
   end
 
   defp generate(sfc_source) do

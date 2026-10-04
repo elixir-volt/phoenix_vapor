@@ -1,15 +1,16 @@
 defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Compiler.ScriptSetup
+
   alias PhoenixVapor.Hybrid.{Classifier, ServerCodegen}
 
   defp parse_and_classify(script, template) do
-    {refs, computeds, functions, function_bodies, props} =
-      PhoenixVapor.Compiler.ScriptSetup.parse(script)
+    setup = PhoenixVapor.Compiler.ScriptSetup.parse(script)
+    classification = Classifier.classify(setup)
 
-    classification = Classifier.classify(refs, computeds, functions, function_bodies, props)
     split = Vize.split_template!(template)
-    {split, classification, props}
+    {split, classification, setup.props}
   end
 
   defp render_to_html(rendered) do
@@ -137,16 +138,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
   describe "gen_handle_events/1" do
     test "generates handle_event for server actions" do
       classification =
-        Classifier.classify(
-          %{},
-          %{},
-          ["deleteUser", "clearSearch"],
-          %{
+        Classifier.classify(%ScriptSetup{
+          refs: %{},
+          computeds: %{},
+          functions: %{
             "deleteUser" => ~s["use server"; users = users.filter(u => u.id !== id)],
             "clearSearch" => ~s[search.value = ""]
           },
-          ["users"]
-        )
+          props: ["users"]
+        })
 
       events = ServerCodegen.gen_handle_events(classification)
 
@@ -158,13 +158,12 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
 
     test "no events for client-only handlers" do
       classification =
-        Classifier.classify(
-          %{"search" => ~s("")},
-          %{},
-          ["clearSearch"],
-          %{"clearSearch" => ~s[search.value = ""]},
-          []
-        )
+        Classifier.classify(%ScriptSetup{
+          refs: %{"search" => ~s("")},
+          computeds: %{},
+          functions: %{"clearSearch" => ~s[search.value = ""]},
+          props: []
+        })
 
       events = ServerCodegen.gen_handle_events(classification)
       assert events == []
@@ -173,13 +172,13 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
 
   describe "gen_render/3" do
     test "generates a render/1 function definition" do
-      {split, classification, props} =
+      {split, classification, _props} =
         parse_and_classify(
           ~s|defineProps(["msg"])|,
           "<div>{{ msg }}</div>"
         )
 
-      ast = ServerCodegen.gen_render(split, classification, props)
+      ast = ServerCodegen.gen_render(split, classification)
       assert {:def, _, [{:render, _, _}, _]} = ast
     end
   end

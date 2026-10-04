@@ -43,15 +43,17 @@ defmodule PhoenixVapor.Full do
       bundle. `vue` is always `Vue`.
   """
 
+  alias PhoenixVapor.Compiler.SFC
+
   @default_globals %{"vue" => "Vue"}
 
   defmacro __using__(opts) do
     bundle = Keyword.fetch!(opts, :bundle)
-    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.Compiler.SFC.path!(__CALLER__)
+    sfc = opts |> Keyword.fetch!(:file) |> SFC.load!(__CALLER__)
 
     {globals, _binding} = opts |> Keyword.get(:globals, Macro.escape(%{})) |> Code.eval_quoted()
     globals = Map.merge(@default_globals, globals)
-    {setup_js, handlers} = compile_sfc(full_path, globals)
+    {setup_js, handlers} = compile_sfc(sfc, globals)
     escaped_handlers = Macro.escape(handlers)
 
     quote do
@@ -59,7 +61,7 @@ defmodule PhoenixVapor.Full do
       @__vue_setup__ unquote(setup_js)
       @__vue_handlers__ unquote(escaped_handlers)
       @__vue_fingerprint__ :erlang.phash2({@__vue_bundle__, @__vue_setup__})
-      @external_resource unquote(full_path)
+      @external_resource unquote(sfc.file)
 
       def mount(_params, _session, socket) do
         runtime =
@@ -116,8 +118,12 @@ defmodule PhoenixVapor.Full do
   def unwrap!({:error, reason}), do: raise("PhoenixVapor.Full.Runtime failed: #{inspect(reason)}")
 
   @doc false
-  def compile_sfc(path, globals \\ @default_globals) do
-    sfc_source = path |> File.read!() |> PhoenixVapor.Compiler.SFC.without_elixir_block()
+  def compile_sfc(sfc, globals \\ @default_globals)
+
+  def compile_sfc(path, globals) when is_binary(path), do: compile_sfc(SFC.read!(path), globals)
+
+  def compile_sfc(%SFC{file: path} = sfc, globals) do
+    sfc_source = SFC.without_elixir_block(sfc)
     handlers = extract_handlers(sfc_source)
 
     # Compile SFC with Vize

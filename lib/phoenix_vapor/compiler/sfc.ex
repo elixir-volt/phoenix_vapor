@@ -1,45 +1,88 @@
 defmodule PhoenixVapor.Compiler.SFC do
   @moduledoc false
 
-  # The expressions of a `<script lang="elixir">` block, to inject into the
-  # LiveView module compiled from the SFC.
-  @spec elixir_block(map(), Path.t()) :: [Macro.t()]
-  def elixir_block(%{script: %{lang: "elixir", content: content}}, file)
-      when is_binary(content) do
-    case Code.string_to_quoted(content, file: file) do
-      {:ok, {:__block__, _, exprs}} ->
-        exprs
+  # A `.vue` file, read and parsed once: its `<template>` and where it starts,
+  # what its `<script setup>` declares, and its `<script lang="elixir">`
+  # block, which is compiled into the LiveView module and never reaches Vue.
 
-      {:ok, expr} ->
-        [expr]
+  alias PhoenixVapor.Compiler.ScriptSetup
 
-      {:error, {meta, msg, token}} ->
-        line = Keyword.get(List.wrap(meta), :line, 0)
-        raise CompileError, file: file, line: line, description: "#{msg}#{token}"
-    end
+  # A template string compiles as an SFC without a descriptor.
+  defstruct [
+    :file,
+    :source,
+    :descriptor,
+    :template,
+    origin: {1, 1},
+    setup: %ScriptSetup{},
+    elixir: []
+  ]
+
+  @type t :: %__MODULE__{
+          file: Path.t() | nil,
+          source: String.t(),
+          descriptor: map() | nil,
+          template: String.t() | nil,
+          origin: {pos_integer(), pos_integer()},
+          setup: ScriptSetup.t(),
+          elixir: [Macro.t()]
+        }
+
+  @doc """
+  The `.vue` file a macro names: any expression known at compile time, such
+  as a string or `Path.join(@dir, "Card.vue")`, relative to the caller's
+  directory.
+  """
+  @spec load!(Macro.t(), Macro.Env.t()) :: t()
+  def load!(file, caller), do: file |> path!(caller) |> read!()
+
+  @doc "Reads and parses the `.vue` file at `path`."
+  @spec read!(Path.t()) :: t()
+  def read!(path) do
+    source = File.read!(path)
+    descriptor = Vize.parse_sfc!(source)
+    {template, origin} = template(descriptor) || {nil, {1, 1}}
+
+    %__MODULE__{
+      file: path,
+      source: source,
+      descriptor: descriptor,
+      template: template,
+      origin: origin,
+      setup: ScriptSetup.parse(descriptor.script_setup && descriptor.script_setup.content),
+      elixir: elixir_block(descriptor, path)
+    }
   end
 
-  def elixir_block(_desc, _file), do: []
-
-  # The SFC without its `<script lang="elixir">` block, tags included, for
-  # compiling it for the browser, using the span the SFC parser reports.
-  @spec without_elixir_block(String.t()) :: String.t()
-  def without_elixir_block(source) do
-    case Vize.parse_sfc(source) do
-      {:ok, %{script: %{lang: "elixir", loc: %{tag_start: start, tag_end: stop}}}} ->
-        binary_part(source, 0, start) <> binary_part(source, stop, byte_size(source) - stop)
-
-      _ ->
-        source
-    end
+  @spec path!(Macro.t(), Macro.Env.t()) :: Path.t()
+  defp path!(file, caller) do
+    {file, _binding} = Code.eval_quoted(file, [], caller)
+    Path.expand(file, Path.dirname(caller.file))
   end
 
-  # The public functions a `<script lang="elixir">` block defines, as their
-  # names and the arities they can be called with.
-  @spec elixir_functions(map(), Path.t()) :: %{String.t() => MapSet.t(non_neg_integer())}
-  def elixir_functions(desc, file) do
-    desc
-    |> elixir_block(file)
+  @doc "The template, raising when the file has no `<template>` block."
+  @spec template!(t()) :: String.t()
+  def template!(%__MODULE__{template: nil, file: file}) do
+    raise CompileError,
+      file: file,
+      line: 1,
+      description: "no <template> block in #{Path.relative_to_cwd(file)}"
+  end
+
+  def template!(%__MODULE__{template: template}), do: template
+
+  @doc "Whether `<script setup>` declares state the browser owns, as `ref()`s."
+  @spec client_state?(t()) :: boolean()
+  def client_state?(%__MODULE__{setup: setup}), do: map_size(setup.refs) > 0
+
+  @doc """
+  What a template call to a `<script setup>` function can render through on
+  the server: each `def` in `<script lang="elixir">`, by name, with the
+  arities it accepts.
+  """
+  @spec elixir_functions(t()) :: %{String.t() => MapSet.t(non_neg_integer())}
+  def elixir_functions(%__MODULE__{elixir: elixir}) do
+    elixir
     |> Enum.flat_map(fn
       {:def, _meta, [head | _body]} -> [signature(head)]
       _expr -> []
@@ -57,10 +100,47 @@ defmodule PhoenixVapor.Compiler.SFC do
     {Atom.to_string(name), (length(args) - defaults)..length(args)//1}
   end
 
+  @doc """
+  The source without its `<script lang="elixir">` block, tags included, for
+  compiling it for the browser, using the span the SFC parser reports.
+  """
+  @spec without_elixir_block(t() | String.t()) :: String.t()
+  def without_elixir_block(%__MODULE__{source: source, descriptor: descriptor}),
+    do: strip(source, descriptor)
+
+  def without_elixir_block(source) when is_binary(source) do
+    case Vize.parse_sfc(source) do
+      {:ok, descriptor} -> strip(source, descriptor)
+      {:error, _error} -> source
+    end
+  end
+
+  defp strip(source, %{script: %{lang: "elixir", loc: %{tag_start: start, tag_end: stop}}}),
+    do: binary_part(source, 0, start) <> binary_part(source, stop, byte_size(source) - stop)
+
+  defp strip(source, _descriptor), do: source
+
+  # The expressions of a `<script lang="elixir">` block.
+  defp elixir_block(%{script: %{lang: "elixir", content: content}}, file)
+       when is_binary(content) do
+    case Code.string_to_quoted(content, file: file) do
+      {:ok, {:__block__, _, exprs}} ->
+        exprs
+
+      {:ok, expr} ->
+        [expr]
+
+      {:error, {meta, msg, token}} ->
+        line = Keyword.get(List.wrap(meta), :line, 0)
+        raise CompileError, file: file, line: line, description: "#{msg}#{token}"
+    end
+  end
+
+  defp elixir_block(_descriptor, _file), do: []
+
   # A `<template>` block's content without surrounding whitespace, and the
   # `{line, column}` in the file where that content starts.
-  @spec template(map()) :: {String.t(), {pos_integer(), pos_integer()}} | nil
-  def template(%{template: %{content: content, loc: loc}}) do
+  defp template(%{template: %{content: content, loc: loc}}) do
     trimmed = String.trim_leading(content)
     leading = binary_part(content, 0, byte_size(content) - byte_size(trimmed))
 
@@ -73,24 +153,5 @@ defmodule PhoenixVapor.Compiler.SFC do
     {String.trim_trailing(trimmed), origin}
   end
 
-  def template(_desc), do: nil
-
-  # Like `template/1`, but raises when the SFC has no `<template>` block.
-  @spec template!(map(), Path.t()) :: {String.t(), {pos_integer(), pos_integer()}}
-  def template!(desc, file) do
-    template(desc) ||
-      raise CompileError,
-        file: file,
-        line: 1,
-        description: "no <template> block in #{Path.relative_to_cwd(file)}"
-  end
-
-  # The `.vue` file a macro names: any expression known at compile time, such
-  # as a string or `Path.join(@dir, "Card.vue")`, relative to the caller's
-  # directory.
-  @spec path!(Macro.t(), Macro.Env.t()) :: Path.t()
-  def path!(file, caller) do
-    {file, _binding} = Code.eval_quoted(file, [], caller)
-    Path.expand(file, Path.dirname(caller.file))
-  end
+  defp template(_descriptor), do: nil
 end

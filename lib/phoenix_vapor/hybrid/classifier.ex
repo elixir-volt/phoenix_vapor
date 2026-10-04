@@ -3,11 +3,13 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   Classifies bindings from a parsed `<script setup>` into server-owned,
   client-owned, and mixed categories using AST-based dataflow analysis.
 
-  Given the output of `PhoenixVapor.Compiler.ScriptSetup.parse/1`, determines:
+  Given a `PhoenixVapor.Compiler.ScriptSetup`, determines:
   - Which props the client needs (for serialization)
   - Which functions are server actions vs client handlers
   - Which computeds are pure-client vs mixed (depend on server props)
   """
+
+  alias PhoenixVapor.Compiler.ScriptSetup
 
   @type binding_kind ::
           :server_prop
@@ -27,19 +29,12 @@ defmodule PhoenixVapor.Hybrid.Classifier do
         }
 
   @doc """
-  Classify all bindings and handlers from a parsed script setup.
-
-  Accepts the tuple returned by `PhoenixVapor.Compiler.ScriptSetup.parse/1`.
+  Classifies the bindings and handlers a `<script setup>` declares, given
+  the names the template reads.
   """
-  @spec classify(
-          refs :: %{String.t() => String.t()},
-          computeds :: %{String.t() => String.t()},
-          functions :: [String.t()],
-          function_bodies :: %{String.t() => String.t()},
-          props :: [String.t()],
-          template_names :: [String.t()]
-        ) :: classification()
-  def classify(refs, computeds, functions, function_bodies, props, template_names \\ []) do
+  @spec classify(ScriptSetup.t(), [String.t()]) :: classification()
+  def classify(%ScriptSetup{} = setup, template_names \\ []) do
+    %{refs: refs, computeds: computeds, functions: function_bodies, props: props} = setup
     prop_set = MapSet.new(props)
     ref_set = MapSet.new(Map.keys(refs))
 
@@ -50,7 +45,7 @@ defmodule PhoenixVapor.Hybrid.Classifier do
     all_client = MapSet.union(ref_set, computed_set)
 
     handlers =
-      build_handlers(functions, function_bodies, prop_set, all_client)
+      build_handlers(function_bodies, prop_set, all_client)
 
     client_props =
       compute_client_props(bindings, handlers, function_bodies, refs, props, template_names)
@@ -96,10 +91,8 @@ defmodule PhoenixVapor.Hybrid.Classifier do
     |> Map.merge(computed_bindings)
   end
 
-  defp build_handlers(functions, function_bodies, prop_set, _client_set) do
-    Map.new(functions, fn name ->
-      body = Map.get(function_bodies, name, "")
-
+  defp build_handlers(function_bodies, prop_set, _client_set) do
+    Map.new(function_bodies, fn {name, body} ->
       kind =
         cond do
           has_use_server_directive?(body) ->

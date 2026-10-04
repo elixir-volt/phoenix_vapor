@@ -8,28 +8,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     defines no `handle_event/3` of its own
   """
 
-  alias PhoenixVapor.Hybrid.Classifier
-
-  @doc """
-  Generate all server-side function ASTs for a hybrid component.
-
-  Returns a list of quoted expressions to be injected into the LiveView module.
-  """
-  @spec generate(
-          split :: map(),
-          classification :: Classifier.classification(),
-          opts :: keyword()
-        ) :: [Macro.t()]
-  def generate(split, classification, opts \\ []) do
-    props = Keyword.get(opts, :props, [])
-
-    [
-      gen_render(split, classification, props),
-      gen_handle_events(classification)
-    ]
-    |> List.flatten()
-  end
-
   @doc """
   Generate the `render/1` function.
 
@@ -37,23 +15,22 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   - All slots evaluated for the initial/full render (SEO, first paint)
   - A `data-pv-props` attribute with JSON-encoded client-consumed props
   - Change tracking that skips client-owned slots when only client props changed
+
+  ## Options
+
+    * `:ref_values` — the refs' initial values, by atom
+    * `:computeds` — the computed bodies by name
+    * `:component` — the component's name, for its wrapper element
   """
-  def gen_render(split, classification, _props, computeds \\ %{}, component_name \\ nil) do
+  def gen_render(split, classification, opts \\ []) do
     escaped_split = Macro.escape(split)
     client_props = Macro.escape(classification.client_props)
+    escaped_ref_values = opts |> Keyword.get(:ref_values, %{}) |> Macro.escape()
 
-    # Ref initializers don't depend on assigns, so evaluate them once here.
-    ref_values =
-      classification
-      |> extract_ref_defaults()
-      |> PhoenixVapor.Compiler.ScriptSetup.eval_initial_state()
-
-    escaped_ref_values = Macro.escape(ref_values)
-
-    computed_exprs = extract_computed_exprs(classification, computeds)
+    computed_exprs = extract_computed_exprs(classification, Keyword.get(opts, :computeds, %{}))
     escaped_computed_exprs = Macro.escape(computed_exprs)
 
-    escaped_component_name = Macro.escape(component_name)
+    escaped_component_name = Macro.escape(opts[:component])
 
     quote do
       def render(var!(assigns)) do
@@ -67,15 +44,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
         )
       end
     end
-  end
-
-  defp extract_ref_defaults(classification) do
-    classification.bindings
-    |> Enum.flat_map(fn
-      {name, {:client_ref, init_expr}} -> [{name, init_expr}]
-      _ -> []
-    end)
-    |> Map.new()
   end
 
   defp extract_computed_exprs(classification, computeds) do

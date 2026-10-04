@@ -20,7 +20,7 @@ defmodule PhoenixVapor.Compiler.Macros do
   # macro call that depends on anything else, such as a prop typed `string`,
   # can't be folded and is reported.
 
-  alias PhoenixVapor.Compiler.PropTypes
+  alias PhoenixVapor.Compiler.{PropTypes, ScriptSetup}
   alias PhoenixVapor.JS.Session
   alias PhoenixVapor.Template
 
@@ -34,8 +34,7 @@ defmodule PhoenixVapor.Compiler.Macros do
           optional(:known) => %{String.t() => term()},
           optional(:elixir) => {module(), map()} | nil,
           file: Path.t(),
-          imports: %{String.t() => map()},
-          script: String.t(),
+          setup: ScriptSetup.t(),
           static_props:
             %{static: %{String.t() => term()}, dynamic: MapSet.t(), declared: [String.t()]}
             | nil
@@ -53,7 +52,8 @@ defmodule PhoenixVapor.Compiler.Macros do
   """
   @spec fold(Template.t(), context(), Session.t()) :: {Template.t(), [map()]}
   def fold(split, ctx, session) do
-    macros = for {local, import} <- ctx.imports, macro?(import), into: %{}, do: {local, import}
+    macros =
+      for {local, import} <- ctx.setup.imports, macro?(import), into: %{}, do: {local, import}
 
     if macros == %{} do
       {split, []}
@@ -63,7 +63,7 @@ defmodule PhoenixVapor.Compiler.Macros do
       runtime = Session.runtime(session)
       env = Map.put(env, :bundle_id, bundle_id)
 
-      env = Map.merge(env, %{file: ctx.file, script: ctx.script, session: session})
+      env = Map.merge(env, %{file: ctx.file, script: ctx.setup.source, session: session})
       {split, diagnostics} = Template.map_exprs(split, [], &fold_expr(&1, &2, &3, env, runtime))
       {split, Enum.reverse(diagnostics)}
     end
@@ -73,7 +73,7 @@ defmodule PhoenixVapor.Compiler.Macros do
 
   defp environment(macros, ctx) do
     macro_names = Map.keys(macros)
-    consts = foldable_consts(ctx.script, macro_names, ctx.static_props)
+    consts = foldable_consts(ctx.setup.consts, macro_names, ctx.static_props)
 
     %{
       macros: macros,
@@ -85,31 +85,16 @@ defmodule PhoenixVapor.Compiler.Macros do
 
   # Top-level `const name = init` declarations whose initializer reads only
   # foldable names, in source order, so each can use the ones before it.
-  defp foldable_consts(script, macro_names, static_props) do
-    case OXC.parse(script, "setup.ts") do
-      {:ok, %{body: body}} ->
-        body
-        |> Enum.flat_map(fn
-          %{type: :variable_declaration, kind: kind, declarations: declarations}
-          when kind in [:const, "const"] ->
-            for %{id: %{type: :identifier, name: name}, init: %{} = init} <- declarations,
-                do: {name, init, slice(script, init)}
-
-          _ ->
-            []
-        end)
-        |> Enum.reduce({MapSet.new(macro_names), []}, fn {name, init, source}, {known, acc} ->
-          case classify(refs(init), known, static_props) do
-            :foldable -> {MapSet.put(known, name), [{name, source} | acc]}
-            _other -> {known, acc}
-          end
-        end)
-        |> elem(1)
-        |> Enum.reverse()
-
-      _ ->
-        []
-    end
+  defp foldable_consts(consts, macro_names, static_props) do
+    consts
+    |> Enum.reduce({MapSet.new(macro_names), []}, fn {name, init, source}, {known, acc} ->
+      case classify(refs(init), known, static_props) do
+        :foldable -> {MapSet.put(known, name), [{name, source} | acc]}
+        _other -> {known, acc}
+      end
+    end)
+    |> elem(1)
+    |> Enum.reverse()
   end
 
   # Whether an expression reading `refs` reads no macro-derived name (`:none`),
@@ -364,6 +349,4 @@ defmodule PhoenixVapor.Compiler.Macros do
               PhoenixVapor.JS.error_message(reason)
     end
   end
-
-  defp slice(source, %{start: start, end: stop}), do: binary_part(source, start, stop - start)
 end

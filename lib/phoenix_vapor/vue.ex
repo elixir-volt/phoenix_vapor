@@ -29,24 +29,12 @@ defmodule PhoenixVapor.Vue do
   the `data-v-*` scope attribute into the root element.
   """
   defmacro component(name, path) do
-    full_path = PhoenixVapor.Compiler.SFC.path!(path, __CALLER__)
-
-    source = File.read!(full_path)
-    desc = Vize.parse_sfc!(source)
-    {template, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
-    script = (desc.script_setup && desc.script_setup.content) || ""
-
-    {split, component_files} =
-      PhoenixVapor.Compiler.compile!(template,
-        file: full_path,
-        origin: origin,
-        script: script,
-        unrendered: :raise
-      )
-
+    sfc = PhoenixVapor.Compiler.SFC.load!(path, __CALLER__)
+    full_path = sfc.file
+    {split, component_files} = PhoenixVapor.Compiler.compile!(sfc)
     escaped_split = Macro.escape(split)
 
-    {scope_id, scoped_css} = scoped_css(source, full_path)
+    {scope_id, scoped_css} = scoped_css(sfc.source, full_path)
 
     css_fn_name = :"__vue_css_#{name}__"
 

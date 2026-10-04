@@ -43,54 +43,34 @@ defmodule PhoenixVapor.Reactive do
   - `handle_event/3` — calls the function in the runtime, assigns new state
   """
 
+  alias PhoenixVapor.{Compiler, Renderer}
+  alias PhoenixVapor.Compiler.SFC
+  alias PhoenixVapor.Renderer.Names
+
   defmacro __using__(opts) do
-    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.Compiler.SFC.path!(__CALLER__)
-    source = File.read!(full_path)
+    opts |> Keyword.fetch!(:file) |> SFC.load!(__CALLER__) |> build()
+  end
 
-    desc = Vize.parse_sfc!(source)
-
-    {template_content, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
-
-    script_content =
-      case desc.script_setup do
-        %{content: c} -> c
-        nil -> nil
-      end
-
-    {split, component_files} =
-      PhoenixVapor.Compiler.compile!(template_content,
-        file: full_path,
-        origin: origin,
-        script: script_content,
-        unrendered: :raise
-      )
-
+  @doc false
+  # The LiveView for a reactive `.vue` file: `mount/3` starting its runtime,
+  # `render/1`, and a `handle_event/3` per function.
+  @spec build(SFC.t()) :: Macro.t()
+  def build(%SFC{setup: setup} = sfc) do
+    {split, component_files} = Compiler.compile!(sfc)
     escaped_split = Macro.escape(split)
-
-    {refs, computeds, functions, function_bodies, _props} =
-      if script_content do
-        PhoenixVapor.Compiler.ScriptSetup.parse(script_content)
-      else
-        {%{}, %{}, [], %{}, []}
-      end
 
     # Only URL params the template reads become assigns, so a request can't
     # create atoms.
-    param_keys =
-      split
-      |> PhoenixVapor.Renderer.assign_keys()
-      |> Enum.map(&PhoenixVapor.Renderer.Names.atom!/1)
+    param_keys = split |> Renderer.assign_keys() |> Enum.map(&Names.atom!/1)
+    state_keys = Enum.map(Map.keys(setup.refs) ++ Map.keys(setup.computeds), &Names.atom!/1)
 
-    state_keys =
-      Enum.map(Map.keys(refs) ++ Map.keys(computeds), &PhoenixVapor.Renderer.Names.atom!/1)
-
-    mount_ast = gen_mount(refs, computeds, functions, function_bodies, param_keys, state_keys)
+    mount_ast = gen_mount(setup, param_keys, state_keys)
     render_ast = gen_render(escaped_split)
-    event_asts = gen_events(functions, state_keys)
+    event_asts = gen_events(Map.keys(setup.functions), state_keys)
 
     quote do
       import PhoenixVapor.Sigil
-      @external_resource unquote(full_path)
+      @external_resource unquote(sfc.file)
       for file <- unquote(component_files), do: @external_resource(file)
 
       unquote(mount_ast)
@@ -99,11 +79,10 @@ defmodule PhoenixVapor.Reactive do
     end
   end
 
-  defp gen_mount(refs, computeds, functions, function_bodies, param_keys, state_keys) do
-    escaped_refs = Macro.escape(refs)
-    escaped_computeds = Macro.escape(computeds)
-    escaped_functions = Macro.escape(functions)
-    escaped_function_bodies = Macro.escape(function_bodies)
+  defp gen_mount(setup, param_keys, state_keys) do
+    escaped_refs = Macro.escape(setup.refs)
+    escaped_computeds = Macro.escape(setup.computeds)
+    escaped_functions = Macro.escape(setup.functions)
 
     quote do
       def mount(params, _session, socket) do
@@ -111,8 +90,7 @@ defmodule PhoenixVapor.Reactive do
           PhoenixVapor.Reactive.Runtime.start_link(
             refs: unquote(escaped_refs),
             computeds: unquote(escaped_computeds),
-            functions: unquote(escaped_functions),
-            function_bodies: unquote(escaped_function_bodies)
+            functions: unquote(escaped_functions)
           )
 
         {:ok, state} = PhoenixVapor.Reactive.Runtime.get_state(runtime)

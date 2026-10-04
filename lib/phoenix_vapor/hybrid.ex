@@ -14,54 +14,43 @@ defmodule PhoenixVapor.Hybrid do
   Generates `render/1`, `handle_event/3` stubs, and a client JS module.
   """
 
-  alias PhoenixVapor.Hybrid.{Classifier, ServerCodegen, ClientCodegen}
+  alias PhoenixVapor.{Compiler, Renderer}
+  alias PhoenixVapor.Compiler.{ScriptSetup, SFC}
+  alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen, ServerCodegen}
+  alias PhoenixVapor.JS.Session
 
   defmacro __using__(opts) do
-    full_path = opts |> Keyword.fetch!(:file) |> PhoenixVapor.Compiler.SFC.path!(__CALLER__)
-    sfc_source = File.read!(full_path)
+    opts |> Keyword.fetch!(:file) |> SFC.load!(__CALLER__) |> build(opts, __CALLER__)
+  end
 
-    desc = Vize.parse_sfc!(sfc_source)
-
-    script_content =
-      case desc.script_setup do
-        %{content: c} -> c
-        nil -> ""
-      end
-
-    {template_content, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
-
-    {refs, computeds, functions, function_bodies, props} =
-      PhoenixVapor.Compiler.ScriptSetup.parse(script_content)
-
-    # The client component handles the template's events, so no phx-* attributes.
+  @doc false
+  # The LiveView for a hybrid `.vue` file: `render/1`, `handle_event/3`
+  # stubs, and its client module.
+  @spec build(SFC.t(), keyword(), Macro.Env.t()) :: Macro.t()
+  def build(%SFC{} = sfc, opts, caller) do
     {split, component_files} =
-      PhoenixVapor.Compiler.compile!(template_content,
-        file: full_path,
-        origin: origin,
-        script: script_content,
-        elixir: {__CALLER__.module, PhoenixVapor.Compiler.SFC.elixir_functions(desc, full_path)},
-        events: false,
-        unrendered: :warn,
-        # The browser's first render uses the refs' initial values, so package
-        # components can render with them on the server too.
-        known: initial_values(refs),
-        # The browser takes over, so package components render as they look.
-        fold: :all
+      Compiler.compile!(sfc, target: :browser, module: caller.module)
+
+    classification = Classifier.classify(sfc.setup, Renderer.assign_keys(split))
+    component_name = Path.basename(sfc.file, ".vue")
+
+    # Ref initializers don't depend on assigns, so they're evaluated once here.
+    ref_values =
+      Session.with_session(
+        &ScriptSetup.eval_initial_state(ref_defaults(classification), Session.runtime(&1))
       )
 
-    template_names = PhoenixVapor.Renderer.assign_keys(split)
+    render_ast =
+      ServerCodegen.gen_render(split, classification,
+        computeds: sfc.setup.computeds,
+        component: component_name,
+        ref_values: ref_values
+      )
 
-    classification =
-      Classifier.classify(refs, computeds, functions, function_bodies, props, template_names)
-
-    component_name = Path.basename(full_path, ".vue")
-    render_ast = ServerCodegen.gen_render(split, classification, props, computeds, component_name)
     event_asts = ServerCodegen.gen_handle_events(classification)
 
     client_output_dir = Keyword.get(opts, :client_output, default_client_output())
-    client_js = generate_client_js(sfc_source, classification, full_path, client_output_dir)
-
-    elixir_block_ast = PhoenixVapor.Compiler.SFC.elixir_block(desc, full_path)
+    client_js = generate_client_js(sfc, classification, client_output_dir)
 
     escaped_classification = Macro.escape(classification)
     escaped_client_js = Macro.escape(client_js)
@@ -69,14 +58,14 @@ defmodule PhoenixVapor.Hybrid do
     quote do
       @__hybrid_classification__ unquote(escaped_classification)
       @__hybrid_client_js__ unquote(escaped_client_js)
-      @external_resource unquote(full_path)
+      @external_resource unquote(sfc.file)
       for file <- unquote(component_files), do: @external_resource(file)
 
       import PhoenixVapor.Sigil
 
       unquote(render_ast)
       unquote_splicing(event_asts)
-      unquote_splicing(elixir_block_ast)
+      unquote_splicing(sfc.elixir)
 
       @doc "Returns the client JavaScript module generated for this component."
       def __hybrid_client_js__, do: @__hybrid_client_js__
@@ -86,10 +75,14 @@ defmodule PhoenixVapor.Hybrid do
     end
   end
 
-  defp generate_client_js(sfc_source, classification, full_path, output_dir) do
+  defp ref_defaults(%{bindings: bindings}) do
+    for {name, {:client_ref, init}} <- bindings, into: %{}, do: {name, init}
+  end
+
+  defp generate_client_js(%SFC{file: full_path} = sfc, classification, output_dir) do
     codegen_opts = [source_dir: Path.dirname(full_path), output_dir: output_dir]
 
-    case ClientCodegen.generate(sfc_source, classification, codegen_opts) do
+    case ClientCodegen.generate(sfc.source, classification, codegen_opts) do
       {:ok, js} ->
         if output_dir do
           basename = Path.basename(full_path, ".vue")
@@ -103,12 +96,6 @@ defmodule PhoenixVapor.Hybrid do
       {:error, errors} ->
         raise "Failed to compile client JS for #{full_path}: #{inspect(errors)}"
     end
-  end
-
-  defp initial_values(refs) do
-    refs
-    |> PhoenixVapor.Compiler.ScriptSetup.eval_initial_state()
-    |> Map.new(fn {name, value} -> {to_string(name), value} end)
   end
 
   defp default_client_output do

@@ -123,15 +123,13 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
     end
 
     test "without one, are reported with where to define it" do
+      sfc = PhoenixVapor.Compiler.SFC.read!(Fixtures.path("components/ElixirFunctions.vue"))
+
       {_template, _files, [diagnostic]} =
-        PhoenixVapor.Compiler.compile(~S|<b>{{ roleLabel(role) }}</b>|,
-          file: Fixtures.path("components/ElixirFunctions.vue"),
-          script: "function roleLabel(role) { return role }",
-          elixir: {__MODULE__, %{"role_tone" => MapSet.new([1])}}
-        )
+        PhoenixVapor.Compiler.compile(%{sfc | elixir: []}, module: __MODULE__)
 
       assert diagnostic.message ==
-               "`roleLabel(role)` calls roleLabel, which runs only in the browser; " <>
+               "`roleLabel(member.role)` calls roleLabel, which runs only in the browser; " <>
                  ~s(define role_label in <script lang="elixir"> to render it on the server)
     end
   end
@@ -167,7 +165,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
         PhoenixVapor.Compiler.compile(~S|<TabsList>Tabs</TabsList>|,
           file: Fixtures.path("components/PackageFold.vue"),
           script: ~s(import { TabsList } from "reka-ui"),
-          fold: :all
+          target: :browser
         )
 
       assert %{severity: :unrendered, message: message} = diagnostic

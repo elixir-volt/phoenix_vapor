@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.RegressionsTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Compiler.ScriptSetup
+
   alias PhoenixVapor.Fixtures
 
   alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen}
@@ -35,10 +37,8 @@ defmodule PhoenixVapor.RegressionsTest do
   test "the client module leaves out a <script lang=\"elixir\"> after <script setup>" do
     sfc = File.read!(Fixtures.path("ElixirAfterSetup.vue"))
     %{script_setup: %{content: script}} = Vize.parse_sfc!(sfc)
-    {refs, computeds, functions, bodies, props} = PhoenixVapor.Compiler.ScriptSetup.parse(script)
-
-    {:ok, js} =
-      ClientCodegen.generate(sfc, Classifier.classify(refs, computeds, functions, bodies, props))
+    classification = script |> PhoenixVapor.Compiler.ScriptSetup.parse() |> Classifier.classify()
+    {:ok, js} = ClientCodegen.generate(sfc, classification)
 
     refute js =~ "def mount"
     assert js =~ "const count = ref(0)"
@@ -69,18 +69,19 @@ defmodule PhoenixVapor.RegressionsTest do
             ~s|const props = defineProps({ users: Array, title: { type: String } })|,
             ~s|const props = defineProps<{ users: string[]; title?: string }>()|
           ] do
-        assert {_, _, _, _, ["users", "title"]} = PhoenixVapor.Compiler.ScriptSetup.parse(script)
+        assert PhoenixVapor.Compiler.ScriptSetup.parse(script).props == ["users", "title"]
       end
     end
 
     test "props the template reads go to the client; props only server actions read don't" do
       classification =
         Classifier.classify(
-          %{"q" => ~s("")},
-          %{},
-          ["save"],
-          %{"save" => ~s|"use server"; audit(secret)|},
-          ["title", "secret"],
+          %ScriptSetup{
+            refs: %{"q" => ~s("")},
+            computeds: %{},
+            functions: %{"save" => ~s|"use server"; audit(secret)|},
+            props: ["title", "secret"]
+          },
           ["title", "q"]
         )
 

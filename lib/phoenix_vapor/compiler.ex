@@ -11,7 +11,7 @@ defmodule PhoenixVapor.Compiler do
   # `__components__` assign when the template renders.
 
   alias PhoenixVapor.Template
-  alias PhoenixVapor.Compiler.{Macros, Packages, PropTypes, Split}
+  alias PhoenixVapor.Compiler.{Macros, Packages, PropTypes, ScriptSetup, SFC, Split}
   alias PhoenixVapor.JS.Session
   alias PhoenixVapor.Renderer.{Expr, Names}
 
@@ -28,32 +28,59 @@ defmodule PhoenixVapor.Compiler do
         }
 
   @doc """
-  Splits and compiles `template`, resolving the components its SFC imports.
+  Splits and compiles a `.vue` file's template, or a template string,
+  resolving the components its SFC imports.
 
   ## Options
 
+    * `:target` — `:server`, the default, for a template only the server
+      renders: events become `phx-*` attributes, and what the server can't
+      render is an error. `:browser`, for a hybrid template the browser takes
+      over: the client handles events, package components render into their
+      markup with the refs' initial values, which the browser renders first
+      too, and what the server can't render is left to the browser.
+    * `:module` — the module the template renders in. A call to a `<script
+      setup>` function renders through the function of the same name in
+      snake_case that the SFC's `<script lang="elixir">` defines, such as
+      `role_tone/1` for `roleTone(role)`.
+
+  For a template string:
+
     * `:file` — the SFC's path, for relative imports and diagnostics
     * `:origin` — `{line, column}` where the template starts in `:file`
-    * `:script` — the SFC's `<script setup>` source, for its imports
-    * `:events` — passed to `PhoenixVapor.Renderer.compile/2`
-    * `:known` — values names have at compile time, such as a hybrid
-      component's initial ref values, for rendering package components
-    * `:elixir` — `{module, functions}`: the module the template renders in
-      and the functions its SFC's `<script lang="elixir">` defines, from
-      `PhoenixVapor.Compiler.SFC.elixir_functions/2`. A call to a `<script setup>`
-      function renders through the Elixir function of the same name in
-      snake_case, such as `role_tone/1` for `roleTone(role)`.
-    * `:fold` — `:all` renders package components into their markup, for
-      hybrid templates the browser takes over; `:content`, the default,
-      only those that render just their content. See `PhoenixVapor.Compiler.Packages`.
+    * `:script` — the SFC's `<script setup>` source
 
   Returns the compiled template, the `.vue` files it read, and diagnostics.
   """
-  @spec compile(String.t(), keyword()) :: {Template.t(), [Path.t()], [diagnostic()]}
-  def compile(template, opts \\ []) do
+  @spec compile(SFC.t() | String.t(), keyword()) :: {Template.t(), [Path.t()], [diagnostic()]}
+  def compile(template, opts \\ [])
+
+  def compile(%SFC{} = sfc, opts) do
+    elixir = if opts[:module], do: {opts[:module], SFC.elixir_functions(sfc)}
+
+    compile_sfc(
+      %{sfc | template: SFC.template!(sfc)},
+      elixir,
+      Keyword.get(opts, :target, :server)
+    )
+  end
+
+  def compile(template, opts) when is_binary(template) do
+    sfc = %SFC{
+      file: opts[:file],
+      source: template,
+      template: template,
+      origin: Keyword.get(opts, :origin, {1, 1}),
+      setup: ScriptSetup.parse(opts[:script])
+    }
+
+    compile_sfc(sfc, nil, Keyword.get(opts, :target, :server))
+  end
+
+  defp compile_sfc(sfc, elixir, target) do
     state = %{
-      events: Keyword.get(opts, :events, true),
-      fold: Keyword.get(opts, :fold, :content),
+      events: target == :server,
+      fold: if(target == :browser, do: :all, else: :content),
       stack: [],
       cache: %{},
       resources: [],
@@ -61,42 +88,41 @@ defmodule PhoenixVapor.Compiler do
       js: nil
     }
 
-    source = %{
-      template: template,
-      origin: Keyword.get(opts, :origin, {1, 1}),
-      file: opts[:file],
-      script: opts[:script] || "",
-      elixir: opts[:elixir]
-    }
-
-    known = Keyword.get(opts, :known, %{})
-
     # Macros, package components and prop types share one QuickBEAM runtime,
     # only while compiling.
     {compiled, state} =
-      Session.with_session(
-        PropTypes.handlers(),
-        &compile_template(source, [], nil, known, %{state | js: &1})
-      )
+      Session.with_session(PropTypes.handlers(), fn session ->
+        known = if target == :browser, do: initial_values(sfc.setup, session), else: %{}
+        compile_template(sfc, nil, known, %{state | js: session}, elixir: elixir)
+      end)
 
     diagnostics = state.diagnostics |> Enum.reverse() |> Enum.uniq_by(&{&1.file, &1.message})
     {compiled, Enum.uniq(state.resources), diagnostics}
   end
 
+  # The browser's first render uses the refs' initial values, so package
+  # components render with them on the server too.
+  defp initial_values(setup, session) do
+    setup.refs
+    |> ScriptSetup.eval_initial_state(Session.runtime(session))
+    |> Map.new(fn {name, value} -> {Atom.to_string(name), value} end)
+  end
+
   @doc """
   Like `compile/2`, but reports the diagnostics: warnings through `IO.warn/2`
-  and errors as a `CompileError`. `unrendered: :warn`, for templates the
-  browser renders again, reports what the server can't render as warnings.
+  and errors as a `CompileError`. For the `:browser` target, which the browser
+  renders again, what the server can't render is a warning.
 
   Returns the template and the `.vue` files it read.
   """
-  @spec compile!(String.t(), keyword()) :: {Template.t(), [Path.t()]}
-  def compile!(template, opts) do
+  @spec compile!(SFC.t() | String.t(), keyword()) :: {Template.t(), [Path.t()]}
+  def compile!(template, opts \\ []) do
     {compiled, resources, diagnostics} = compile(template, opts)
+    browser? = opts[:target] == :browser
 
     {errors, warnings} =
       Enum.split_with(diagnostics, fn
-        %{severity: :unrendered} -> opts[:unrendered] != :warn
+        %{severity: :unrendered} -> not browser?
         %{severity: severity} -> severity == :error
       end)
 
@@ -145,9 +171,13 @@ defmodule PhoenixVapor.Compiler do
     end
   end
 
-  defp compile_template(source, split_opts, static_props, known, state) do
+  # A template, for the file it's in or as a child component of it, with the
+  # props passed to it as constants, if a child, and the names known at
+  # compile time. `:root_attrs` is for a child, whose root element takes the
+  # attributes that fall through; `:elixir` is for the LiveView's own file.
+  defp compile_template(%SFC{} = source, static_props, known, state, opts) do
     split =
-      case Vize.split_template(source.template, split_opts) do
+      case Vize.split_template(source.template, Keyword.take(opts, [:root_attrs])) do
         {:ok, split} ->
           split
 
@@ -172,11 +202,10 @@ defmodule PhoenixVapor.Compiler do
 
     ctx = %{
       file: source.file,
-      imports: imports(source.script),
-      script: source.script,
+      setup: source.setup,
       static_props: static_props,
       known: known,
-      elixir: source[:elixir]
+      elixir: opts[:elixir]
     }
 
     {compiled, macro_diagnostics} = Macros.fold(compiled, ctx, state.js)
@@ -259,7 +288,7 @@ defmodule PhoenixVapor.Compiler do
   # The packages the file imports components from: imports named like
   # components, such as `TabsRoot`.
   defp package_sources(ctx) do
-    for {name, %{source: source}} <- ctx.imports,
+    for {name, %{source: source}} <- ctx.setup.imports,
         name =~ ~r/\A[A-Z]/,
         package(ctx, name) != nil,
         uniq: true,
@@ -268,7 +297,7 @@ defmodule PhoenixVapor.Compiler do
 
   # The package import for a component tag, or nil for a local or unknown one.
   defp package(ctx, tag) do
-    case import_for(ctx.imports, tag) do
+    case import_for(ctx.setup.imports, tag) do
       %{source: source, attributes: attributes} = import ->
         if Path.extname(source) != ".vue" and attributes["type"] != "macro", do: import
 
@@ -278,7 +307,7 @@ defmodule PhoenixVapor.Compiler do
   end
 
   defp resolve_component(%{name: name} = slot, ctx, state) do
-    case import_for(ctx.imports, name) do
+    case import_for(ctx.setup.imports, name) do
       nil ->
         {slot, state}
 
@@ -322,7 +351,7 @@ defmodule PhoenixVapor.Compiler do
   # macro, runs only in the browser, unless the SFC's `<script lang="elixir">`
   # defines the same function, named in snake_case, for the server.
   defp mark_script_calls(template, ctx, state) do
-    case browser_functions(ctx.script, ctx.imports) do
+    case browser_functions(ctx.setup) do
       [] ->
         {template, state}
 
@@ -391,33 +420,14 @@ defmodule PhoenixVapor.Compiler do
 
   defp elixir_hint(_name, _ctx), do: ""
 
-  defp browser_functions(script, imports) do
+  defp browser_functions(setup) do
     imported =
-      for {name, %{source: source} = import} <- imports,
+      for {name, %{source: source} = import} <- setup.imports,
           Path.extname(source) != ".vue",
           import.attributes["type"] != "macro",
           do: name
 
-    declared =
-      case OXC.parse(script, "setup.ts") do
-        {:ok, ast} ->
-          OXC.collect(ast, fn
-            %{type: :function_declaration, id: %{name: name}} ->
-              {:keep, name}
-
-            %{type: :variable_declarator, id: %{name: name}, init: %{type: type}}
-            when type in [:arrow_function_expression, :function_expression] ->
-              {:keep, name}
-
-            _ ->
-              :skip
-          end)
-
-        _ ->
-          []
-      end
-
-    Enum.uniq(imported ++ declared)
+    Enum.uniq(imported ++ setup.callables)
   end
 
   # The first of `functions` the expression calls, directly or as a namespace.
@@ -464,10 +474,7 @@ defmodule PhoenixVapor.Compiler do
   end
 
   defp compile_child(path, static_props, state) do
-    source = File.read!(path)
-    desc = Vize.parse_sfc!(source)
-    script = (desc.script_setup && desc.script_setup.content) || ""
-    {template, origin} = PhoenixVapor.Compiler.SFC.template(desc) || {"", {1, 1}}
+    sfc = SFC.read!(path)
 
     parent_stack = state.stack
     state = %{state | stack: [path | parent_stack], resources: [path | state.resources]}
@@ -477,22 +484,17 @@ defmodule PhoenixVapor.Compiler do
     known = static_props.static
 
     static_props =
-      if Macros.any?(imports(script)),
-        do: Map.put(static_props, :declared, props(source)),
+      if Macros.any?(sfc.setup.imports),
+        do: Map.put(static_props, :declared, sfc.setup.props),
         else: nil
 
-    child = %{template: template, origin: origin, file: path, script: script}
-    {compiled, state} = compile_template(child, [root_attrs: true], static_props, known, state)
+    {compiled, state} =
+      compile_template(%{sfc | template: sfc.template || ""}, static_props, known, state,
+        root_attrs: true
+      )
 
-    component = %{props: props(source), template: compiled, events: state.events}
+    component = %{props: sfc.setup.props, template: compiled, events: state.events}
     {component, %{state | stack: parent_stack}}
-  end
-
-  defp props(source) do
-    case Vize.analyze_sfc(source) do
-      {:ok, croquis} -> Enum.map(croquis.props, & &1.name)
-      {:error, _} -> []
-    end
   end
 
   # Volt resolves the specifier the way the browser build does: relative to
@@ -514,46 +516,5 @@ defmodule PhoenixVapor.Compiler do
   # uses `MyCard`.
   defp import_for(imports, tag) do
     imports[tag] || imports[tag |> String.replace("-", "_") |> Macro.camelize()]
-  end
-
-  # The bindings a `<script setup>` imports: local name to source and
-  # import attributes.
-  @spec imports(String.t()) :: %{String.t() => map()}
-  defp imports(script) do
-    case OXC.parse(script, "setup.ts") do
-      {:ok, ast} ->
-        ast
-        |> OXC.collect(fn
-          %{type: :import_declaration, source: %{value: source}} = decl ->
-            {:keep, decl_imports(decl, source)}
-
-          _ ->
-            :skip
-        end)
-        |> List.flatten()
-        |> Map.new()
-
-      _ ->
-        %{}
-    end
-  end
-
-  defp decl_imports(decl, source) do
-    attributes =
-      Map.new(decl[:attributes] || [], fn %{key: key, value: %{value: value}} ->
-        {key[:name] || key[:value], value}
-      end)
-
-    for specifier <- decl[:specifiers] || [] do
-      imported =
-        case specifier do
-          %{type: :import_default_specifier} -> :default
-          %{type: :import_namespace_specifier} -> :namespace
-          %{imported: %{name: name}} -> name
-          %{imported: %{value: name}} -> name
-        end
-
-      {specifier.local.name, %{source: source, imported: imported, attributes: attributes}}
-    end
   end
 end
