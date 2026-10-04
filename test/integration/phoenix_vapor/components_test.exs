@@ -81,16 +81,45 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
     end
   end
 
-  test "a component from a package is a compile error outside hybrid mode" do
-    error =
-      assert_raise CompileError, fn ->
-        defmodule PackageComponentLive do
-          use Phoenix.LiveView
-          use PhoenixVapor, file: "../../fixtures/components/PackageComponent.vue"
-        end
-      end
+  describe "package components" do
+    defmodule PackageFoldLive do
+      use Phoenix.LiveView
+      use PhoenixVapor, file: "../../fixtures/components/PackageFold.vue"
+    end
 
-    assert Exception.message(error) =~
-             ~s(<DialogRoot> is imported from "reka-ui", which the server can't render)
+    test "render at compile time, with the template's content inside them" do
+      html = PackageFoldLive.render(%{name: "Ada"}) |> html()
+
+      # TooltipProvider renders only its content; the Tabs render as Reka does.
+      assert html =~ ~s(<div dir="ltr" data-orientation="horizontal">)
+      assert html =~ ~s(role="tablist")
+      assert html =~ ~s(aria-selected="true" data-state="active")
+      assert html =~ ~r/role="tabpanel" data-state="active"[^>]*><p>Hello Ada<\/p><\/div>/
+    end
+
+    test "that need a parent they're rendered without are reported with Vue's reason" do
+      {_template, _files, [diagnostic]} =
+        PhoenixVapor.Components.compile(~S|<TabsList>Tabs</TabsList>|,
+          file: Path.expand("../../fixtures/components/PackageFold.vue", __DIR__),
+          script: ~s(import { TabsList } from "reka-ui")
+        )
+
+      assert %{severity: :unrendered, message: message} = diagnostic
+      assert message =~ "<TabsList> from \"reka-ui\" can't render on the server"
+      assert message =~ "TabsRootContext"
+    end
+
+    test "with a prop known only when rendering are a compile error outside hybrid mode" do
+      error =
+        assert_raise CompileError, fn ->
+          defmodule PackageComponentLive do
+            use Phoenix.LiveView
+            use PhoenixVapor, file: "../../fixtures/components/PackageComponent.vue"
+          end
+        end
+
+      assert Exception.message(error) =~
+               ~s(<DialogRoot> from "reka-ui" can't render on the server: the prop `open` is only known when rendering)
+    end
   end
 end

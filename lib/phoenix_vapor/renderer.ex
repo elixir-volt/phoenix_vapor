@@ -58,6 +58,18 @@ defmodule PhoenixVapor.Renderer do
     }
   end
 
+  @doc false
+  # A template from statics and already compiled slots.
+  @spec template([String.t()], [map()], Path.t() | nil) :: Template.t()
+  def template(statics, slots, file) do
+    %Template{
+      statics: statics,
+      slots: slots,
+      fingerprint: compute_fingerprint(statics, slots),
+      file: file
+    }
+  end
+
   defp render_bindings(statics, bindings, opts) do
     events? = Keyword.get(opts, :events, true)
 
@@ -245,6 +257,11 @@ defmodule PhoenixVapor.Renderer do
 
   defp eval_slot(%{kind: :text, value: value}, assigns),
     do: value |> Expr.eval(assigns) |> display() |> escape()
+
+  # A package component rendered at compile time, with the template's own
+  # content inside it.
+  defp eval_slot(%{kind: :fragment, template: template}, assigns),
+    do: render_block(template, assigns)
 
   defp eval_slot(%{kind: :html, value: value}, assigns),
     do: value |> Expr.eval(assigns) |> display()

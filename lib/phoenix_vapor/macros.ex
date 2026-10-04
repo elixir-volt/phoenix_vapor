@@ -25,6 +25,7 @@ defmodule PhoenixVapor.Macros do
   # `:static` prop values, the `:dynamic` prop names, and the `:declared` props;
   # a declared prop that is neither wasn't passed, so it's `undefined`.
   @type context :: %{
+          optional(:known) => %{String.t() => term()},
           file: Path.t(),
           imports: %{String.t() => map()},
           script: String.t(),

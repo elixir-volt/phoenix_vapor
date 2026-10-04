@@ -116,6 +116,11 @@ defmodule PhoenixVapor.Template do
     {%{slot | props: props, fallback: fallback}, acc}
   end
 
+  defp map_children(%{kind: :fragment, template: template} = slot, acc, fun) do
+    {template, acc} = map_exprs(template, acc, fun)
+    {%{slot | template: template}, acc}
+  end
+
   defp map_children(%{kind: :root_attrs} = slot, acc, fun) do
     {props, acc} = map_props(slot.props, acc, at(fun, slot))
     {%{slot | props: props}, acc}

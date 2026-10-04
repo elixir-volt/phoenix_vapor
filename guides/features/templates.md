@@ -54,7 +54,33 @@ import Card from "@/ui/Card.vue"
 </template>
 ```
 
-The server can't render a component imported from a package, such as a Reka UI primitive: its markup comes from its JavaScript. In hybrid mode it's left out of the first render, with a compile-time warning, and appears when the browser mounts the component. In other modes it's a compile error.
+### Components from packages
+
+A component from a package, such as a [Reka UI](https://reka-ui.com) primitive, gets its markup from its JavaScript. When everything it receives is known at compile time, Vue's [server renderer](https://vuejs.org/guide/scaling-up/ssr.html) runs it once in QuickBEAM while the template compiles, and its HTML becomes part of the template. Rendering then runs no JavaScript.
+
+```vue
+<script setup>
+import { ref } from "vue"
+import { TooltipProvider, TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui"
+
+const tab = ref("general")
+</script>
+
+<template>
+  <TooltipProvider>
+    <TabsRoot v-model="tab">
+      <TabsList>
+        <TabsTrigger value="general">General</TabsTrigger>
+      </TabsList>
+      <TabsContent value="general"><p>{{ project.name }}</p></TabsContent>
+    </TabsRoot>
+  </TooltipProvider>
+</template>
+```
+
+`TooltipProvider` renders only its content, and the Tabs render with Reka's markup and ARIA attributes. Package components inside one another render together, so parts such as `TabsList` get their parent's context. The template's own content inside them, such as `{{ project.name }}`, stays dynamic.
+
+Known values are static props, literals, [macro](#macros) results, and, in hybrid mode, the initial values of refs, which the browser renders first too. A package component that receives a value known only when rendering, such as `:open="selected !== null"`, or that passes props to its slot content, can't render on the server. In hybrid mode it's left out of the first render, with a compile-time warning that says why, and appears when the browser mounts the component. In other modes it's a compile error.
 
 ### Macros
 
@@ -144,7 +170,7 @@ warning: <TabsRoot> is imported from "reka-ui", which the server can't render; t
     └─ lib/my_app_web/live/Settings.vue:24: (file)
 ```
 
-What the server can't render is a compile error, except in hybrid mode, where the browser renders it once it mounts, so it's a warning: a component from a package, a call to a function `<script setup>` defines or imports, and a [macro](#macros) call that depends on a value known only when rendering.
+What the server can't render is a compile error, except in hybrid mode, where the browser renders it once it mounts, so it's a warning: a [component from a package](#components-from-packages) that can't render on the server, a call to a function `<script setup>` defines or imports, and a [macro](#macros) call that depends on a value known only when rendering.
 
 ## Rendering at runtime
 

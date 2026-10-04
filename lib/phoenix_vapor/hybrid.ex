@@ -42,7 +42,10 @@ defmodule PhoenixVapor.Hybrid do
         origin: origin,
         script: script_content,
         events: false,
-        unrendered: :warn
+        unrendered: :warn,
+        # The browser's first render uses the refs' initial values, so package
+        # components can render with them on the server too.
+        known: initial_values(refs)
       )
 
     template_names = PhoenixVapor.Renderer.assign_keys(split)
@@ -99,6 +102,12 @@ defmodule PhoenixVapor.Hybrid do
       {:error, errors} ->
         raise "Failed to compile client JS for #{full_path}: #{inspect(errors)}"
     end
+  end
+
+  defp initial_values(refs) do
+    refs
+    |> PhoenixVapor.ScriptSetup.eval_initial_state()
+    |> Map.new(fn {name, value} -> {to_string(name), value} end)
   end
 
   defp default_client_output(_caller_dir) do

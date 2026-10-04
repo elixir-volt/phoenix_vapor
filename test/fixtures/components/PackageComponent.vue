@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { DialogRoot } from "reka-ui"
+
+defineProps<{ open: boolean }>()
 </script>
 
 <template>
-  <DialogRoot><p>Hi</p></DialogRoot>
+  <DialogRoot :open="open"><p>Hi</p></DialogRoot>
 </template>

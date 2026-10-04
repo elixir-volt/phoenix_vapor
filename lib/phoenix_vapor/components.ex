@@ -10,7 +10,7 @@ defmodule PhoenixVapor.Components do
   # as a diagnostic. A component that isn't imported at all is looked up in the
   # `__components__` assign when the template renders.
 
-  alias PhoenixVapor.{Macros, Renderer, Template}
+  alias PhoenixVapor.{Fold, Macros, Renderer, Template}
 
   @typedoc """
   A problem found while compiling, in the shape of `t:Code.diagnostic/1`.
@@ -33,6 +33,8 @@ defmodule PhoenixVapor.Components do
     * `:origin` — `{line, column}` where the template starts in `:file`
     * `:script` — the SFC's `<script setup>` source, for its imports
     * `:events` — passed to `PhoenixVapor.Renderer.compile/2`
+    * `:known` — values names have at compile time, such as a hybrid
+      component's initial ref values, for rendering package components
 
   Returns the compiled template, the `.vue` files it read, and diagnostics.
   """
@@ -44,7 +46,8 @@ defmodule PhoenixVapor.Components do
       cache: %{},
       resources: [],
       diagnostics: [],
-      macros: nil
+      macros: nil,
+      fold: nil
     }
 
     source = %{
@@ -54,13 +57,19 @@ defmodule PhoenixVapor.Components do
       script: opts[:script] || ""
     }
 
-    try do
-      {compiled, state} = compile_template(source, [], nil, state)
-      diagnostics = state.diagnostics |> Enum.reverse() |> Enum.uniq_by(&{&1.file, &1.message})
-      {compiled, Enum.uniq(state.resources), diagnostics}
-    after
-      Macros.stop(state.macros)
-    end
+    known = Keyword.get(opts, :known, %{})
+
+    {compiled, state} =
+      try do
+        compile_template(source, [], nil, known, state)
+      after
+        # Each QuickBEAM runtime is only needed while compiling.
+        Macros.stop(state.macros)
+      end
+
+    if state.fold, do: QuickBEAM.stop(state.fold.runtime)
+    diagnostics = state.diagnostics |> Enum.reverse() |> Enum.uniq_by(&{&1.file, &1.message})
+    {compiled, Enum.uniq(state.resources), diagnostics}
   end
 
   @doc """
@@ -125,7 +134,7 @@ defmodule PhoenixVapor.Components do
     end
   end
 
-  defp compile_template(source, split_opts, static_props, state) do
+  defp compile_template(source, split_opts, static_props, known, state) do
     split =
       case Vize.split_template(source.template, split_opts) do
         {:ok, split} ->
@@ -154,7 +163,8 @@ defmodule PhoenixVapor.Components do
       file: source.file,
       imports: imports(source.script),
       script: source.script,
-      static_props: static_props
+      static_props: static_props,
+      known: known
     }
 
     {compiled, runtime, macro_diagnostics} = Macros.fold(compiled, ctx, state.macros)
@@ -189,7 +199,23 @@ defmodule PhoenixVapor.Components do
     {%{slot | fallback: fallback}, state}
   end
 
-  defp resolve_slot(%{kind: :component, slots: contents} = slot, ctx, state) do
+  defp resolve_slot(%{kind: :fragment, template: template} = slot, ctx, state) do
+    {template, state} = resolve_template(template, ctx, state)
+    {%{slot | template: template}, state}
+  end
+
+  # A package component renders at compile time, with any package components
+  # inside it, before the template's own content inside it is resolved.
+  defp resolve_slot(%{kind: :component, name: name} = slot, ctx, state) do
+    case package(ctx, name) do
+      nil -> resolve_local(slot, ctx, state)
+      package -> fold(slot, package, ctx, state)
+    end
+  end
+
+  defp resolve_slot(slot, _ctx, state), do: {slot, state}
+
+  defp resolve_local(%{slots: contents} = slot, ctx, state) do
     {contents, state} =
       Enum.map_reduce(contents, state, fn content, state ->
         {block, state} = resolve_template(content.block, ctx, state)
@@ -199,7 +225,69 @@ defmodule PhoenixVapor.Components do
     resolve_component(%{slot | slots: contents}, ctx, state)
   end
 
-  defp resolve_slot(slot, _ctx, state), do: {slot, state}
+  defp fold(slot, package, ctx, state) do
+    case ensure_fold(ctx, state) do
+      {:ok, state} ->
+        case Fold.fold(slot, &package(ctx, &1), ctx.known, state.fold.runtime, ctx.file) do
+          {:ok, fragment} -> resolve_slot(fragment, ctx, state)
+          {:error, reason} -> unfoldable(slot, package, reason, ctx, state)
+        end
+
+      {:error, reason, state} ->
+        unfoldable(slot, package, reason, ctx, state)
+    end
+  end
+
+  defp unfoldable(%{name: name} = slot, package, reason, ctx, state) do
+    message = "<#{name}> from #{inspect(package.source)} can't render on the server: #{reason}"
+    {slot, diagnose(state, :unrendered, ctx.file, slot.position, message)}
+  end
+
+  # Vue's server renderer and the file's packages load once per file.
+  defp ensure_fold(ctx, state) do
+    runtime =
+      case state.fold do
+        nil ->
+          {:ok, runtime} = QuickBEAM.start()
+          runtime
+
+        %{runtime: runtime} ->
+          runtime
+      end
+
+    loaded = if state.fold, do: state.fold.loaded, else: MapSet.new()
+    state = %{state | fold: %{runtime: runtime, loaded: loaded}}
+
+    if MapSet.member?(loaded, ctx.file) do
+      {:ok, state}
+    else
+      case Fold.load(runtime, package_sources(ctx), ctx.file) do
+        :ok -> {:ok, put_in(state.fold.loaded, MapSet.put(loaded, ctx.file))}
+        {:error, reason} -> {:error, reason, state}
+      end
+    end
+  end
+
+  # The packages the file imports components from: imports named like
+  # components, such as `TabsRoot`.
+  defp package_sources(ctx) do
+    for {name, %{source: source}} <- ctx.imports,
+        name =~ ~r/\A[A-Z]/,
+        package(ctx, name) != nil,
+        uniq: true,
+        do: source
+  end
+
+  # The package import for a component tag, or nil for a local or unknown one.
+  defp package(ctx, tag) do
+    case import_for(ctx.imports, tag) do
+      %{source: source, attributes: attributes} = import ->
+        if Path.extname(source) != ".vue" and attributes["type"] != "macro", do: import
+
+      nil ->
+        nil
+    end
+  end
 
   defp resolve_component(%{name: name} = slot, ctx, state) do
     case import_for(ctx.imports, name) do
@@ -352,14 +440,17 @@ defmodule PhoenixVapor.Components do
     parent_stack = state.stack
     state = %{state | stack: [path | parent_stack], resources: [path | state.resources]}
 
-    # Only a component with macros needs to know its static props.
+    # The props passed as constants are known when its package components
+    # render. Only a component with macros needs the rest of what's known.
+    known = static_props.static
+
     static_props =
       if Macros.any?(imports(script)),
         do: Map.put(static_props, :declared, props(source)),
         else: nil
 
     child = %{template: template, origin: origin, file: path, script: script}
-    {compiled, state} = compile_template(child, [root_attrs: true], static_props, state)
+    {compiled, state} = compile_template(child, [root_attrs: true], static_props, known, state)
 
     component = %{props: props(source), template: compiled, events: state.events}
     {component, %{state | stack: parent_stack}}
