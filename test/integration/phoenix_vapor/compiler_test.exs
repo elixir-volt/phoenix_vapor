@@ -164,7 +164,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
       assert html =~ ~r/<li><button[^>]*data-state="closed"[^>]*>math<\/button><\/li>/
       assert html =~ ~r/<li><button[^>]*data-state="closed"[^>]*>poetry<\/button><\/li>/
 
-      # The dialog's `open` is an expression of a ref's initial value: closed.
+      # The dialog's `open` is a computed of a ref's initial value: closed.
       assert html =~ ~r/<button[^>]*aria-expanded="false"[^>]*>Remove<\/button>/
       refute html =~ "Remove Ada?"
     end

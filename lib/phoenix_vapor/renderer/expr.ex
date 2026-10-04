@@ -44,7 +44,7 @@ defmodule PhoenixVapor.Renderer.Expr do
 
   # Only JavaScript can evaluate it, such as a call with a callback; the
   # compiler reports it.
-  def eval({:js, source, _node, keys}, assigns), do: quickbeam_eval(source, keys, assigns)
+  def eval({:js, _source, _node, _keys} = js, assigns), do: eval(js, assigns, [])
 
   # A method that isn't the value's, such as `trim()` on a number, throws in
   # the browser.
@@ -401,13 +401,27 @@ defmodule PhoenixVapor.Renderer.Expr do
 
   # Every other name the expression reads is defined, as `null` when it isn't
   # an assign, as Vue resolves an unknown name rather than throwing.
-  defp quickbeam_eval(expr, keys, assigns) do
+  @doc """
+  Like `eval/2`, with options for an expression only JavaScript evaluates:
+
+    * `:runtime` — the QuickBEAM runtime to evaluate it in, such as a
+      compile's; by default, the calling process's
+  """
+  @spec eval(compiled(), map(), keyword()) :: term()
+  def eval({:js, source, _node, keys}, assigns, opts) do
+    runtime = Keyword.get_lazy(opts, :runtime, &PhoenixVapor.JS.process_runtime/0)
+    quickbeam_eval(source, keys, assigns, runtime)
+  end
+
+  def eval(compiled, assigns, _opts), do: eval(compiled, assigns)
+
+  defp quickbeam_eval(expr, keys, assigns, runtime) do
     vars =
       keys
       |> Enum.reject(&(&1 in @globals))
       |> Map.new(&{&1, assigns |> get_assign(&1) |> Value.to_elixir()})
 
-    case QuickBEAM.eval(PhoenixVapor.JS.process_runtime(), expr, vars: vars) do
+    case QuickBEAM.eval(runtime, expr, vars: vars) do
       {:ok, result} ->
         result
 

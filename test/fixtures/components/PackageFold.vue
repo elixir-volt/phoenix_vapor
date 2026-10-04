@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import { ref, computed } from "vue"
 import {
   TooltipProvider, TabsRoot, TabsList, TabsTrigger, TabsContent,
   DialogRoot, DialogTrigger, DialogPortal, DialogContent,
@@ -10,6 +10,7 @@ defineProps<{ name: string; tags: string[] }>()
 
 const tab = ref("greeting")
 const target = ref<string | null>(null)
+const confirming = computed(() => target.value !== null)
 </script>
 
 <template>
@@ -27,7 +28,7 @@ const target = ref<string | null>(null)
         <TooltipRoot><TooltipTrigger>{{ tag }}</TooltipTrigger></TooltipRoot>
       </li>
     </ul>
-    <DialogRoot :open="target !== null" @update:open="open => { if (!open) target = null }">
+    <DialogRoot :open="confirming" @update:open="open => { if (!open) target = null }">
       <DialogTrigger>Remove</DialogTrigger>
       <DialogPortal><DialogContent>Remove {{ name }}?</DialogContent></DialogPortal>
     </DialogRoot>

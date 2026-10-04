@@ -15,8 +15,8 @@ defmodule PhoenixVapor.Hybrid do
   """
 
   alias PhoenixVapor.{Compiler, Renderer}
-  alias PhoenixVapor.Compiler.{ScriptSetup, SFC}
-  alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen, ServerCodegen}
+  alias PhoenixVapor.Compiler.{PropTypes, ScriptSetup, SFC}
+  alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen, Computeds, ServerCodegen}
   alias PhoenixVapor.JS.Session
 
   defmacro __using__(opts) do
@@ -28,23 +28,37 @@ defmodule PhoenixVapor.Hybrid do
   # stubs, and its client module.
   @spec build(SFC.t(), keyword(), Macro.Env.t()) :: Macro.t()
   def build(%SFC{} = sfc, opts, caller) do
-    {split, component_files} =
-      Compiler.compile!(sfc, target: :browser, module: caller.module)
+    {constant, per_render} = Computeds.compile(sfc.setup)
+
+    # The browser's first render uses the refs' initial values, and the
+    # computeds of only those, so they're evaluated once here, and package
+    # components render with them.
+    {split, component_files, values} =
+      Session.with_session(PropTypes.handlers(), fn session ->
+        runtime = Session.runtime(session)
+        refs = ScriptSetup.eval_initial_state(sfc.setup.refs, runtime)
+        values = constant_values(constant, refs, runtime, sfc.file)
+        known = Map.new(values, fn {key, value} -> {Atom.to_string(key), value} end)
+
+        {split, files} =
+          Compiler.compile!(sfc,
+            target: :browser,
+            module: caller.module,
+            session: session,
+            known: known
+          )
+
+        {split, files, values}
+      end)
 
     classification = Classifier.classify(sfc.setup, Renderer.assign_keys(split))
     component_name = Path.basename(sfc.file, ".vue")
 
-    # Ref initializers don't depend on assigns, so they're evaluated once here.
-    ref_values =
-      Session.with_session(
-        &ScriptSetup.eval_initial_state(ref_defaults(classification), Session.runtime(&1))
-      )
-
     render_ast =
       ServerCodegen.gen_render(split, classification,
-        computeds: sfc.setup.computeds,
-        component: component_name,
-        ref_values: ref_values
+        values: values,
+        computeds: per_render,
+        component: component_name
       )
 
     event_asts = ServerCodegen.gen_handle_events(classification)
@@ -75,8 +89,21 @@ defmodule PhoenixVapor.Hybrid do
     end
   end
 
-  defp ref_defaults(%{bindings: bindings}) do
-    for {name, {:client_ref, init}} <- bindings, into: %{}, do: {name, init}
+  # A computed that fails with the refs' initial values is left to the
+  # browser, with a warning.
+  defp constant_values(computeds, refs, runtime, file),
+    do: Enum.reduce(computeds, refs, &constant_value(&1, &2, runtime, file))
+
+  defp constant_value({name, _expr} = computed, values, runtime, file) do
+    {values, _assigns} = Computeds.evaluate([computed], values, values, runtime: runtime)
+    values
+  rescue
+    error in PhoenixVapor.ExpressionError ->
+      IO.warn("computed `#{name}` can't render on the server: #{Exception.message(error)}",
+        file: Path.relative_to_cwd(file)
+      )
+
+      values
   end
 
   defp generate_client_js(%SFC{file: full_path} = sfc, classification, output_dir) do

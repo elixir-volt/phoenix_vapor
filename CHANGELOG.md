@@ -21,7 +21,7 @@
 ### Fixed
 
 - The QuickBEAM runtime that ran macro calls while compiling was never stopped, and the one for package components leaked when compiling raised. One runtime per compile now serves both and stops in an `after`.
-- A hybrid component started a QuickBEAM runtime on every render to evaluate its computed values. It now uses one per LiveView process and reuses the last values when their inputs are unchanged.
+- A hybrid component started a QuickBEAM runtime on every render to evaluate its computed values, and a computed that failed rendered as missing without a report. Computeds now evaluate as template expressions do: one that reads only refs is evaluated once while compiling, and package components can render with it; one that reads props is evaluated when rendering, on the LiveView process's runtime, with its last value reused while its inputs are unchanged. A computed's other computeds are evaluated first, so lists such as a filtered view of props render on the server. A failure is a compile-time warning, or an `ExpressionError` when rendering.
 - A template literal's text between expressions rendered empty: `` `a${x}b` `` gave `1`.
 
 ## 0.5.0 - 2026-10-03

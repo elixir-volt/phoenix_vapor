@@ -41,6 +41,10 @@ defmodule PhoenixVapor.Compiler do
       too, and what the server can't render is left to the browser.
     * `:root_attrs` — gives the root element a slot for attributes passed
       when rendering, `PhoenixVapor.Renderer.to_rendered/3`'s `:root_attrs`
+    * `:session` — a `PhoenixVapor.JS.Session` to compile in, which the
+      caller closes, so values it evaluated are shared
+    * `:known` — values names have at compile time, for the `:browser`
+      target; by default, the refs' initial values
     * `:module` — the module the template renders in. A call to a `<script
       setup>` function renders through the function of the same name in
       snake_case that the SFC's `<script lang="elixir">` defines, such as
@@ -88,20 +92,25 @@ defmodule PhoenixVapor.Compiler do
       js: nil
     }
 
-    # Macros, package components and prop types share one QuickBEAM runtime,
-    # only while compiling.
-    {compiled, state} =
-      Session.with_session(PropTypes.handlers(), fn session ->
-        known = if target == :browser, do: initial_values(sfc.setup, session), else: %{}
+    compile = fn session ->
+      known =
+        cond do
+          opts[:known] -> opts[:known]
+          target == :browser -> initial_values(sfc.setup, session)
+          true -> %{}
+        end
 
-        compile_template(
-          sfc,
-          nil,
-          known,
-          %{state | js: session},
-          Keyword.take(opts, [:elixir, :root_attrs])
-        )
-      end)
+      template_opts = Keyword.take(opts, [:elixir, :root_attrs])
+      compile_template(sfc, nil, known, %{state | js: session}, template_opts)
+    end
+
+    # Macros, package components and prop types share one QuickBEAM runtime,
+    # only while compiling: the caller's session, or one opened here.
+    {compiled, state} =
+      case opts[:session] do
+        nil -> Session.with_session(PropTypes.handlers(), compile)
+        session -> compile.(session)
+      end
 
     diagnostics = state.diagnostics |> Enum.reverse() |> Enum.uniq_by(&{&1.file, &1.message})
     {compiled, Enum.uniq(state.resources), diagnostics}
