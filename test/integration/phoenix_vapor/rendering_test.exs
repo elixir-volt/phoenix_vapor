@@ -447,15 +447,14 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       assert render_to_html(rendered) == "<div>Hello</div>"
     end
 
-    test "use PhoenixVapor imports sigil and component helper" do
+    test "use PhoenixVapor imports the sigil" do
       use PhoenixVapor
 
       assigns = %{msg: "Hi"}
 
-      rendered =
-        vue(~VUE"""
-        <span>{{ msg }}</span>
-        """)
+      rendered = ~VUE"""
+      <span>{{ msg }}</span>
+      """
 
       assert %Phoenix.LiveView.Rendered{} = rendered
       assert render_to_html(rendered) == "<span>Hi</span>"

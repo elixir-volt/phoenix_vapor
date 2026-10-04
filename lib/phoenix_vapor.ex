@@ -58,7 +58,6 @@ defmodule PhoenixVapor do
       nil ->
         quote do
           import PhoenixVapor.Sigil
-          import PhoenixVapor.Component
         end
 
       file ->
@@ -97,7 +96,6 @@ defmodule PhoenixVapor do
 
     quote do
       import PhoenixVapor.Sigil
-      import PhoenixVapor.Component
       @external_resource unquote(sfc.file)
       for file <- unquote(component_files), do: @external_resource(file)
 

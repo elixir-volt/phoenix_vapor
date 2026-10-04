@@ -4,6 +4,7 @@
 
 ### Breaking changes
 
+- `PhoenixVapor.Component` and its `vue/1` macro, which returned its argument unchanged, are removed; `use PhoenixVapor` imports only the `~VUE` sigil. Use `~VUE` directly.
 - Template expressions follow JavaScript's semantics, as Vue renders them in the browser: truthiness (`0`, `""` and `NaN` are falsy in `v-if`, `? :`, `!`, `&&` and `||`), `===` (`1 === 1.0`), `==`, relational comparison (`undefined > 0` is false), `+` concatenation and arithmetic with `NaN` and `Infinity`, and `typeof null`. A missing assign is `undefined` and `nil` is `null`. Before, Elixir's semantics leaked through, so `v-if="items.length > 0"` rendered with no `items`.
 - Modules are grouped by role: `PhoenixVapor.Compiler.*` compiles templates, `PhoenixVapor.Renderer.*` renders them, and each mode's modules sit under it. `PhoenixVapor.Runtime` is now `PhoenixVapor.Reactive.Runtime`, `PhoenixVapor.LiveVue` is `PhoenixVapor.Full`, `PhoenixVapor.VueRuntime` is `PhoenixVapor.Full.Runtime`, and `PhoenixVapor.ScriptSetup` is `PhoenixVapor.Compiler.ScriptSetup`; the runtimes and `ScriptSetup` are internal. `use PhoenixVapor`, `~VUE`, `PhoenixVapor.Vue`, `PhoenixVapor.Template` and `PhoenixVapor.ExpressionError` are unchanged.
 
