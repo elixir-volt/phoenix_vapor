@@ -61,7 +61,9 @@ defmodule PhoenixVapor.Integration.LiveVueTest do
 
     assert {:ok, mounted} = ComposedLive.mount(%{}, %{}, socket)
     assert mounted.assigns.host_mounted
-    assert is_pid(mounted.assigns.__vue_runtime__)
+    # The runtime is private: render/1 doesn't read it, and recorders skip it.
+    assert is_pid(mounted.private.phoenix_vapor_runtime)
+    refute Map.has_key?(mounted.assigns, :__vue_runtime__)
 
     assert %Phoenix.LiveView.Rendered{} = ComposedLive.render(mounted.assigns)
 

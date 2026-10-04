@@ -104,7 +104,9 @@ defmodule PhoenixVapor.Reactive do
           socket
           |> Phoenix.Component.assign(assigns)
           |> Phoenix.Component.assign(param_assigns)
-          |> Phoenix.Component.assign(:__vapor_runtime__, runtime)
+          # Private, so it isn't an assign: render/1 doesn't read it, and a
+          # session recorder doesn't record it.
+          |> Phoenix.LiveView.put_private(:phoenix_vapor_runtime, runtime)
 
         {:ok, socket}
       end
@@ -125,7 +127,7 @@ defmodule PhoenixVapor.Reactive do
     Enum.map(functions, fn func_name ->
       quote do
         def handle_event(unquote(func_name), params, socket) do
-          runtime = socket.assigns.__vapor_runtime__
+          runtime = socket.private.phoenix_vapor_runtime
 
           {:ok, state} =
             PhoenixVapor.Reactive.Runtime.call_handler(runtime, unquote(func_name), params)
