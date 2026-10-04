@@ -57,6 +57,7 @@ defmodule PhoenixVapor.Hybrid do
     render_ast =
       ServerCodegen.gen_render(split, classification,
         values: values,
+        constant: constant,
         computeds: per_render,
         component: component_name
       )
@@ -76,6 +77,10 @@ defmodule PhoenixVapor.Hybrid do
       for file <- unquote(component_files), do: @external_resource(file)
 
       import PhoenixVapor.Sigil
+
+      # While a session is recorded, the client reports its refs.
+      require Phoenix.LiveView
+      Phoenix.LiveView.on_mount(PhoenixVapor.Hybrid.Recording)
 
       unquote(render_ast)
       unquote_splicing(event_asts)

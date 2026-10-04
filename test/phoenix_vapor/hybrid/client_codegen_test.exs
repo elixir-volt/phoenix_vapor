@@ -20,6 +20,22 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
   end
 
   describe "generate/2" do
+    test "registers the refs for a recorded session before setup returns" do
+      js =
+        generate("""
+        <script setup>
+        import { ref } from "vue"
+        const search = ref("")
+        const page = ref(1)
+        </script>
+        <template><p>{{ search }} {{ page }}</p></template>
+        """)
+
+      assert js =~ ~r/__pv\.record\(\{ (search, page|page, search) \}\);\s*return/
+      assert js =~ "bridge.record?.(refs, __watch)"
+      assert {:ok, _} = OXC.parse(js, "output.js")
+    end
+
     test "produces valid JavaScript" do
       js =
         generate("""

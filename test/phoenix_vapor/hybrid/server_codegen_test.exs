@@ -13,6 +13,18 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
     {split, classification, setup.props}
   end
 
+  defp spec(split, client_props) do
+    %{
+      split: split,
+      client_props: client_props,
+      refs: [],
+      values: %{},
+      constant: [],
+      computeds: [],
+      component: nil
+    }
+  end
+
   defp render_to_html(rendered) do
     dynamic = rendered.dynamic.(false)
 
@@ -43,13 +55,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       assigns = %{count: 42}
 
       rendered =
-        ServerCodegen.build_rendered(
-          split,
-          assigns,
-          classification.client_props,
-          %{},
-          %{}
-        )
+        ServerCodegen.build_rendered(spec(split, classification.client_props), assigns)
 
       html = render_to_html(rendered)
       assert html =~ "data-pv"
@@ -71,13 +77,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       assigns = %{users: [%{name: "Alice"}], serverOnly: "secret"}
 
       rendered =
-        ServerCodegen.build_rendered(
-          split,
-          assigns,
-          classification.client_props,
-          %{},
-          %{}
-        )
+        ServerCodegen.build_rendered(spec(split, classification.client_props), assigns)
 
       html = render_to_html(rendered)
       assert html =~ "Alice"
@@ -94,13 +94,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       assigns = %{msg: "hello"}
 
       rendered =
-        ServerCodegen.build_rendered(
-          split,
-          assigns,
-          classification.client_props,
-          %{},
-          %{}
-        )
+        ServerCodegen.build_rendered(spec(split, classification.client_props), assigns)
 
       assert %Phoenix.LiveView.Rendered{} = rendered
       assert is_list(rendered.static)
@@ -122,13 +116,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       assigns = %{users: [1, 2, 3], search: ""}
 
       rendered =
-        ServerCodegen.build_rendered(
-          split,
-          assigns,
-          classification.client_props,
-          %{},
-          %{}
-        )
+        ServerCodegen.build_rendered(spec(split, classification.client_props), assigns)
 
       html = render_to_html(rendered)
       assert html =~ "3"
@@ -178,8 +166,10 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
           "<div>{{ msg }}</div>"
         )
 
-      ast = ServerCodegen.gen_render(split, classification)
-      assert {:def, _, [{:render, _, _}, _]} = ast
+      {:__block__, _, definitions} = ServerCodegen.gen_render(split, classification)
+      names = for {:def, _, [{name, _, _} | _]} <- definitions, do: name
+
+      assert names == [:render, :replay_render]
     end
   end
 end

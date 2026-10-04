@@ -106,3 +106,11 @@ end
 Each hybrid LiveView compiles its component to `assets/js/hybrid/<Name>.hybrid.js`, named after the `.vue` file. Register the modules with `getHybridHooks`; see [Browser setup](../introduction/getting-started.md#browser-setup). Pass `client_output: "path"` to `use PhoenixVapor` to write them elsewhere, or `client_output: nil` to skip writing them.
 
 A page can mount the same component several times; each mount has its own props and bridge.
+
+## Session replay
+
+A session replayer such as [PhoenixReplay](https://github.com/elixir-volt/phoenix_replay) records the assigns each render changed, then shows the session by rendering the view with them, without running `mount/3`, events, or the page's JavaScript. Server-only templates, Reactive mode and the full runtime replay as they are, since `render/1` reads only assigns; their QuickBEAM runtimes live in `socket.private`, out of the recording.
+
+A hybrid component's refs live in the browser, so the server never sees them change. While a session is being recorded, the client reports them, debounced, and the server keeps them in one assign, `:__pv_refs__`, which the recording captures like any other. When nothing is recorded, the client sends nothing.
+
+Each hybrid LiveView also defines `replay_render/1`: the same template without the client hook and `phx-update="ignore"`, with the recorded refs in place of their initial values, and the computeds evaluated with them. A replayer calls it instead of `render/1` when the view exports it.

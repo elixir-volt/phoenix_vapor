@@ -16,7 +16,19 @@ export interface Bridge {
     callback?: (reply: unknown) => void
   ): void
   handleEvent(event: string, callback: (payload: unknown) => void): void
+  /** Reports `refs` while the session is recorded; see `recordRefs`. */
+  record?(refs: Refs, watch: Watch): void
 }
+
+/** A component's refs by name, as `<script setup>` declares them. */
+export type Refs = Record<string, { value: unknown }>
+
+/** Vue's `watch`, which the generated module passes in. */
+export type Watch = (
+  source: () => unknown,
+  callback: (value: unknown) => void,
+  options: { deep: boolean; immediate: boolean }
+) => () => void
 
 // A mounted hybrid component.
 export interface HybridInstance {
@@ -33,6 +45,53 @@ export interface HybridComponent {
 interface HookContext extends Bridge {
   el: HTMLElement
   instance?: HybridInstance
+  stopRecording?: () => void
+}
+
+// How long the refs must stay unchanged before they're reported.
+const REPORT_DELAY = 250
+
+// A component's refs as plain data, for the `__pv_refs` event.
+function snapshot(refs: Refs): object {
+  const values = Object.fromEntries(Object.entries(refs).map(([name, ref]) => [name, ref.value]))
+  return JSON.parse(JSON.stringify(values)) as object
+}
+
+/**
+ * While the server says the session is being recorded, with `pv:record`,
+ * reports the registered refs as `__pv_refs`, debounced, so the recording
+ * has the client's state. Until then a registration is only kept.
+ */
+function recordRefs(hook: HookContext): (refs: Refs, watch: Watch) => void {
+  let recording = false
+  const waiting: Array<() => void> = []
+  const stops: Array<() => void> = []
+
+  const start = (refs: Refs, watch: Watch) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const report = () => hook.pushEvent("__pv_refs", snapshot(refs))
+    const changed = () => {
+      clearTimeout(timer)
+      timer = setTimeout(report, REPORT_DELAY)
+    }
+
+    stops.push(watch(() => snapshot(refs), changed, { deep: true, immediate: true }))
+    stops.push(() => clearTimeout(timer))
+  }
+
+  hook.handleEvent("pv:record", () => {
+    recording = true
+    for (const begin of waiting.splice(0)) begin()
+  })
+
+  hook.stopRecording = () => {
+    for (const stop of stops.splice(0)) stop()
+  }
+
+  return (refs, watch) => {
+    if (recording) start(refs, watch)
+    else waiting.push(() => start(refs, watch))
+  }
 }
 
 function readProps(el: HTMLElement): Props | null {
@@ -64,7 +123,8 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
         pushEvent: (event, payload, callback) => this.pushEvent(event, payload, callback),
         pushEventTo: (selector, event, payload, callback) =>
           this.pushEventTo(selector, event, payload, callback),
-        handleEvent: (event, callback) => this.handleEvent(event, callback)
+        handleEvent: (event, callback) => this.handleEvent(event, callback),
+        record: recordRefs(this)
       }
 
       this.instance = component.__mount(this.el, bridge, readProps(this.el) ?? {})
@@ -79,6 +139,7 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
     },
 
     destroyed(this: HookContext) {
+      this.stopRecording?.()
       this.instance?.unmount()
       this.instance = undefined
     }
