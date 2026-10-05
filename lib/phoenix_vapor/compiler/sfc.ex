@@ -60,6 +60,40 @@ defmodule PhoenixVapor.Compiler.SFC do
     Path.expand(file, Path.dirname(caller.file))
   end
 
+  @doc """
+  The line in the file where `<script setup>` declares `name`, or 1 when it
+  doesn't.
+  """
+  @spec setup_line(t(), String.t()) :: pos_integer()
+  def setup_line(%__MODULE__{setup: setup, descriptor: %{script_setup: %{loc: loc}}}, name) do
+    case setup.offsets do
+      %{^name => offset} ->
+        loc.start_line +
+          (setup.source |> binary_part(0, offset) |> String.split("\n") |> length()) - 1
+
+      _other ->
+        1
+    end
+  end
+
+  def setup_line(_sfc, _name), do: 1
+
+  @doc """
+  The line in the file where `<script lang="elixir">` first defines
+  `function`, or 1 when it doesn't.
+  """
+  @spec elixir_line(t(), String.t()) :: pos_integer()
+  def elixir_line(%__MODULE__{elixir: elixir, descriptor: %{script: %{loc: loc}}}, function) do
+    name = String.to_existing_atom(function)
+
+    case Enum.find(elixir, &defines?(&1, name)) do
+      {:def, meta, _args} -> loc.start_line + Keyword.get(meta, :line, 1) - 1
+      nil -> 1
+    end
+  end
+
+  def elixir_line(_sfc, _function), do: 1
+
   @doc "The template, raising when the file has no `<template>` block."
   @spec template!(t()) :: String.t()
   def template!(%__MODULE__{template: nil, file: file}) do
@@ -71,9 +105,13 @@ defmodule PhoenixVapor.Compiler.SFC do
 
   def template!(%__MODULE__{template: template}), do: template
 
-  @doc "Whether `<script setup>` declares state the browser owns, as `ref()`s."
+  @doc """
+  Whether `<script setup>` declares state the browser owns: a `ref()`, or a
+  name bound by a call the compiler can't run, such as a composable's.
+  """
   @spec client_state?(t()) :: boolean()
-  def client_state?(%__MODULE__{setup: setup}), do: map_size(setup.refs) > 0
+  def client_state?(%__MODULE__{setup: setup}),
+    do: map_size(setup.refs) > 0 or setup.client_bindings != []
 
   @doc """
   What a template call to a `<script setup>` function can render through on
@@ -91,6 +129,47 @@ defmodule PhoenixVapor.Compiler.SFC do
       Map.update(acc, name, MapSet.new(arities), &MapSet.union(&1, MapSet.new(arities)))
     end)
   end
+
+  @doc """
+  The assign keys a `<script lang="elixir">` function reads from its
+  argument: an over-approximation, for deciding what to record.
+
+  A key in a map pattern (`%{contacts: contacts}`) or read as `assigns.key`
+  is required: the function fails without it. One read as `assigns[:key]`
+  is optional, nil when missing. With `required: true`, only the required
+  keys.
+  """
+  @spec elixir_reads(t(), String.t(), keyword()) :: [String.t()]
+  def elixir_reads(%__MODULE__{elixir: elixir}, function, opts \\ []) do
+    name = String.to_existing_atom(function)
+    optional? = not Keyword.get(opts, :required, false)
+
+    elixir
+    |> Enum.filter(&defines?(&1, name))
+    |> Macro.prewalk([], fn
+      {:%{}, _meta, pairs} = node, acc when is_list(pairs) ->
+        {node, for({key, _value} when is_atom(key) <- pairs, do: Atom.to_string(key)) ++ acc}
+
+      {{:., _, [{_var, _, context}, key]}, _meta, []} = node, acc
+      when is_atom(key) and is_atom(context) ->
+        {node, [Atom.to_string(key) | acc]}
+
+      {{:., _, [Access, :get]}, _meta, [_assigns, key]} = node, acc
+      when optional? and is_atom(key) ->
+        {node, [Atom.to_string(key) | acc]}
+
+      node, acc ->
+        {node, acc}
+    end)
+    |> elem(1)
+    |> Enum.uniq()
+  end
+
+  defp defines?({:def, _meta, [{:when, _, [head | _guards]} | _body]}, name),
+    do: defines?({:def, [], [head]}, name)
+
+  defp defines?({:def, _meta, [{name, _, _args} | _body]}, name), do: true
+  defp defines?(_expr, _name), do: false
 
   defp signature({:when, _meta, [head | _guards]}), do: signature(head)
 

@@ -42,13 +42,21 @@ defmodule PhoenixVapor.Renderer.Expr do
       reason: "it isn't a JavaScript expression"
   end
 
+  # A hybrid component's render lists the client state it doesn't have, such
+  # as a composable's value before the browser reports it, in `:__absent__`;
+  # an expression reading it isn't rendered, as one only the browser
+  # evaluates.
+  def eval({tag, _source, _node, _keys} = expr, assigns) when tag in [:expr, :js] do
+    if absent?(expr, assigns), do: nil, else: eval_compiled(expr, assigns)
+  end
+
   # Only JavaScript can evaluate it, such as a call with a callback; the
   # compiler reports it.
-  def eval({:js, _source, _node, _keys} = js, assigns), do: eval(js, assigns, [])
+  defp eval_compiled({:js, _source, _node, _keys} = js, assigns), do: eval(js, assigns, [])
 
   # A method that isn't the value's, such as `trim()` on a number, throws in
   # the browser.
-  def eval({:expr, source, node, _keys}, assigns) do
+  defp eval_compiled({:expr, source, node, _keys}, assigns) do
     node |> eval_node(assigns) |> Value.to_elixir()
   catch
     {:not_a_function, method} ->
@@ -175,6 +183,20 @@ defmodule PhoenixVapor.Renderer.Expr do
 
   defp global?(%{type: :identifier, name: name}), do: name in @globals
   defp global?(_node), do: false
+
+  @doc """
+  Whether an expression reads a name the render lists as absent, in the
+  `:__absent__` assign.
+  """
+  @spec absent?(compiled() | nil, map()) :: boolean()
+  def absent?({tag, _source, _node, keys}, %{__absent__: absent}) when tag in [:expr, :js],
+    do: Enum.any?(keys, &MapSet.member?(absent, &1))
+
+  def absent?(_expr, _assigns), do: false
+
+  @doc "The globals a Vue template may use, which the server has too."
+  @spec globals() :: [String.t()]
+  def globals, do: @globals
 
   defp eval_node(%{type: :parenthesized_expression, expression: node}, assigns),
     do: eval_node(node, assigns)

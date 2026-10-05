@@ -20,20 +20,30 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
 
     * `:values` — the refs' initial values and the computeds of only those,
       by atom, the same on every render
+    * `:constants` — the component's top-level constants, by atom
     * `:constant` and `:computeds` — the computeds that read only refs, and
       those that read props, compiled and ordered, from
       `PhoenixVapor.Hybrid.Computeds.compile/1`
     * `:component` — the component's name, for its wrapper element
+    * `:client` — the names bound by composables and other calls only the
+      browser runs; a render without their values leaves out what reads them
+    * `:recorded` — the client state a replay takes from
+      `@phoenix_replay_state`; by default, the refs
   """
   def gen_render(split, classification, opts \\ []) do
     spec = %{
       split: split,
       client_props: classification.client_props,
-      refs: for({name, {:client_ref, _init}} <- classification.bindings, do: name),
+      recorded:
+        Keyword.get_lazy(opts, :recorded, fn ->
+          for {name, {:client_ref, _init}} <- classification.bindings, do: name
+        end),
       values: Keyword.get(opts, :values, %{}),
+      constants: Keyword.get(opts, :constants, %{}),
       constant: Keyword.get(opts, :constant, []),
       computeds: Keyword.get(opts, :computeds, []),
-      component: opts[:component]
+      component: opts[:component],
+      client: Keyword.get(opts, :client, [])
     }
 
     quote do
@@ -77,6 +87,8 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
 
     full_assigns =
       assigns
+      |> Map.put(:__absent__, absent(mode, spec, assigns))
+      |> seed_ref_values(Map.get(spec, :constants, %{}))
       |> seed_ref_values(values)
       |> seed_props_alias(spec.client_props)
       |> eval_computeds(computeds, values)
@@ -126,7 +138,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     case recorded do
       %{} = recorded when map_size(recorded) > 0 ->
         refs =
-          for name <- spec.refs, Map.has_key?(recorded, name), into: %{} do
+          for name <- spec.recorded, Map.has_key?(recorded, name), into: %{} do
             {PhoenixVapor.Renderer.Names.existing(name), recorded[name]}
           end
 
@@ -139,6 +151,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
 
   defp refs_for(_mode, spec, _assigns), do: {spec.values, spec.computeds}
 
+  # The client state this render doesn't have: a composable's value, which
+  # only the browser knows, unless a replay recorded it.
+  defp absent(:replay, %{component: component} = spec, assigns) when is_binary(component) do
+    recorded = get_in(assigns, [Access.key(:phoenix_replay_state, %{}), state_key(component)])
+    spec.client |> Enum.reject(&is_map_key(recorded || %{}, &1)) |> MapSet.new()
+  end
+
+  defp absent(_mode, spec, _assigns), do: MapSet.new(spec.client)
+
   # A replay renders with change tracking, as a seek re-renders, but what
   # changes is often not what the template reads: `:phoenix_replay_state`
   # changes the refs, a prop changes `props`, and either changes the computeds
@@ -148,7 +169,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
 
     names =
       if "phoenix_replay_state" in names,
-        do: MapSet.union(names, MapSet.new(spec.refs)),
+        do: MapSet.union(names, MapSet.new(spec.recorded)),
         else: names
 
     names =
@@ -157,9 +178,10 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     # In order, so a computed reading another computed sees its change.
     names =
       Enum.reduce(spec.constant ++ spec.computeds, names, fn {name, expr}, names ->
-        if Enum.any?(PhoenixVapor.Renderer.Expr.assign_keys(expr), &(&1 in names)),
-          do: MapSet.put(names, name),
-          else: names
+        case PhoenixVapor.Hybrid.Computeds.reads(expr) do
+          :any -> MapSet.put(names, name)
+          keys -> if Enum.any?(keys, &(&1 in names)), do: MapSet.put(names, name), else: names
+        end
       end)
 
     %{assigns | __changed__: Map.new(names, &{&1, true})}

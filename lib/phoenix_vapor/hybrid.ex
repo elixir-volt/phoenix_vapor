@@ -18,6 +18,7 @@ defmodule PhoenixVapor.Hybrid do
   alias PhoenixVapor.Compiler.{PropTypes, ScriptSetup, SFC}
   alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen, Computeds, ServerCodegen}
   alias PhoenixVapor.JS.Session
+  alias PhoenixVapor.Renderer.{Expr, Names}
 
   defmacro __using__(opts) do
     opts |> Keyword.fetch!(:file) |> SFC.load!(__CALLER__) |> build(opts, __CALLER__)
@@ -28,44 +29,67 @@ defmodule PhoenixVapor.Hybrid do
   # stubs, and its client module.
   @spec build(SFC.t(), keyword(), Macro.Env.t()) :: Macro.t()
   def build(%SFC{} = sfc, opts, caller) do
-    {constant, per_render} = Computeds.compile(sfc.setup)
+    elixir = {caller.module, SFC.elixir_functions(sfc)}
 
-    # The browser's first render uses the refs' initial values, and the
-    # computeds of only those, so they're evaluated once here, and package
-    # components render with them.
-    {split, component_files, values} =
+    # The browser's first render uses the refs' initial values, the
+    # component's constants, and the computeds of only those, so they're
+    # evaluated once here, and package components render with them.
+    {split, component_files, values, constants, plan} =
       Session.with_session(PropTypes.handlers(), fn session ->
         runtime = Session.runtime(session)
+        constants = constants(sfc.setup, runtime)
+
+        plan =
+          Computeds.compile(sfc.setup,
+            twins: twins(sfc, caller.module),
+            known: Enum.map(Map.keys(constants), &Atom.to_string/1),
+            rewrite: &Compiler.elixir_calls(&1, sfc.setup.callables, elixir)
+          )
+
+        Enum.each(plan.left_out, &warn_left_out(&1, sfc))
+        warn_skipped_twins(plan, sfc)
+
         refs = ScriptSetup.eval_initial_state(sfc.setup.refs, runtime)
-        values = constant_values(constant, refs, runtime, sfc.file)
-        known = Map.new(values, fn {key, value} -> {Atom.to_string(key), value} end)
+        values = constant_values(plan.constant, refs, constants, runtime, sfc.file)
+
+        known =
+          constants
+          |> Map.merge(values)
+          |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
 
         {split, files} =
           Compiler.compile!(sfc,
             target: :browser,
             module: caller.module,
             session: session,
-            known: known
+            known: known,
+            browser_only: Enum.map(plan.left_out, &elem(&1, 0))
           )
 
-        {split, files, values}
+        {split, files, values, constants, plan}
       end)
+
+    %{constant: constant, per_render: per_render} = plan
 
     classification = Classifier.classify(sfc.setup, Renderer.assign_keys(split))
     component_name = Path.basename(sfc.file, ".vue")
+    recorded = recorded(sfc, split, plan)
 
     render_ast =
       ServerCodegen.gen_render(split, classification,
         values: values,
+        constants: constants,
         constant: constant,
         computeds: per_render,
-        component: component_name
+        component: component_name,
+        recorded: recorded,
+        client: sfc.setup.client_bindings
       )
 
     event_asts = ServerCodegen.gen_handle_events(classification)
 
     client_output_dir = Keyword.get(opts, :client_output, default_client_output())
-    client_js = generate_client_js(sfc, classification, client_output_dir)
+    client_js = generate_client_js(sfc, classification, recorded, client_output_dir)
 
     escaped_classification = Macro.escape(classification)
     escaped_client_js = Macro.escape(client_js)
@@ -90,13 +114,155 @@ defmodule PhoenixVapor.Hybrid do
     end
   end
 
+  # A LiveView's callbacks, which a computed's Elixir counterpart can't be.
+  @callbacks ~w(mount render replay_render handle_event handle_info handle_params handle_call
+                handle_cast handle_async terminate code_change)
+
+  # Computeds whose `<script lang="elixir">` counterpart, the function of the
+  # same name in snake_case taking the assigns, computes them on the server.
+  defp twins(%SFC{setup: setup} = sfc, module) do
+    functions = SFC.elixir_functions(sfc)
+
+    for {name, _body} <- setup.computeds,
+        function = Macro.underscore(name),
+        Map.has_key?(functions, function),
+        into: %{} do
+      if function in @callbacks do
+        raise CompileError,
+          file: sfc.file,
+          line: 1,
+          description:
+            "computed `#{name}` can't have an Elixir counterpart: `#{function}` is a LiveView " <>
+              "callback. Rename the computed."
+      end
+
+      unless MapSet.member?(functions[function], 1) do
+        raise CompileError,
+          file: sfc.file,
+          line: 1,
+          description:
+            "the Elixir counterpart of computed `#{name}` takes the assigns: define #{function}/1"
+      end
+
+      # Rendering skips a counterpart whose required reads are missing.
+      reads = SFC.elixir_reads(sfc, function, required: true)
+      {name, {module, String.to_existing_atom(function), reads}}
+    end
+  end
+
+  # The client state a session replay needs: what the template reads, and
+  # what the computeds it reads read in turn, an Elixir counterpart's from its
+  # patterns. Recording anything else, such as a mouse position, would only
+  # flood the recording.
+  defp recorded(%SFC{setup: setup} = sfc, split, plan) do
+    client = MapSet.new(Map.keys(setup.refs) ++ setup.client_bindings)
+
+    reads = fn name ->
+      case plan.reads[name] do
+        :any -> SFC.elixir_reads(sfc, Macro.underscore(name))
+        keys -> keys || []
+      end
+    end
+
+    split
+    |> Renderer.assign_keys()
+    |> Enum.reduce(MapSet.new(), &read(&1, &2, reads))
+    |> MapSet.intersection(client)
+    |> Enum.sort()
+    # Declared names get their atoms while compiling; a replay only looks
+    # them up.
+    |> tap(&Enum.each(&1, fn name -> PhoenixVapor.Renderer.Names.atom!(name) end))
+  end
+
+  defp read(name, seen, reads) do
+    if MapSet.member?(seen, name),
+      do: seen,
+      else: name |> reads.() |> Enum.reduce(MapSet.put(seen, name), &read(&1, &2, reads))
+  end
+
+  # Top-level constants the server can evaluate once, in order: literals,
+  # and expressions of earlier constants and JavaScript's globals, such as
+  # `const PAGE_SIZE = 20` or `const roles = ["owner", "admin"]`. Refs,
+  # computeds, functions and composables' results aren't constants.
+  defp constants(%ScriptSetup{} = setup, runtime) do
+    reactive =
+      MapSet.new(
+        Map.keys(setup.refs) ++
+          Map.keys(setup.computeds) ++ setup.callables ++ setup.client_bindings ++ ["props"]
+      )
+
+    Enum.reduce(setup.consts, %{}, fn {name, _node, source}, constants ->
+      expr = Expr.compile(source)
+
+      if name in reactive or not Enum.all?(Expr.assign_keys(expr), &known?(constants, &1)),
+        do: constants,
+        else: constant(constants, name, expr, runtime)
+    end)
+  end
+
+  defp known?(constants, name),
+    do: name in Expr.globals() or is_map_key(constants, Names.existing(name))
+
+  defp constant(constants, name, expr, runtime) do
+    value = Expr.eval(expr, constants, runtime: runtime)
+    Map.put(constants, Names.atom!(name), value)
+  rescue
+    PhoenixVapor.ExpressionError -> constants
+  end
+
+  defp warn_left_out({name, missing}, %SFC{} = sfc) do
+    IO.warn(
+      "computed `#{name}` reads #{Enum.map_join(missing, ", ", &"`#{&1}`")}, which only the " <>
+        "browser has, so the server leaves it, and what reads it, out of the first paint",
+      file: Path.relative_to_cwd(sfc.file),
+      line: SFC.setup_line(sfc, name)
+    )
+  end
+
+  # A counterpart that requires state the live render never has, such as a
+  # composable's value or a left-out computed, is never called there, so its
+  # computed is missing from the first paint; only a replay has the state.
+  # Counterparts are in order, so one skipped makes those requiring it
+  # skipped too.
+  defp warn_skipped_twins(plan, %SFC{setup: setup} = sfc) do
+    absent = setup.client_bindings ++ Enum.map(plan.left_out, &elem(&1, 0))
+
+    Enum.reduce(plan.per_render, absent, fn
+      {name, {:elixir, _module, function, reads}}, absent ->
+        case Enum.filter(reads, &(&1 in absent)) do
+          [] ->
+            absent
+
+          missing ->
+            warn_skipped_twin(name, Atom.to_string(function), missing, sfc)
+            [name | absent]
+        end
+
+      _computed, absent ->
+        absent
+    end)
+  end
+
+  defp warn_skipped_twin(name, function, missing, sfc) do
+    IO.warn(
+      "`#{function}/1` requires #{Enum.map_join(missing, ", ", &"`#{&1}`")}, which only the " <>
+        "browser has, so the live render never calls it and leaves `#{name}` out of the " <>
+        "first paint. Read state that may be missing as `assigns[:#{hd(missing)}]` rather " <>
+        "than in a pattern",
+      file: Path.relative_to_cwd(sfc.file),
+      line: SFC.elixir_line(sfc, function)
+    )
+  end
+
   # A computed that fails with the refs' initial values is left to the
   # browser, with a warning.
-  defp constant_values(computeds, refs, runtime, file),
-    do: Enum.reduce(computeds, refs, &constant_value(&1, &2, runtime, file))
+  # Refs and computeds are read as `.value`; constants as they are.
+  defp constant_values(computeds, refs, constants, runtime, file),
+    do: Enum.reduce(computeds, refs, &constant_value(&1, &2, constants, runtime, file))
 
-  defp constant_value({name, _expr} = computed, values, runtime, file) do
-    {values, _assigns} = Computeds.evaluate([computed], values, values, runtime: runtime)
+  defp constant_value({name, _expr} = computed, values, constants, runtime, file) do
+    assigns = Map.merge(constants, values)
+    {values, _assigns} = Computeds.evaluate([computed], values, assigns, runtime: runtime)
     values
   rescue
     error in PhoenixVapor.ExpressionError ->
@@ -107,8 +273,8 @@ defmodule PhoenixVapor.Hybrid do
       values
   end
 
-  defp generate_client_js(%SFC{file: full_path} = sfc, classification, output_dir) do
-    codegen_opts = [source_dir: Path.dirname(full_path), output_dir: output_dir]
+  defp generate_client_js(%SFC{file: full_path} = sfc, classification, recorded, output_dir) do
+    codegen_opts = [source_dir: Path.dirname(full_path), output_dir: output_dir, record: recorded]
 
     case ClientCodegen.generate(sfc.source, classification, codegen_opts) do
       {:ok, js} ->

@@ -9,7 +9,8 @@ defmodule PhoenixVapor.Hybrid.WrapperTest do
     spec = %{
       split: @split,
       client_props: ["title"],
-      refs: [],
+      recorded: [],
+      client: [],
       values: %{},
       constant: [],
       computeds: [],

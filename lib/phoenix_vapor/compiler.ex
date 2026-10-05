@@ -45,6 +45,10 @@ defmodule PhoenixVapor.Compiler do
       caller closes, so values it evaluated are shared
     * `:known` — values names have at compile time, for the `:browser`
       target; by default, the refs' initial values
+    * `:browser_only` — names only the browser has, such as a hybrid
+      component's computeds the server can't evaluate. An expression reading
+      one isn't rendered on the server, and a `v-if` chain whose condition
+      reads one renders no branch.
     * `:module` — the module the template renders in. A call to a `<script
       setup>` function renders through the function of the same name in
       snake_case that the SFC's `<script lang="elixir">` defines, such as
@@ -100,7 +104,7 @@ defmodule PhoenixVapor.Compiler do
           true -> %{}
         end
 
-      template_opts = Keyword.take(opts, [:elixir, :root_attrs])
+      template_opts = Keyword.take(opts, [:elixir, :root_attrs, :browser_only])
       compile_template(sfc, nil, known, %{state | js: session}, template_opts)
     end
 
@@ -228,6 +232,7 @@ defmodule PhoenixVapor.Compiler do
     state = Enum.reduce(macro_diagnostics, state, &add(&2, &1))
 
     {compiled, state} = mark_script_calls(compiled, ctx, state)
+    compiled = mark_browser_only(compiled, Keyword.get(opts, :browser_only, []))
     {compiled, state} = resolve_template(compiled, ctx, state)
 
     state = report_js(compiled, ctx, state)
@@ -391,10 +396,33 @@ defmodule PhoenixVapor.Compiler do
     end
   end
 
-  # Points calls to `functions` at their Elixir counterparts.
-  defp elixir_calls(node, _functions, nil), do: node
+  # An expression reading a name only the browser has is left out whole,
+  # rather than evaluated with `undefined` in its place.
+  defp mark_browser_only(template, []), do: template
 
-  defp elixir_calls(node, functions, {module, elixir}) do
+  defp mark_browser_only(template, names) do
+    {template, nil} =
+      Template.map_exprs(template, nil, fn
+        {tag, source, _node, keys} = expr, _slot, acc when tag in [:expr, :js] ->
+          if Enum.any?(keys, &(&1 in names)),
+            do: {{:unrendered, source}, acc},
+            else: {expr, acc}
+
+        expr, _slot, acc ->
+          {expr, acc}
+      end)
+
+    template
+  end
+
+  # Points calls to `functions` at their Elixir counterparts.
+  @doc false
+  # Points calls in `node` to `functions` at the Elixir functions of the same
+  # name in snake_case, with the same arity, that `elixir` holds for `module`.
+  @spec elixir_calls(map(), [String.t()], {module(), map()} | nil) :: map()
+  def elixir_calls(node, _functions, nil), do: node
+
+  def elixir_calls(node, functions, {module, elixir}) do
     rewrite(node, fn
       %{type: :call_expression, callee: %{type: :identifier, name: name}, arguments: args} = call ->
         server = Macro.underscore(name)

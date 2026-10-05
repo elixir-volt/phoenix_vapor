@@ -19,6 +19,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   ## Options
 
+    * `:record` — the client state a session replay needs, which setup
+      registers with the bridge; by default, the refs
     * `:source_dir` and `:output_dir` — when the module is written to a
       different directory than the `.vue` file, relative imports such as
       `./ui/Button.vue` are rewritten to resolve from `:output_dir`.
@@ -50,7 +52,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
     patches =
       server_action_patches(ast, vize_code, classification) ++
-        setup_patches(ast, client_refs(classification)) ++
+        setup_patches(ast, Keyword.get_lazy(opts, :record, fn -> client_refs(classification) end)) ++
         default_export_patches(ast) ++ import_patches(ast, opts)
 
     preamble(classification) <> "\n" <> OXC.patch_string(vize_code, patches) <> exports()
@@ -91,7 +93,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   defp preamble(classification) do
     """
-    import { createApp as __createApp, h as __h, inject as __inject, reactive as __reactive, watch as __watch } from 'vue';
+    import { createApp as __createApp, h as __h, inject as __inject, reactive as __reactive, unref as __unref, watch as __watch } from 'vue';
 
     export function __getClientState() {
       return #{Jason.encode!(client_refs(classification))};
@@ -112,7 +114,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
       // so applyProps re-renders. createApp(component, props) would copy them.
       const app = __createApp({ render: () => __h(__component, state) });
       // While a session is recorded, the bridge reports the refs setup registers.
-      const record = (refs) => bridge.record?.(refs, __watch);
+      const record = (sources) => bridge.record?.(sources, __watch, __unref);
       app.provide("__pv", { bridge, props: state, record });
       app.mount(el);
 

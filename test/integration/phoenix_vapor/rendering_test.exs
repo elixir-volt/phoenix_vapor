@@ -987,7 +987,7 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       assert render.(~S|<p v-if="items.length > 0">shown</p>|, %{}) == ""
       assert render.(~S|<p>{{ count ? "yes" : "no" }}</p>|, %{count: 0}) == "<p>no</p>"
       assert render.(~S|<p>{{ !name }}</p>|, %{name: ""}) == "<p>true</p>"
-      assert render.(~S|<p>{{ label \|\| "fallback" }}</p>|, %{label: ""}) == "<p>fallback</p>"
+      assert render.(~S(<p>{{ label || "fallback" }}</p>), %{label: ""}) == "<p>fallback</p>"
       assert render.(~S|<p>{{ count === 1 }}</p>|, %{count: 1.0}) == "<p>true</p>"
       assert render.(~S|<p>{{ 1 / 0 }} {{ total / 2 }}</p>|, %{total: 3}) == "<p>Infinity 1.5</p>"
     end

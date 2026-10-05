@@ -22,6 +22,8 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
           functions: %{String.t() => String.t()},
           consts: [{String.t(), map(), String.t()}],
           callables: [String.t()],
+          client_bindings: [String.t()],
+          offsets: %{String.t() => non_neg_integer()},
           props: [String.t()]
         }
 
@@ -32,6 +34,8 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
             functions: %{},
             consts: [],
             callables: [],
+            client_bindings: [],
+            offsets: %{},
             props: []
 
   @doc """
@@ -44,6 +48,11 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
     * `:consts` — top-level `const` declarations, in order, with their
       initializer's node and source
     * `:callables` — declared functions and arrow functions
+    * `:client_bindings` — top-level names bound by a call the compiler
+      can't run, such as a composable's (`const debounced = refDebounced(q)`,
+      `const { copy, copied } = useClipboard()`) or `reactive()`; their values
+      exist only in the browser. `ref()`s, with their initial values, are
+      `:refs` instead.
     * `:props` — the props `defineProps` declares, in any of its forms
   """
   @spec parse(String.t() | nil) :: t()
@@ -52,14 +61,18 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
   def parse(source) do
     case OXC.parse(source, "setup.ts") do
       {:ok, ast} ->
+        imports = imports(ast)
+
         %__MODULE__{
           source: source,
-          imports: imports(ast),
+          imports: imports,
           refs: calls(ast, source, "ref"),
           computeds: computeds(ast, source),
           functions: functions(ast, source),
           consts: consts(ast, source),
           callables: callables(ast),
+          client_bindings: client_bindings(ast, imports),
+          offsets: offsets(ast),
           props: props(source)
         }
 
@@ -117,6 +130,15 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
     end
   end
 
+  # Where each top-level declaration starts in the script, for diagnostics.
+  defp offsets(%{body: body}) do
+    for %{type: :variable_declaration, declarations: declarations, start: start} <- body,
+        %{id: id} <- declarations,
+        name <- binding_names(id),
+        into: %{},
+        do: {name, start}
+  end
+
   # `const name = callee(arg)`: the first argument's source by name.
   defp calls(ast, source, callee) do
     for {name, %{type: :call_expression, callee: %{name: ^callee}, arguments: [arg | _]}} <-
@@ -163,6 +185,36 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
         %{id: %{type: :identifier, name: name}, init: %{} = init} <- declarations,
         do: {name, init, slice(source, init)}
   end
+
+  # Calls the compiler runs or understands: Vue's compiler macros, `ref()`,
+  # `computed()`, and helpers imported as macros.
+  @understood ~w(ref computed defineProps withDefaults defineEmits defineExpose defineOptions
+                 defineSlots)
+
+  defp client_bindings(%{body: body}, imports) do
+    for %{type: :variable_declaration, declarations: declarations} <- body,
+        %{id: id, init: %{type: :call_expression, callee: callee}} <- declarations,
+        not understood?(callee, imports),
+        name <- binding_names(id),
+        do: name
+  end
+
+  defp understood?(%{type: :identifier, name: name}, imports),
+    do: name in @understood or get_in(imports, [name, :attributes, "type"]) == "macro"
+
+  defp understood?(_callee, _imports), do: false
+
+  defp binding_names(%{type: :identifier, name: name}), do: [name]
+
+  defp binding_names(%{type: :object_pattern, properties: properties}),
+    do: Enum.flat_map(properties, &binding_names(&1[:value] || &1[:argument] || &1))
+
+  defp binding_names(%{type: :array_pattern, elements: elements}),
+    do: elements |> Enum.reject(&is_nil/1) |> Enum.flat_map(&binding_names/1)
+
+  defp binding_names(%{type: :assignment_pattern, left: left}), do: binding_names(left)
+  defp binding_names(%{type: :rest_element, argument: argument}), do: binding_names(argument)
+  defp binding_names(_pattern), do: []
 
   defp callables(ast) do
     ast
