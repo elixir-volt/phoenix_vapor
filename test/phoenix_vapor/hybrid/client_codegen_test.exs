@@ -165,7 +165,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         """)
 
       assert js =~
-               ~s|if (!id) return\n  users.value = users.value.filter(u => u.id !== id)\n\n  __pv.bridge.action("deleteUser", {"id": id});|
+               ~s|const __pvParams = JSON.parse(JSON.stringify({"id": id}));\n  if (!id) return\n  users.value = users.value.filter(u => u.id !== id)\n\n  __pv.bridge.action("deleteUser", __pvParams);|
 
       refute js =~ ~s|"use server"|
       assert {:ok, _ast} = OXC.parse(js, "client.js")

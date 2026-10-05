@@ -53,7 +53,8 @@ defmodule PhoenixVapor.Integration.Hybrid.ModelTest do
     js = ContactsLive.__hybrid_client_js__()
 
     assert js =~ "contacts.value = contacts.value.filter"
-    assert js =~ ~s|__pv.bridge.action("deleteContact", {"id": id});|
+    assert js =~ ~s|const __pvParams = JSON.parse(JSON.stringify({"id": id}));|
+    assert js =~ ~s|__pv.bridge.action("deleteContact", __pvParams);|
     # The mount applies the model's update to its props.
     assert js =~ ~s|const __models = ["contacts"];|
     assert js =~ ~s|"onUpdate:" + model|

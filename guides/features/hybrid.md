@@ -72,7 +72,7 @@ Data the browser may change, and the server owns, is a [model](https://vuejs.org
 Calling a server action in the browser does two things:
 
 1. It runs the function's body, as Vue code. Writing a model's `.value` updates it at once, so the UI changes before the server answers: above, `contacts.value = ...` removes the contact.
-2. Then it sends the action: an event named after the function, with the function's arguments and the current value of each ref or computed it reads, `%{"id" => 1}` above. A body that returns or throws first sends nothing, so a guard validates in the browser:
+2. Then it sends the action: an event named after the function, with the function's arguments and the value of each ref or computed it reads, as they were when it was called: `%{"id" => 1}` above. A body that returns or throws first sends nothing, so a guard validates in the browser:
 
 ```js
 function saveName() {
@@ -82,7 +82,7 @@ function saveName() {
 }
 ```
 
-The server-side logic is your `handle_event/3`. Once it has handled the action, the props and models are the server's again: the new assigns it returns replace the browser's optimistic values, and if it left an assign unchanged, declining the change, the optimistic value goes away. If the module defines no `handle_event/3`, PhoenixVapor generates no-op handlers for the actions. Once you define one, handle every action it can receive.
+The server-side logic is your `handle_event/3`. Once it has handled the action, the props and models are the server's again: the new assigns it returns replace the browser's optimistic values, and if it left an assign unchanged, declining the change, the optimistic value goes away. While several actions are in flight, the server's props wait for the last answer, so one action's answer doesn't undo another's optimistic change. If the module defines no `handle_event/3`, PhoenixVapor generates no-op handlers for the actions. Once you define one, handle every action it can receive.
 
 Props are read-only, as in Vue: writing `props.contacts`, or `contacts` for a prop the script doesn't declare, is a compile error that points at `defineModel`.
 

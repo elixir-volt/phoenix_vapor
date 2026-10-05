@@ -205,12 +205,16 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     end)
   end
 
-  # The body runs as written, so a model it writes changes at once; then the
-  # server gets the action. A `return` or a `throw` in the body, such as a
-  # guard, stops it before it reaches the server.
+  # The action's params are taken on entry, as the JSON the server will get,
+  # so the body can change what it reads. The body runs as written, so a
+  # model it writes changes at once; then the server gets the action. A
+  # `return` or a `throw` in the body, such as a guard, stops it before it
+  # reaches the server.
   defp server_action_patch(%{id: %{name: name}, params: params, body: body}, code, classification) do
-    action =
-      "__pv.bridge.action(#{Jason.encode!(name)}, #{event_params(body, params, code, classification)});"
+    capture =
+      "const __pvParams = JSON.parse(JSON.stringify(#{event_params(body, params, code, classification)}));"
+
+    action = "__pv.bridge.action(#{Jason.encode!(name)}, __pvParams);"
 
     start =
       case body.body do
@@ -219,7 +223,12 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
       end
 
     statements = slice(code, %{start: start, end: body.end - 1})
-    patch(body.start + 1, body.end - 1, IO.iodata_to_binary([statements, "\n  ", action, "\n"]))
+
+    patch(
+      body.start + 1,
+      body.end - 1,
+      IO.iodata_to_binary(["\n  ", capture, statements, "\n  ", action, "\n"])
+    )
   end
 
   # Sends the action's arguments and the current value of each client ref or
