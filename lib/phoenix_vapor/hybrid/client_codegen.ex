@@ -158,7 +158,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   defp record_patch(%{body: statements}, refs) do
     case List.last(statements) do
       %{type: :return_statement, start: start} ->
-        [patch(start, start, "__pv.record({ #{Enum.join(refs, ", ")} });\n")]
+        [patch(start, start, "__pv?.record({ #{Enum.join(refs, ", ")} });\n")]
 
       _other ->
         []

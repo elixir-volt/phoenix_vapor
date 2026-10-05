@@ -51,10 +51,38 @@ interface HookContext extends Bridge {
 // How long the refs must stay unchanged before they're reported.
 const REPORT_DELAY = 250
 
+// A value as plain data: strings, numbers, booleans, null, arrays and plain
+// objects. Anything else, such as a template ref's element or a component
+// instance, or a cycle, is left out.
+function plain(value: unknown, seen: Set<object>): unknown {
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) return value
+  if (typeof value !== "object" || seen.has(value)) return undefined
+
+  const proto = Object.getPrototypeOf(value) as unknown
+  if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return undefined
+
+  seen.add(value)
+  const result = Array.isArray(value)
+    ? value.map((item) => plain(item, seen) ?? null)
+    : Object.fromEntries(
+        Object.entries(value)
+          .map(([key, item]) => [key, plain(item, seen)] as const)
+          .filter(([, item]) => item !== undefined)
+      )
+  seen.delete(value)
+  return result
+}
+
 // A component's refs as plain data, for the `__pv_refs` event.
 function snapshot(refs: Refs): object {
-  const values = Object.fromEntries(Object.entries(refs).map(([name, ref]) => [name, ref.value]))
-  return JSON.parse(JSON.stringify(values)) as object
+  const values: Record<string, unknown> = {}
+
+  for (const [name, ref] of Object.entries(refs)) {
+    const value = plain(ref.value, new Set())
+    if (value !== undefined) values[name] = value
+  }
+
+  return values
 }
 
 /**
@@ -75,7 +103,8 @@ function recordRefs(hook: HookContext): (refs: Refs, watch: Watch) => void {
       timer = setTimeout(report, REPORT_DELAY)
     }
 
-    stops.push(watch(() => snapshot(refs), changed, { deep: true, immediate: true }))
+    // Their initial values are the server's too, so only changes are reported.
+    stops.push(watch(() => snapshot(refs), changed, { deep: true, immediate: false }))
     stops.push(() => clearTimeout(timer))
   }
 

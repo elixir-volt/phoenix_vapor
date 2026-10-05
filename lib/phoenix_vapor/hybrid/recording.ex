@@ -25,8 +25,15 @@ defmodule PhoenixVapor.Hybrid.Recording do
     end
   end
 
-  defp handle_event("__pv_refs", refs, socket) when is_map(refs),
-    do: {:halt, Phoenix.Component.assign(socket, :__pv_refs__, refs)}
+  # A report bigger than this is dropped: refs are UI state, and the client
+  # decides what it sends.
+  @max_report_bytes 64 * 1024
+
+  defp handle_event("__pv_refs", refs, socket) when is_map(refs) do
+    if :erlang.external_size(refs) <= @max_report_bytes,
+      do: {:halt, Phoenix.Component.assign(socket, :__pv_refs__, refs)},
+      else: {:halt, socket}
+  end
 
   defp handle_event(_event, _params, socket), do: {:cont, socket}
 

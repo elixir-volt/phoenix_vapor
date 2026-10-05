@@ -31,7 +31,9 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><p>{{ search }} {{ page }}</p></template>
         """)
 
-      assert js =~ ~r/__pv\.record\(\{ (search, page|page, search) \}\);\s*return/
+      # Vize's setup ends with its render function's return; registering
+      # depends on it.
+      assert js =~ ~r/__pv\?\.record\(\{ (search, page|page, search) \}\);\s*return/
       assert js =~ "bridge.record?.(refs, __watch)"
       assert {:ok, _} = OXC.parse(js, "output.js")
     end

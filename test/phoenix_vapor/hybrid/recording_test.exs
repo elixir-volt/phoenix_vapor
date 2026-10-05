@@ -31,6 +31,11 @@ defmodule PhoenixVapor.Hybrid.RecordingTest do
     assert socket.assigns.__pv_refs__ == refs
 
     assert {:cont, _socket} = hook.function.("save", %{}, socket)
+
+    # A report too big to be UI state is dropped.
+    huge = %{"search" => String.duplicate("x", 70_000)}
+    assert {:halt, dropped} = hook.function.("__pv_refs", huge, socket)
+    assert dropped.assigns.__pv_refs__ == refs
   end
 
   test "does nothing when the session isn't recorded" do
