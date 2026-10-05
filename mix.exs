@@ -106,7 +106,7 @@ defmodule PhoenixVapor.MixProject do
       {:oxc, "~> 0.18.1"},
       {:jason, "~> 1.4"},
       {:quickbeam, "~> 0.11.2"},
-      {:volt, "~> 0.20.0", runtime: false},
+      {:volt, "~> 0.21.0", runtime: false},
       {:ex_doc, "~> 0.40.3", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

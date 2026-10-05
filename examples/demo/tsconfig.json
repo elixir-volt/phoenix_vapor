@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "jsx": "preserve",
+    "paths": {
+      "@/*": [
+        "./assets/js/*"
+      ],
+      "phoenix": [
+        "./deps/phoenix/priv/static/phoenix.mjs"
+      ],
+      "phoenix_html": [
+        "./deps/phoenix_html/priv/static/phoenix_html.js"
+      ],
+      "phoenix_live_view": [
+        "./deps/phoenix_live_view/priv/static/phoenix_live_view.esm.js"
+      ],
+      "phoenix_vapor": [
+        "../../priv/ts/browser/live-socket.ts"
+      ],
+      "phoenix_vapor/hybrid": [
+        "../../priv/ts/browser/hybrid-bridge.ts"
+      ]
+    },
+    "allowJs": true
+  },
+  "include": [
+    "assets/js/**/*.ts",
+    "assets/js/**/*.vue",
+    "lib/**/*.vue",
+    "test/support/**/*.ts"
+  ],
+  "exclude": [
+    "assets/js/hybrid",
+    "assets/js/bundles"
+  ]
+}
