@@ -71,7 +71,7 @@ defmodule PhoenixVapor.Hybrid do
 
     %{constant: constant, per_render: per_render} = plan
 
-    classification = Classifier.classify(sfc.setup, Renderer.assign_keys(split))
+    classification = Classifier.classify(sfc.setup, Renderer.reads(split))
     component_name = Path.basename(sfc.file, ".vue")
     recorded = recorded(sfc, split, plan)
 

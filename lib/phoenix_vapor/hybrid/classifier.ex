@@ -31,7 +31,8 @@ defmodule PhoenixVapor.Hybrid.Classifier do
 
   @doc """
   Classifies the bindings and handlers a `<script setup>` declares, given
-  the names the template reads.
+  the names the template reads, with `props.x` as `x`; see
+  `PhoenixVapor.Renderer.reads/1`.
   """
   @spec classify(ScriptSetup.t(), [String.t()]) :: classification()
   def classify(%ScriptSetup{} = setup, template_names \\ []) do
@@ -151,7 +152,8 @@ defmodule PhoenixVapor.Hybrid.Classifier do
 
   # The client renders the whole component, so it needs every prop that the
   # template or client-side code reads. Props only server actions read stay
-  # on the server.
+  # on the server. A template that reads `props` whole, as `v-bind="props"`
+  # does, needs them all.
   defp compute_client_props(bindings, handlers, function_bodies, refs, props, template_names) do
     computed_deps =
       Enum.flat_map(bindings, fn
@@ -169,7 +171,9 @@ defmodule PhoenixVapor.Hybrid.Classifier do
       |> Enum.concat(computed_deps ++ template_names)
       |> MapSet.new()
 
-    Enum.filter(props, &MapSet.member?(read, &1))
+    if "props" in template_names,
+      do: props,
+      else: Enum.filter(props, &MapSet.member?(read, &1))
   end
 
   @doc """
