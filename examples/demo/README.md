@@ -70,8 +70,10 @@ npx playwright install chromium
 mix test
 ```
 
-`mix lint` checks the Elixir and the TypeScript, with Volt's formatter,
-linter and type checker, and `mix ci` runs everything CI does.
+`mix lint` checks the Elixir, and the TypeScript and the `.vue` components'
+scripts with Volt's formatter, linter and type checker; `assets/js/vue.d.ts`
+tells TypeScript what importing a `.vue` file gives. `mix ci` runs everything
+CI does.
 
 The test environment sets `data-vapor-debug` on the body, so reactive mode
 counts the updates it writes straight to the DOM, and the tests check that it

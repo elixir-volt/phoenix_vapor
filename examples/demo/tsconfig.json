@@ -37,6 +37,8 @@
   },
   "include": [
     "assets/js/**/*.ts",
+    "assets/js/**/*.vue",
+    "lib/**/*.vue",
     "test/support/**/*.ts"
   ],
   "exclude": [
