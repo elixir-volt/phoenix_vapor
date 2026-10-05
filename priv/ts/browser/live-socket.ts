@@ -118,14 +118,17 @@ function patchViewPrototype(proto: ViewPrototype, update: ViewUpdate, debug: boo
   proto.update = function (diff, events, isPending) {
     // Structural diffs ("c" components, "s" statics) go through LiveView.
     if (diff && !("c" in diff) && !("s" in diff)) {
-      const vaporEl = this.el.querySelector("[data-vapor-statics]")
+      const vaporEl = this.el.querySelector<HTMLElement>("[data-vapor-statics]")
       const registry = vaporEl && registries.get(vaporEl)
+      // A layout nests the template's own rendered inside the view's.
+      const path = registry && registry.size > 0 && renderedPath(this, vaporEl)
+      const own = path && descend(diff, path)
 
       // Only a diff that changes nothing but registered slots is written
       // directly; anything else goes to LiveView whole.
-      if (registry && registry.size > 0 && onlyRegisteredSlots(diff, registry)) {
+      if (own && onlyRegisteredSlots(own, registry)) {
         this.rendered.mergeDiff(diff)
-        const values = this.rendered.rendered
+        const values = at(this.rendered.rendered, path)!
 
         for (const [slot, entry] of registry) {
           applyValue(entry, slot, (part) => slotText(values[part]))
@@ -139,6 +142,66 @@ function patchViewPrototype(proto: ViewPrototype, update: ViewUpdate, debug: boo
 
     return update.call(this, diff, events, isPending)
   }
+}
+
+// The slot keys from the view's rendered tree down to the one whose statics
+// are the element's, remembered while they still lead there.
+const paths = new WeakMap<Element, string[]>()
+
+function renderedPath(view: ViewLike, el: HTMLElement): string[] | null {
+  const root = view.rendered.rendered
+  const known = paths.get(el)
+  if (known && sameStatics(at(root, known), el.dataset.vaporStatics!)) return known
+
+  const found = findStatics(root, el.dataset.vaporStatics!)
+  if (found) paths.set(el, found)
+  return found
+}
+
+function findStatics(rendered: Diff, statics: string): string[] | null {
+  if (sameStatics(rendered, statics)) return []
+
+  for (const [key, child] of Object.entries(rendered)) {
+    // Comprehensions ("k") repeat their statics, so a template isn't in one.
+    if (!/^\d+$/.test(key) || !isRendered(child) || "k" in child) continue
+    const rest = findStatics(child, statics)
+    if (rest) return [key, ...rest]
+  }
+
+  return null
+}
+
+// LiveView resolves shared statics in place when it renders, so a rendered
+// tree that has been rendered holds each template's statics as an array.
+function sameStatics(rendered: Diff | null, statics: string) {
+  return Array.isArray(rendered?.s) && JSON.stringify(rendered.s) === statics
+}
+
+function at(rendered: Diff, path: string[]): Diff | null {
+  let current = rendered
+  for (const key of path) {
+    const child = current[key]
+    if (!isRendered(child)) return null
+    current = child
+  }
+  return current
+}
+
+// The part of `diff` at `path`, when the diff changes nothing outside it and
+// replaces nothing on the way.
+function descend(diff: Diff, path: string[]): Diff | null {
+  let current = diff
+  for (const key of path) {
+    const child = current[key]
+    const others = Object.keys(current).some((other) => other !== key && /^\d+$/.test(other))
+    if (others || !isRendered(child) || "s" in child) return null
+    current = child
+  }
+  return current
+}
+
+function isRendered(value: unknown): value is Diff {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function onlyRegisteredSlots(diff: Diff, registry: Registry) {

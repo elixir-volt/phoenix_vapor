@@ -88,4 +88,28 @@ defmodule PhoenixVapor.Integration.Hybrid.SingleFileTest do
       assert {:server_action, _} = c.handlers["deleteItem"]
     end
   end
+
+  describe "a prop only the template reads" do
+    defmodule TemplatePropsLive do
+      use Phoenix.LiveView
+      use PhoenixVapor, file: Fixtures.path("HybridTemplateProps.vue"), client_output: nil
+    end
+
+    test "goes to the browser, and the server's first paint renders it" do
+      html =
+        %{saved: 0, owner: true, __changed__: nil}
+        |> TemplatePropsLive.render()
+        |> Phoenix.HTML.Safe.to_iodata()
+        |> IO.iodata_to_binary()
+
+      assert html =~ "Saved: 0"
+      assert html =~ ~s(data-pv-props="{&quot;saved&quot;:0}")
+    end
+
+    test "while one only a server action reads stays on the server" do
+      c = TemplatePropsLive.__hybrid_classification__()
+      assert c.client_props == ["saved"]
+      assert c.server_only_props == ["owner"]
+    end
+  end
 end

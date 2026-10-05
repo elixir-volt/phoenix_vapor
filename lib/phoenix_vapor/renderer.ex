@@ -84,6 +84,25 @@ defmodule PhoenixVapor.Renderer do
     |> Enum.uniq()
   end
 
+  # The names a template's expressions read, with `props.x` read as `x`, so a
+  # caller can tell which props it needs. `props` itself is among them only
+  # when an expression reads it whole.
+  @spec reads(Template.t()) :: [String.t()]
+  def reads(%Template{} = template) do
+    template
+    |> Template.exprs()
+    |> Enum.flat_map(fn
+      {{tag, _source, node, _keys}, _slot} when tag in [:expr, :js] and is_map(node) ->
+        for name <- PhoenixVapor.JS.FreeNames.of(node, props: true) do
+          with "props." <> prop <- name, do: prop
+        end
+
+      {expr, _slot} ->
+        Expr.assign_keys(expr)
+    end)
+    |> Enum.uniq()
+  end
+
   # ── Slot evaluation ──
 
   defp eval_slot(%{kind: :text, value: value}, assigns),
