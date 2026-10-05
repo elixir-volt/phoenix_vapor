@@ -9,7 +9,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   """
 
   @doc """
-  Generate the `render/1` function.
+  Generate `render/1`, and `replay_render/1` for a session replayer.
 
   The rendered output includes:
   - All slots evaluated for the initial/full render (SEO, first paint)
@@ -20,29 +20,40 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
 
     * `:values` — the refs' initial values and the computeds of only those,
       by atom, the same on every render
-    * `:computeds` — the computeds that read props, compiled and ordered, from
+    * `:constant` and `:computeds` — the computeds that read only refs, and
+      those that read props, compiled and ordered, from
       `PhoenixVapor.Hybrid.Computeds.compile/1`
     * `:component` — the component's name, for its wrapper element
   """
   def gen_render(split, classification, opts \\ []) do
-    escaped_split = Macro.escape(split)
-    client_props = Macro.escape(classification.client_props)
-    escaped_values = opts |> Keyword.get(:values, %{}) |> Macro.escape()
-    escaped_computeds = opts |> Keyword.get(:computeds, []) |> Macro.escape()
-
-    escaped_component_name = Macro.escape(opts[:component])
+    spec = %{
+      split: split,
+      client_props: classification.client_props,
+      refs: for({name, {:client_ref, _init}} <- classification.bindings, do: name),
+      values: Keyword.get(opts, :values, %{}),
+      constant: Keyword.get(opts, :constant, []),
+      computeds: Keyword.get(opts, :computeds, []),
+      component: opts[:component]
+    }
 
     quote do
-      def render(var!(assigns)) do
-        PhoenixVapor.Hybrid.ServerCodegen.build_rendered(
-          unquote(escaped_split),
-          var!(assigns),
-          unquote(client_props),
-          unquote(escaped_values),
-          unquote(escaped_computeds),
-          unquote(escaped_component_name)
-        )
-      end
+      defp __pv_hybrid__, do: unquote(Macro.escape(spec))
+
+      def render(var!(assigns)),
+        do: PhoenixVapor.Hybrid.ServerCodegen.build_rendered(__pv_hybrid__(), var!(assigns))
+
+      @doc """
+      Renders the component as a session replay shows it: with the refs the
+      client reported while recording, from `@phoenix_replay_state`, and
+      without the client hook, so the server's render is what's shown.
+      """
+      def replay_render(var!(assigns)),
+        do:
+          PhoenixVapor.Hybrid.ServerCodegen.build_rendered(
+            __pv_hybrid__(),
+            var!(assigns),
+            :replay
+          )
     end
   end
 
@@ -55,39 +66,40 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   attributes, and the hook's `updated/0` passes the new props to the client.
   The props are a dynamic of the wrapper, so a prop change sends only the new
   JSON instead of new statics.
+
+  In `:replay` mode, for a session replayer, the wrapper has no hook and isn't
+  ignored, so the server's render shows, and the refs the client reported
+  while the session was recorded, under the component's state key in the
+  `:phoenix_replay_state` assign, take the place of their initial values.
   """
-  def build_rendered(
-        split,
-        assigns,
-        client_props,
-        values,
-        computeds,
-        component_name \\ nil
-      ) do
+  def build_rendered(spec, assigns, mode \\ :live) do
+    {values, computeds} = refs_for(mode, spec, assigns)
+
     full_assigns =
       assigns
       |> seed_ref_values(values)
-      |> seed_props_alias(client_props)
+      |> seed_props_alias(spec.client_props)
       |> eval_computeds(computeds, values)
+      |> translate_changed(mode, spec)
 
     # The wrapper div is the root tag; the component itself may render text,
     # comments, or several elements.
     inner = %{
-      PhoenixVapor.Renderer.to_rendered(split, full_assigns)
+      PhoenixVapor.Renderer.to_rendered(spec.split, full_assigns)
       | root: false
     }
 
-    static = wrapper_statics(component_name)
+    static = wrapper_statics(spec.component, mode)
 
     %Phoenix.LiveView.Rendered{
       static: static,
       dynamic: fn track_changes? ->
         props =
-          if track_changes? and not client_props_changed?(assigns, client_props) do
+          if track_changes? and not client_props_changed?(assigns, spec.client_props) do
             nil
           else
             assigns
-            |> encode_client_props(client_props)
+            |> encode_client_props(spec.client_props)
             |> Phoenix.HTML.html_escape()
             |> Phoenix.HTML.safe_to_string()
           end
@@ -99,9 +111,73 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     }
   end
 
-  defp wrapper_statics(nil), do: [~s(<div data-pv data-pv-props="), ~s(">), "</div>"]
+  @doc """
+  The key a hybrid component's refs are reported and replayed under:
+  `phoenix_vapor:` and its wrapper's id, which the browser's bridge uses too.
+  """
+  @spec state_key(String.t()) :: String.t()
+  def state_key(component), do: "phoenix_vapor:pv-" <> component
 
-  defp wrapper_statics(component_name) do
+  # A replay's recorded refs replace their initial values, so the computeds
+  # of only refs are evaluated again too. Only declared refs are taken.
+  defp refs_for(:replay, %{component: component} = spec, assigns) when is_binary(component) do
+    recorded = get_in(assigns, [Access.key(:phoenix_replay_state, %{}), state_key(component)])
+
+    case recorded do
+      %{} = recorded when map_size(recorded) > 0 ->
+        refs =
+          for name <- spec.refs, Map.has_key?(recorded, name), into: %{} do
+            {PhoenixVapor.Renderer.Names.existing(name), recorded[name]}
+          end
+
+        {Map.merge(spec.values, refs), spec.constant ++ spec.computeds}
+
+      _none ->
+        {spec.values, spec.computeds}
+    end
+  end
+
+  defp refs_for(_mode, spec, _assigns), do: {spec.values, spec.computeds}
+
+  # A replay renders with change tracking, as a seek re-renders, but what
+  # changes is often not what the template reads: `:phoenix_replay_state`
+  # changes the refs, a prop changes `props`, and either changes the computeds
+  # that read them. A live render's refs never change on the server.
+  defp translate_changed(%{__changed__: changed} = assigns, :replay, spec) when is_map(changed) do
+    names = MapSet.new(Map.keys(changed), &to_string/1)
+
+    names =
+      if "phoenix_replay_state" in names,
+        do: MapSet.union(names, MapSet.new(spec.refs)),
+        else: names
+
+    names =
+      if Enum.any?(spec.client_props, &(&1 in names)), do: MapSet.put(names, "props"), else: names
+
+    # In order, so a computed reading another computed sees its change.
+    names =
+      Enum.reduce(spec.constant ++ spec.computeds, names, fn {name, expr}, names ->
+        if Enum.any?(PhoenixVapor.Renderer.Expr.assign_keys(expr), &(&1 in names)),
+          do: MapSet.put(names, name),
+          else: names
+      end)
+
+    %{assigns | __changed__: Map.new(names, &{&1, true})}
+  end
+
+  defp translate_changed(assigns, _mode, _spec), do: assigns
+
+  defp wrapper_statics(nil, _mode), do: [~s(<div data-pv data-pv-props="), ~s(">), "</div>"]
+
+  defp wrapper_statics(component_name, :replay) do
+    [
+      ~s(<div id="pv-#{component_name}" data-pv data-pv-props="),
+      ~s(" data-pv-client="#{component_name}">),
+      "</div>"
+    ]
+  end
+
+  defp wrapper_statics(component_name, :live) do
     [
       ~s(<div id="pv-#{component_name}" data-pv data-pv-props="),
       ~s(" phx-hook="PhoenixVaporHybrid" phx-update="ignore" data-pv-client="#{component_name}">),

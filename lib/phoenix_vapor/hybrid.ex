@@ -57,6 +57,7 @@ defmodule PhoenixVapor.Hybrid do
     render_ast =
       ServerCodegen.gen_render(split, classification,
         values: values,
+        constant: constant,
         computeds: per_render,
         component: component_name
       )

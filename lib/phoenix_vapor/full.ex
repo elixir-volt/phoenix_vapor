@@ -73,7 +73,9 @@ defmodule PhoenixVapor.Full do
 
         socket =
           socket
-          |> Phoenix.Component.assign(:__vue_runtime__, runtime)
+          # Private, so it isn't an assign: render/1 reads only the HTML, and a
+          # session recorder doesn't record it.
+          |> Phoenix.LiveView.put_private(:phoenix_vapor_runtime, runtime)
           |> Phoenix.Component.assign(:__vue_html__, html)
 
         {:ok, socket}
@@ -89,7 +91,7 @@ defmodule PhoenixVapor.Full do
       end
 
       def handle_event(event, params, socket) do
-        runtime = socket.assigns.__vue_runtime__
+        runtime = socket.private.phoenix_vapor_runtime
 
         html =
           PhoenixVapor.Full.unwrap!(PhoenixVapor.Full.Runtime.dispatch(runtime, event, params))
@@ -98,7 +100,7 @@ defmodule PhoenixVapor.Full do
       end
 
       def terminate(_reason, socket) do
-        if runtime = socket.assigns[:__vue_runtime__] do
+        if runtime = socket.private[:phoenix_vapor_runtime] do
           PhoenixVapor.Full.Runtime.stop(runtime)
         end
       end

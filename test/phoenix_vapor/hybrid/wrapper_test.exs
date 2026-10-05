@@ -6,7 +6,17 @@ defmodule PhoenixVapor.Hybrid.WrapperTest do
   @split Vize.split_template!(~s(<p>{{ title }}</p>))
 
   defp render(assigns, component_name \\ "Counter") do
-    ServerCodegen.build_rendered(@split, assigns, ["title"], %{}, %{}, component_name)
+    spec = %{
+      split: @split,
+      client_props: ["title"],
+      refs: [],
+      values: %{},
+      constant: [],
+      computeds: [],
+      component: component_name
+    }
+
+    ServerCodegen.build_rendered(spec, assigns)
   end
 
   test "a client-owned wrapper is ignored by LiveView patching" do

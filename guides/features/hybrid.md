@@ -60,7 +60,7 @@ The compiler reads `<script setup>` and classifies each binding:
 | a function that assigns a prop | a server action |
 | any other function | a client handler |
 
-The server renders the component for the first paint, including the components it imports from `.vue` files; see [Components](templates.md#components). The browser then mounts the Vue component in its place, and LiveView leaves the wrapper's contents alone (`phx-update="ignore"`).
+The server renders the component for the first paint, including the components it imports from `.vue` files; see [Components](templates.md#components). The browser then mounts the Vue component in its place, and LiveView leaves the wrapper's contents alone (`phx-update="ignore"`). The client is a standard Vue 3 component on the virtual DOM, not Vapor mode, so component libraries such as [Reka UI](https://reka-ui.com) work in it as they are.
 
 Props reach the client as JSON in the wrapper's `data-pv-props` attribute. They include every prop the template or client-side code reads; props read only by server actions stay on the server. When an assign changes, LiveView sends the new JSON and the component re-renders.
 
@@ -106,3 +106,17 @@ end
 Each hybrid LiveView compiles its component to `assets/js/hybrid/<Name>.hybrid.js`, named after the `.vue` file. Register the modules with `getHybridHooks`; see [Browser setup](../introduction/getting-started.md#browser-setup). Pass `client_output: "path"` to `use PhoenixVapor` to write them elsewhere, or `client_output: nil` to skip writing them.
 
 A page can mount the same component several times; each mount has its own props and bridge.
+
+## Session replay
+
+A session replayer such as [PhoenixReplay](https://github.com/elixir-volt/phoenix_replay) records the assigns each render changed, then shows the session by rendering the view with them, without running `mount/3`, events, or the page's JavaScript. Server-only templates, Reactive mode and the full runtime replay as they are, since `render/1` reads only assigns; their QuickBEAM runtimes live in `socket.private`, out of the recording.
+
+A hybrid component's refs live in the browser, so the server never sees them change. They're recorded through PhoenixReplay's client-state events on `window`, so PhoenixVapor depends on PhoenixReplay neither in Elixir nor in JavaScript:
+
+- When recording starts with client state, `phx_replay:start`, each hybrid component reports all of its refs as a `phx_replay:state` event, and then, as they change, only the refs that changed. A component that mounts during a recording, or whose bridge loads after it started, reports its refs then; it reads the `data-phx-replay` attribute PhoenixReplay sets on `<html>` while recording. Before `phx_replay:start`, and after `phx_replay:stop`, nothing is dispatched.
+- The state key is `phoenix_vapor:` and the component's wrapper id, such as `phoenix_vapor:pv-Contacts`, which stays the same across reconnects.
+- Only plain data is reported: strings, numbers, booleans, `null`, arrays and plain objects. A ref holding anything else, such as a template ref to an element, or `undefined`, is reported as `null`, so the replay doesn't keep an earlier value.
+
+Each hybrid LiveView also defines `replay_render/1`, which the replay calls instead of `render/1`: the same template without the client hook and `phx-update="ignore"`, with the refs recorded under the component's key in `@phoenix_replay_state` in place of their initial values, and the computeds evaluated with them. `render/1` never uses recorded refs.
+
+PhoenixReplay drops a report whose changes exceed 8,192 bytes of JSON. Each report carries only the refs that changed, so this matters only for a single ref holding that much, such as a large list kept in a ref: changes to it aren't recorded.

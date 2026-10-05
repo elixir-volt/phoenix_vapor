@@ -50,7 +50,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
     patches =
       server_action_patches(ast, vize_code, classification) ++
-        setup_patches(ast) ++ default_export_patches(ast) ++ import_patches(ast, opts)
+        setup_patches(ast, client_refs(classification)) ++
+        default_export_patches(ast) ++ import_patches(ast, opts)
 
     preamble(classification) <> "\n" <> OXC.patch_string(vize_code, patches) <> exports()
   end
@@ -90,7 +91,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   defp preamble(classification) do
     """
-    import { createApp as __createApp, h as __h, inject as __inject, reactive as __reactive } from 'vue';
+    import { createApp as __createApp, h as __h, inject as __inject, reactive as __reactive, watch as __watch } from 'vue';
 
     export function __getClientState() {
       return #{Jason.encode!(client_refs(classification))};
@@ -110,7 +111,9 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
       // Rendering through h() reads the props inside the root render effect,
       // so applyProps re-renders. createApp(component, props) would copy them.
       const app = __createApp({ render: () => __h(__component, state) });
-      app.provide("__pv", { bridge, props: state });
+      // While a session is recorded, the bridge reports the refs setup registers.
+      const record = (refs) => bridge.record?.(refs, __watch);
+      app.provide("__pv", { bridge, props: state, record });
       app.mount(el);
 
       return {
@@ -128,14 +131,19 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     """
   end
 
-  defp setup_patches(ast) do
+  # Setup injects its mount's `__pv`, and registers its refs before it returns.
+  defp setup_patches(ast, refs) do
     ast
     |> OXC.collect(fn
       %{type: :export_default_declaration, declaration: %{type: :object_expression} = component} ->
         patches =
-          for %{type: :property, key: %{name: "setup"}, value: %{body: %{start: start}}} <-
+          for %{type: :property, key: %{name: "setup"}, value: %{body: body}} <-
                 component.properties,
-              do: patch(start + 1, start + 1, ~s|\n  const __pv = __inject("__pv");|)
+              patch <- [
+                patch(body.start + 1, body.start + 1, ~s|\n  const __pv = __inject("__pv");|)
+                | record_patch(body, refs)
+              ],
+              do: patch
 
         {:keep, patches}
 
@@ -143,6 +151,18 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
         :skip
     end)
     |> List.flatten()
+  end
+
+  defp record_patch(_body, []), do: []
+
+  defp record_patch(%{body: statements}, refs) do
+    case List.last(statements) do
+      %{type: :return_statement, start: start} ->
+        [patch(start, start, "__pv?.record({ #{Enum.join(refs, ", ")} });\n")]
+
+      _other ->
+        []
+    end
   end
 
   defp client_refs(classification) do

@@ -1,6 +1,8 @@
 # Architecture
 
-PhoenixVapor compiles Vue template syntax into native LiveView rendered trees. Four progressive modes share a common foundation: Vue/Vapor templates and LiveView rendered diffs have the same statics/dynamics shape.
+PhoenixVapor compiles Vue template syntax into native LiveView rendered trees. Four progressive modes share a common foundation: a template is static HTML with dynamic slots between it, the shape of a LiveView rendered diff, and of Vue's Vapor mode, which the project is named after.
+
+That shape is rendered on the server. Vapor mode itself runs nowhere: templates are split by Vize (`Vize.split_template/2`, built on its semantic IR), and in the browser hybrid components are standard Vue 3 components on the virtual DOM. See [Why standard Vue in the browser](#why-standard-vue-in-the-browser).
 
 ## Core: Statics/Dynamics Split
 
@@ -22,8 +24,9 @@ This maps directly to `%Phoenix.LiveView.Rendered{}`:
 
 Template expressions are evaluated against LiveView assigns:
 
-- Simple (`{{ count }}`, `item.name`) → Elixir map access via OXC AST
-- Complex (`.filter()`, `.map()`, arrow functions) → QuickBEAM JS eval
+- Most expressions (`{{ count }}`, `item.name`, comparisons, arithmetic, ternaries) → Elixir, over the OXC AST, with JavaScript's semantics for truthiness, equality and coercion (`PhoenixVapor.Renderer.Value`)
+- What only JavaScript can evaluate (`.filter()` with a callback, `Math.max`) → QuickBEAM on every render, reported as a warning when compiling
+- Macro calls and package components → run once in QuickBEAM while compiling, so rendering them runs no JavaScript
 - Change tracking: on each render, a slot is re-evaluated only when an assign its expression reads is in `__changed__`
 
 ## Mode 1: `~VUE` Sigil
@@ -31,7 +34,7 @@ Template expressions are evaluated against LiveView assigns:
 Vue syntax as a template DSL. Zero client JS.
 
 ```
-Template → Vize.vapor_split! → %Rendered{} → LiveView diff → morphdom
+Template → Vize.split_template → PhoenixVapor.Template → %Rendered{} → LiveView diff → morphdom
 ```
 
 Expressions evaluate in Elixir. Events map to `phx-click`, `phx-submit`, etc. The browser runs the standard LiveView client — it doesn't know Vue exists.
@@ -54,7 +57,7 @@ Split reactivity — server owns data, client owns UI state.
 ```
 SFC → Classifier (AST analysis)
     → Server: render/1 and fallback handle_event/3 (Elixir); mount/3 is yours
-    → Client: Vue 3 component module (<Name>.hybrid.js)
+    → Client: Vue 3 component module on the virtual DOM (<Name>.hybrid.js)
     → Bridge: LiveView hook syncs props via data-pv-props
 ```
 
@@ -71,6 +74,16 @@ The compiler analyzes `<script setup>` and classifies each binding:
 
 Server renders full HTML for first paint (SEO). The hook then mounts the Vue component with `createApp` in place of that HTML; the wrapper is `phx-update="ignore"`, so later server renders don't touch the DOM Vue owns. Client interactions (search, sort, select) are instant — zero network. Server actions send events over the existing LiveView WebSocket.
 
+### Why standard Vue in the browser
+
+The generated client is compiled by Vize as an ordinary Vue 3 component and mounted with `createApp`; it doesn't use Vapor mode. That is a decision, not a gap:
+
+- Component libraries such as Reka UI are virtual-DOM components. A Vapor client reaches them only through Vue's interop layer, which loads the virtual-DOM runtime anyway.
+- Package components fold at compile time through Vue's server renderer (`vue/server-renderer`), which is the virtual-DOM one.
+- Vapor mode arrived with Vue 3.6 and is much newer than the virtual-DOM runtime the libraries are tested against.
+
+What this gives up is hydration: the browser mounts fresh in place of the server's first paint rather than adopting it. A Vapor client, whose output lines up with the server's statics and slots, is the way to get that, and is worth revisiting as Vapor mode matures. Anything that reaches into the client, such as session recording, should therefore depend on what the template reads, not on how the client renders.
+
 ### Wire Protocol
 
 Initial render: server sends statics + dynamics, with the props JSON as the wrapper's `data-pv-props` dynamic. Updates: the props JSON travels only when a client prop changed. Client-only changes (typing in search) produce zero wire traffic.
@@ -80,6 +93,10 @@ Initial render: server sends statics + dynamics, with the props JSON as the wrap
 - **Server → Client**: LiveView assign changes → re-render → diff with props JSON → hook's `updated()` → the instance's `applyProps()` → Vue reactivity propagates
 - **Client → Server**: `"use server"` function → `pushEvent` → `handle_event` → assign change → back to step 1
 - **Client → Client**: `ref` mutation → computed recomputation → Vue re-render. No wire.
+
+### Session Replay
+
+A replayer such as PhoenixReplay renders a recorded view from its recorded assigns alone; the QuickBEAM runtimes of Reactive mode and the full runtime live in `socket.private`, out of the recording. A hybrid component's refs live in the browser: `browser/hybrid-bridge.ts` reports them as `phx_replay:state` window events between `phx_replay:start` and `phx_replay:stop` (or while `<html data-phx-replay>` says a recording is running), all of them on start and then each one that changes, through a watcher per ref, under `phoenix_vapor:<wrapper id>`. The generated `replay_render/1` (`Hybrid.ServerCodegen.build_rendered/3` in `:replay` mode) reads them from `@phoenix_replay_state`, renders without the client hook, and maps a changed `:phoenix_replay_state` or prop to the refs and computeds the template reads, for tracked re-renders. See the Hybrid guide.
 
 ### Custom Elixir Code
 
@@ -133,6 +150,7 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 ### Renderer
 - `PhoenixVapor.Renderer` — `PhoenixVapor.Template` → `%Rendered{}`
 - `PhoenixVapor.Renderer.Expr` — JS expression evaluation in Elixir
+- `PhoenixVapor.Renderer.Value` — JavaScript's semantics for values: truthiness, equality, coercion, display
 - `PhoenixVapor.Renderer.Attrs` — dynamic attributes as Vue's server renderer writes them
 - `PhoenixVapor.Renderer.Names` — atoms for declared names, never created while rendering
 
@@ -141,6 +159,7 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 - `PhoenixVapor.Reactive.Runtime` — QuickBEAM GenServer for reactive state
 - `PhoenixVapor.Hybrid` — hybrid mode
 - `PhoenixVapor.Hybrid.Classifier` — binding classification via AST
+- `PhoenixVapor.Hybrid.Computeds` — `computed()` values for the server's render
 - `PhoenixVapor.Hybrid.ServerCodegen` — Elixir code generation
 - `PhoenixVapor.Hybrid.ClientCodegen` — Vue 3 JS generation
 - `PhoenixVapor.Full` — the full runtime (`runtime: :full`)
@@ -149,6 +168,8 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 ### JavaScript
 - `PhoenixVapor.JS` — QuickBEAM runtimes and contexts, `priv/ts` templates, and bundling with Volt
 - `PhoenixVapor.JS.EntryPlugin` — Volt plugin serving a generated entry module
+- `PhoenixVapor.JS.Session` — the one QuickBEAM runtime a compile uses
+- `PhoenixVapor.JS.FreeNames` — the names a JavaScript expression reads
 - `Mix.Tasks.PhoenixVapor.Bundle` — bundles a Vue component library for the full runtime
 
 ### TypeScript (`priv/ts`)
