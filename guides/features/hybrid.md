@@ -60,7 +60,7 @@ The compiler reads `<script setup>` and classifies each binding:
 | a function that assigns a prop | a server action |
 | any other function | a client handler |
 
-The server renders the component for the first paint, including the components it imports from `.vue` files; see [Components](templates.md#components). The browser then mounts the Vue component in its place, and LiveView leaves the wrapper's contents alone (`phx-update="ignore"`).
+The server renders the component for the first paint, including the components it imports from `.vue` files; see [Components](templates.md#components). The browser then mounts the Vue component in its place, and LiveView leaves the wrapper's contents alone (`phx-update="ignore"`). The client is a standard Vue 3 component on the virtual DOM, not Vapor mode, so component libraries such as [Reka UI](https://reka-ui.com) work in it as they are.
 
 Props reach the client as JSON in the wrapper's `data-pv-props` attribute. They include every prop the template or client-side code reads; props read only by server actions stay on the server. When an assign changes, LiveView sends the new JSON and the component re-renders.
 

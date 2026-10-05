@@ -8,7 +8,7 @@ def deps do
 end
 ```
 
-PhoenixVapor brings [Vize](https://hex.pm/packages/vize), which compiles Vue, and [QuickBEAM](https://hex.pm/packages/quickbeam), which runs JavaScript on the server for Reactive mode and the full runtime. [Volt](https://hex.pm/packages/volt) compiles PhoenixVapor's own TypeScript at build time. All of them are precompiled NIFs, so there is no Node.js to install.
+PhoenixVapor brings [Vize](https://hex.pm/packages/vize), which compiles Vue, and [QuickBEAM](https://hex.pm/packages/quickbeam), which runs JavaScript on the server: for Reactive mode and the full runtime, for macros and package components while compiling, and for the few expressions only JavaScript can evaluate. [Volt](https://hex.pm/packages/volt) compiles PhoenixVapor's own TypeScript at build time. All of them are precompiled NIFs, so there is no Node.js to install.
 
 ## Choosing a mode
 
@@ -52,7 +52,7 @@ liveSocket.connect()
 - `getHybridHooks` registers the `PhoenixVaporHybrid` hook for the hybrid components you pass. Each hybrid LiveView compiles its component to `assets/js/hybrid/<Name>.hybrid.js`.
 - `patchLiveSocket` writes value-only diffs for Reactive-mode renders straight to the DOM, skipping LiveView's re-render and morphdom pass. It is optional.
 
-The hybrid client also imports `vue`, so install it in your assets (`mix npm.install vue`).
+The hybrid client is a standard Vue 3 component, so install `vue` (3.5 or later) in your assets (`mix npm.install vue`).
 
 ## Configuration
 
