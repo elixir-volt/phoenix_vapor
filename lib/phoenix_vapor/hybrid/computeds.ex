@@ -25,7 +25,8 @@ defmodule PhoenixVapor.Hybrid.Computeds do
   @type plan :: %{
           constant: [computed()],
           per_render: [computed()],
-          left_out: [{String.t(), [String.t()]}]
+          left_out: [{String.t(), [String.t()]}],
+          reads: %{String.t() => [String.t()] | :any}
         }
 
   @doc """
@@ -77,7 +78,9 @@ defmodule PhoenixVapor.Hybrid.Computeds do
           end
       end)
 
-    Map.new(plan, fn {kind, list} -> {kind, Enum.reverse(list)} end)
+    plan
+    |> Map.new(fn {kind, list} -> {kind, Enum.reverse(list)} end)
+    |> Map.put(:reads, Map.new(compiled, fn {name, expr} -> {name, reads(expr)} end))
   end
 
   # A block body runs as a function's.

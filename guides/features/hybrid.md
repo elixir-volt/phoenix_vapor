@@ -107,16 +107,70 @@ Each hybrid LiveView compiles its component to `assets/js/hybrid/<Name>.hybrid.j
 
 A page can mount the same component several times; each mount has its own props and bridge.
 
+## Composables and libraries
+
+A hybrid component is ordinary Vue code, so it uses composables, such as [VueUse](https://vueuse.org)'s, and libraries, such as [es-toolkit](https://es-toolkit.dev). The server renders the first paint without running the component's JavaScript, so it has only what it can know when compiling:
+
+- the refs' initial values, and computeds that read only those;
+- the props, and computeds that read them, evaluated when rendering;
+- JavaScript's globals, such as `Math`.
+
+A name bound by any other call, such as `const sortKey = useLocalStorage("sort", "name")` or `const { copy, copied } = useClipboard()`, is state only the browser has, and makes the file hybrid even without a `ref()`. Its value on the server is `undefined`.
+
+A computed that reads such a name, or an import such as `sortBy`, or a computed built on either, is left out of the server's render, with a compile-time warning naming what it reads that the server lacks:
+
+```
+warning: computed `filtered` reads `debouncedSearch`, `sortBy`, which only the browser has,
+so the server leaves it, and what reads it, out of the first paint
+```
+
+An expression that reads a left-out computed isn't rendered, and a `v-if` chain whose condition reads one renders no branch, so the first paint shows neither the list nor "No contacts match"; the browser renders both when it mounts.
+
+### Elixir counterparts for computeds
+
+To have such a computed in the first paint, define its counterpart in `<script lang="elixir">`: the function of the same name in snake_case, taking the assigns, which hold the props, the refs' values and the computeds before it:
+
+```vue
+<script setup>
+import { ref, computed } from "vue"
+import { sortBy } from "es-toolkit"
+import { refDebounced } from "@vueuse/core"
+
+const props = defineProps(["contacts"])
+const search = ref("")
+const debouncedSearch = refDebounced(search, 150)
+
+const filtered = computed(() =>
+  sortBy(props.contacts.filter((c) => c.name.includes(debouncedSearch.value)), ["name"])
+)
+</script>
+
+<script lang="elixir">
+def filtered(%{contacts: contacts, search: search}) do
+  contacts
+  |> Enum.filter(&String.contains?(&1["name"], search))
+  |> Enum.sort_by(& &1["name"])
+end
+</script>
+```
+
+The server calls `filtered/1` on every render, and in a session replay with the recorded state. It reads `search` rather than `debouncedSearch`, which only the browser has. The two versions can drift apart: if they disagree, the list changes when the browser mounts, which is visible but not an error. A computed named after a LiveView callback, such as `render` or `mount`, can't have a counterpart; rename the computed.
+
+### Callbacks in the template
+
+An expression only JavaScript evaluates, such as `contact.name.split(" ").map((n) => n[0]).join("")`, runs in QuickBEAM on every server render, with a compile-time warning. Compute it in the data the server sends, or move it into a computed with an Elixir counterpart, to keep rendering in Elixir.
+
 ## Session replay
 
 A session replayer such as [PhoenixReplay](https://github.com/elixir-volt/phoenix_replay) records the assigns each render changed, then shows the session by rendering the view with them, without running `mount/3`, events, or the page's JavaScript. Server-only templates, Reactive mode and the full runtime replay as they are, since `render/1` reads only assigns; their QuickBEAM runtimes live in `socket.private`, out of the recording.
 
-A hybrid component's refs live in the browser, so the server never sees them change. They're recorded through PhoenixReplay's client-state events on `window`, so PhoenixVapor depends on PhoenixReplay neither in Elixir nor in JavaScript:
+A hybrid component's client state lives in the browser, so the server never sees it change. It's recorded through PhoenixReplay's client-state events on `window`, so PhoenixVapor depends on PhoenixReplay neither in Elixir nor in JavaScript:
 
-- When recording starts with client state, `phx_replay:start`, each hybrid component reports all of its refs as a `phx_replay:state` event, and then, as they change, only the refs that changed. A component that mounts during a recording, or whose bridge loads after it started, reports its refs then; it reads the `data-phx-replay` attribute PhoenixReplay sets on `<html>` while recording. Before `phx_replay:start`, and after `phx_replay:stop`, nothing is dispatched.
+- Only the client state the server's render reads is recorded: what the template reads, and what the computeds and Elixir counterparts it reads read in turn, refs and composables' results alike. State nothing renders, such as a pointer position from `useMouse`, isn't recorded.
+- When recording starts with client state, `phx_replay:start`, each hybrid component reports all of that state as a `phx_replay:state` event, and then, as it changes, the latest value of each part that changed, at most once per PhoenixReplay's flush interval. A component that mounts during a recording, or whose bridge loads after it started, reports its state then; it reads the `data-phx-replay` attribute PhoenixReplay sets on `<html>` while recording. Before `phx_replay:start`, and after `phx_replay:stop`, nothing is dispatched.
 - The state key is `phoenix_vapor:` and the component's wrapper id, such as `phoenix_vapor:pv-Contacts`, which stays the same across reconnects.
 - Only plain data is reported: strings, numbers, booleans, `null`, arrays and plain objects. A ref holding anything else, such as a template ref to an element, or `undefined`, is reported as `null`, so the replay doesn't keep an earlier value.
 
-Each hybrid LiveView also defines `replay_render/1`, which the replay calls instead of `render/1`: the same template without the client hook and `phx-update="ignore"`, with the refs recorded under the component's key in `@phoenix_replay_state` in place of their initial values, and the computeds evaluated with them. `render/1` never uses recorded refs.
+Each hybrid LiveView also defines `replay_render/1`, which the replay calls instead of `render/1`: the same template without the client hook and `phx-update="ignore"`, with the state recorded under the component's key in `@phoenix_replay_state` in place of the refs' initial values, and the computeds and their Elixir counterparts evaluated with it. `render/1` never uses recorded state. A package component the server rendered when compiling, such as Reka's tabs, shows its initial state throughout a replay.
 
 PhoenixReplay drops a report whose changes exceed 8,192 bytes of JSON. Each report carries only the refs that changed, so this matters only for a single ref holding that much, such as a large list kept in a ref: changes to it aren't recorded.

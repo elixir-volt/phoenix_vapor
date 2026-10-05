@@ -17,11 +17,17 @@ export interface Bridge {
   ): void
   handleEvent(event: string, callback: (payload: unknown) => void): void
   /** Reports `refs` while a session replayer records; see `reportRefs`. */
-  record?(refs: Refs, watch: Watch): void
+  record?(sources: Sources, watch: Watch, toValue: ToValue): void
 }
 
-/** A component's refs by name, as `<script setup>` declares them. */
-export type Refs = Record<string, { value: unknown }>
+/**
+ * The client state a session replay needs, by name, as `<script setup>`
+ * declares it: refs, composables' results, `reactive()` objects.
+ */
+export type Sources = Record<string, unknown>
+
+/** Vue's `toValue`, which unwraps a ref or a getter. */
+export type ToValue = (source: unknown) => unknown
 
 /** Vue's `watch`, which the generated module passes in. */
 export type Watch = (
@@ -85,27 +91,29 @@ const START_EVENT = "phx_replay:start"
 const STOP_EVENT = "phx_replay:stop"
 const STATE_EVENT = "phx_replay:state"
 
-type Reporter = { start(): void; stop(): void }
+type Settings = { flush?: number }
+type Reporter = { start(settings: Settings): void; stop(): void }
 
 const reporters = new Set<Reporter>()
 
-// Whether client state is being recorded, from the attribute on `<html>`.
-function recordingState(): boolean {
+// The client-state settings while they're recorded, from the attribute on
+// `<html>`, or null.
+function recordingState(): Settings | null {
   const recording = document.documentElement.dataset.phxReplay
-  if (!recording) return false
+  if (!recording) return null
 
   try {
-    return (JSON.parse(recording) as { state?: unknown }).state != null
+    return (JSON.parse(recording) as { state?: Settings | null }).state ?? null
   } catch {
-    return false
+    return null
   }
 }
 
 if (typeof window !== "undefined") {
   window.addEventListener(START_EVENT, (event) => {
-    const detail = (event as CustomEvent<{ state?: unknown } | null>).detail
-    if (detail?.state == null) return
-    for (const reporter of reporters) reporter.start()
+    const settings = (event as CustomEvent<{ state?: Settings | null } | null>).detail?.state
+    if (settings == null) return
+    for (const reporter of reporters) reporter.start(settings)
   })
 
   window.addEventListener(STOP_EVENT, () => {
@@ -114,39 +122,53 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Reports a component's refs under `key` while client state is recorded:
- * all of them when recording starts, or when the component mounts during
- * one, then each ref that changes. Each ref has its own watcher, so a change
- * copies only that ref.
+ * Reports a component's client state under `key` while it's recorded: all
+ * of it when recording starts, or when the component mounts during one, then
+ * the latest value of each source that changed, at most once per the
+ * replayer's flush interval, so state that changes at frame rate, such as a
+ * pointer position, costs one report per flush.
  */
-function reportRefs(hook: HookContext, key: string): (refs: Refs, watch: Watch) => void {
+function reportRefs(
+  hook: HookContext,
+  key: string
+): (sources: Sources, watch: Watch, toValue: ToValue) => void {
   const report = (changes: Record<string, unknown>) =>
     window.dispatchEvent(new CustomEvent(STATE_EVENT, { detail: { key, changes } }))
 
-  return (refs, watch) => {
+  return (sources, watch, toValue) => {
     let stops: Array<() => void> = []
+    let pending: Record<string, unknown> = {}
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const flush = () => {
+      timer = undefined
+      const changes = pending
+      pending = {}
+      if (Object.keys(changes).length > 0) report(changes)
+    }
 
     const reporter: Reporter = {
-      start() {
+      start(settings) {
         reporter.stop()
 
         const values: Record<string, unknown> = {}
         const last: Record<string, string> = {}
 
-        for (const [name, ref] of Object.entries(refs)) {
-          values[name] = plainValue(ref.value)
+        for (const [name, source] of Object.entries(sources)) {
+          values[name] = plainValue(toValue(source))
           last[name] = JSON.stringify(values[name])
 
           const changed = () => {
-            const value = plainValue(ref.value)
+            const value = plainValue(toValue(source))
             const json = JSON.stringify(value)
             if (json === last[name]) return
 
             last[name] = json
-            report({ [name]: value })
+            pending[name] = value
+            timer ??= setTimeout(flush, settings.flush ?? 0)
           }
 
-          stops.push(watch(() => ref.value, changed, { deep: true, immediate: false }))
+          stops.push(watch(() => toValue(source), changed, { deep: true, immediate: false }))
         }
 
         report(values)
@@ -154,11 +176,15 @@ function reportRefs(hook: HookContext, key: string): (refs: Refs, watch: Watch) 
       stop() {
         for (const stop of stops) stop()
         stops = []
+        clearTimeout(timer)
+        timer = undefined
+        pending = {}
       }
     }
 
     reporters.add(reporter)
-    if (recordingState()) reporter.start()
+    const settings = recordingState()
+    if (settings) reporter.start(settings)
 
     hook.stopReporting = () => {
       reporter.stop()

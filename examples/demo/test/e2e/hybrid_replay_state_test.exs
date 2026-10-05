@@ -4,30 +4,47 @@ defmodule VaporDemo.E2E.HybridReplayStateTest do
   @tag timeout: 30_000
 
   # A session replayer such as PhoenixReplay starts recording with a
-  # `phx_replay:start` window event and collects `phx_replay:state` reports.
-  # This collects them itself, and puts what it saw on the body to assert on.
+  # `phx_replay:start` window event, its client-state settings as the detail,
+  # and collects `phx_replay:state` reports. This collects them itself, and
+  # puts what it saw on the body to assert on, after the flush interval.
   @collect """
   window.__pvStates = []
   window.addEventListener("phx_replay:state", (e) => window.__pvStates.push(e.detail))
   """
 
   @expose """
-  document.body.dataset.states = String(window.__pvStates.length)
-  const last = window.__pvStates.at(-1)
-  document.body.dataset.key = last ? last.key : ""
-  document.body.dataset.changes = last ? Object.keys(last.changes).sort().join(",") : ""
-  document.body.dataset.tab = last && "tab" in last.changes ? last.changes.tab : ""
+  (async () => {
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    const last = window.__pvStates.at(-1)
+    document.body.dataset.states = String(window.__pvStates.length)
+    document.body.dataset.key = last ? last.key : ""
+    document.body.dataset.changes = last ? Object.keys(last.changes).sort().join(",") : ""
+    document.body.dataset.search = last && "search" in last.changes ? last.changes.search : ""
+  })()
   """
 
-  test "reports a hybrid component's refs only while recorded, then only what changed",
+  @start ~s|window.dispatchEvent(new CustomEvent("phx_replay:start", {detail: {state: {flush: 50}}}))|
+
+  # Types into the search box the way a user does, one input event per key.
+  defp type(conn, text) do
+    evaluate(conn, """
+    const input = document.querySelector("input[type=search], input[placeholder*=Search]")
+    for (const char of #{Jason.encode!(text)}) {
+      input.value += char
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+    """)
+  end
+
+  test "reports the client state the render reads, only while recorded, then coalesced changes",
        %{conn: conn} do
     conn
-    |> visit("/playground/hybrid")
+    |> visit("/contacts")
     |> assert_has(".phx-connected")
     |> assert_has("[data-v-app]")
     |> evaluate(@collect)
-    # Nothing goes out before recording starts, even when refs change.
-    |> click("[role=tab]", "Members")
+    # Nothing goes out before recording starts, even when state changes.
+    |> type("a")
     |> evaluate(@expose)
     |> assert_has(~s|body[data-states="0"]|)
     # A start without client state reports nothing either.
@@ -36,29 +53,24 @@ defmodule VaporDemo.E2E.HybridReplayStateTest do
     )
     |> evaluate(@expose)
     |> assert_has(~s|body[data-states="0"]|)
-    # On start, all of the component's refs.
-    |> evaluate(
-      ~s|window.dispatchEvent(new CustomEvent("phx_replay:start", {detail: {state: {}}}))|
-    )
+    # On start, all of the state the server render reads.
+    |> evaluate(@start)
     |> evaluate(@expose)
-    |> assert_has(
-      ~s|body[data-states="1"][data-key="phoenix_vapor:pv-ProjectSettings"][data-tab="members"]|
-    )
-    |> assert_has(
-      ~s|body[data-changes="emailAlerts,name,removeTarget,roleFilter,tab,weeklyDigest"]|
-    )
-    # Then only the refs that changed.
-    |> click("[role=tab]", "General")
+    |> assert_has(~s|body[data-states="1"][data-key="phoenix_vapor:pv-HybridContacts"]|)
+    |> assert_has(~s|body[data-changes="search,selectedIds,sortKey"][data-search="a"]|)
+    # Typing three more characters within one flush is one report, of only
+    # the search, with its latest value.
+    |> type("li")
     |> evaluate(@expose)
-    |> assert_has(~s|body[data-states="2"][data-changes="tab"][data-tab="general"]|)
+    |> assert_has(~s|body[data-states="2"][data-changes="search"][data-search="ali"]|)
     # After stop, nothing.
     |> evaluate(~s|window.dispatchEvent(new CustomEvent("phx_replay:stop"))|)
-    |> click("[role=tab]", "Members")
+    |> type("c")
     |> evaluate(@expose)
     |> assert_has(~s|body[data-states="2"]|)
   end
 
-  test "a component that mounts during a recording reports its refs then", %{conn: conn} do
+  test "a component that mounts during a recording reports its state then", %{conn: conn} do
     conn
     |> visit("/playground/hybrid")
     |> assert_has(".phx-connected")
@@ -66,13 +78,15 @@ defmodule VaporDemo.E2E.HybridReplayStateTest do
     |> evaluate(@collect)
     # Recording started before this component, or before the bridge loaded:
     # only the attribute on <html> says so.
-    |> evaluate(~s|document.documentElement.dataset.phxReplay = JSON.stringify({state: {}})|)
+    |> evaluate(
+      ~s|document.documentElement.dataset.phxReplay = JSON.stringify({state: {flush: 50}})|
+    )
     |> evaluate(
       ~s|liveSocket.execJS(document.body, JSON.stringify([["navigate", {href: "/contacts"}]]))|
     )
     |> assert_has("h1", text: "Contacts")
     |> evaluate(@expose)
     |> assert_has(~s|body[data-key="phoenix_vapor:pv-HybridContacts"]|)
-    |> assert_has(~s|body[data-changes="deleteTarget,search,selectedIds,sortKey"]|)
+    |> assert_has(~s|body[data-changes="search,selectedIds,sortKey"]|)
   end
 end

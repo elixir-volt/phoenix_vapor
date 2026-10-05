@@ -1,13 +1,14 @@
 <script setup>
 import { ref, computed } from "vue"
 import { sortBy } from "es-toolkit"
-import { refDebounced, useLocalStorage } from "@vueuse/core"
+import { refDebounced, useLocalStorage, useMouse } from "@vueuse/core"
 
 const props = defineProps(["contacts"])
 
 const search = ref("")
 const debouncedSearch = refDebounced(search, 150)
 const sortKey = useLocalStorage("contacts:sort", "name")
+const { x, y } = useMouse()
 
 // Reads a composable's result, which only the browser has.
 const matching = computed(() => props.contacts.filter(c => c.name.includes(debouncedSearch.value)))

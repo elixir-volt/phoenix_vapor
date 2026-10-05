@@ -24,12 +24,17 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       those that read props, compiled and ordered, from
       `PhoenixVapor.Hybrid.Computeds.compile/1`
     * `:component` — the component's name, for its wrapper element
+    * `:recorded` — the client state a replay takes from
+      `@phoenix_replay_state`; by default, the refs
   """
   def gen_render(split, classification, opts \\ []) do
     spec = %{
       split: split,
       client_props: classification.client_props,
-      refs: for({name, {:client_ref, _init}} <- classification.bindings, do: name),
+      recorded:
+        Keyword.get_lazy(opts, :recorded, fn ->
+          for {name, {:client_ref, _init}} <- classification.bindings, do: name
+        end),
       values: Keyword.get(opts, :values, %{}),
       constant: Keyword.get(opts, :constant, []),
       computeds: Keyword.get(opts, :computeds, []),
@@ -126,7 +131,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     case recorded do
       %{} = recorded when map_size(recorded) > 0 ->
         refs =
-          for name <- spec.refs, Map.has_key?(recorded, name), into: %{} do
+          for name <- spec.recorded, Map.has_key?(recorded, name), into: %{} do
             {PhoenixVapor.Renderer.Names.existing(name), recorded[name]}
           end
 
@@ -148,7 +153,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
 
     names =
       if "phoenix_replay_state" in names,
-        do: MapSet.union(names, MapSet.new(spec.refs)),
+        do: MapSet.union(names, MapSet.new(spec.recorded)),
         else: names
 
     names =

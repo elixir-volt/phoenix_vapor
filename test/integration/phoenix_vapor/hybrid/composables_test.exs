@@ -95,4 +95,31 @@ defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest do
 
     assert Exception.message(error) =~ "`render` is a LiveView callback"
   end
+
+  describe "recording" do
+    test "registers only the client state the render reads, through computeds too" do
+      js = __MODULE__.ContactsLive.__hybrid_client_js__()
+
+      # The template reads search and sortKey. debouncedSearch feeds only a
+      # computed the server leaves out, and nothing reads useMouse's x and y.
+      assert js =~ "__pv?.record({ search, sortKey });"
+    end
+
+    test "a replay renders recorded composable state" do
+      state = %{"phoenix_vapor:pv-HybridComposables" => %{"sortKey" => "email"}}
+
+      html =
+        %{contacts: @contacts, phoenix_replay_state: state, __changed__: nil}
+        |> __MODULE__.ContactsLive.replay_render()
+        |> html()
+
+      assert html =~ "sorted by email"
+    end
+
+    test "an Elixir counterpart's reads are recorded" do
+      # matching's counterpart reads search.
+      js = __MODULE__.TwinsLive.__hybrid_client_js__()
+      assert js =~ "__pv?.record({ search, sortKey });"
+    end
+  end
 end

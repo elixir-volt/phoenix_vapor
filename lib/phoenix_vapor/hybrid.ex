@@ -28,8 +28,10 @@ defmodule PhoenixVapor.Hybrid do
   # stubs, and its client module.
   @spec build(SFC.t(), keyword(), Macro.Env.t()) :: Macro.t()
   def build(%SFC{} = sfc, opts, caller) do
+    twins = twins(sfc, caller.module)
+
     %{constant: constant, per_render: per_render, left_out: left_out} =
-      Computeds.compile(sfc.setup, twins(sfc, caller.module))
+      plan = Computeds.compile(sfc.setup, twins)
 
     Enum.each(left_out, &warn_left_out(&1, sfc.file))
 
@@ -57,19 +59,21 @@ defmodule PhoenixVapor.Hybrid do
 
     classification = Classifier.classify(sfc.setup, Renderer.assign_keys(split))
     component_name = Path.basename(sfc.file, ".vue")
+    recorded = recorded(sfc, split, plan)
 
     render_ast =
       ServerCodegen.gen_render(split, classification,
         values: values,
         constant: constant,
         computeds: per_render,
-        component: component_name
+        component: component_name,
+        recorded: recorded
       )
 
     event_asts = ServerCodegen.gen_handle_events(classification)
 
     client_output_dir = Keyword.get(opts, :client_output, default_client_output())
-    client_js = generate_client_js(sfc, classification, client_output_dir)
+    client_js = generate_client_js(sfc, classification, recorded, client_output_dir)
 
     escaped_classification = Macro.escape(classification)
     escaped_client_js = Macro.escape(client_js)
@@ -128,6 +132,36 @@ defmodule PhoenixVapor.Hybrid do
     end
   end
 
+  # The client state a session replay needs: what the template reads, and
+  # what the computeds it reads read in turn, an Elixir counterpart's from its
+  # patterns. Recording anything else, such as a mouse position, would only
+  # flood the recording.
+  defp recorded(%SFC{setup: setup} = sfc, split, plan) do
+    client = MapSet.new(Map.keys(setup.refs) ++ setup.client_bindings)
+
+    reads = fn name ->
+      case plan.reads[name] do
+        :any -> SFC.elixir_reads(sfc, Macro.underscore(name))
+        keys -> keys || []
+      end
+    end
+
+    split
+    |> Renderer.assign_keys()
+    |> Enum.reduce(MapSet.new(), &read(&1, &2, reads))
+    |> MapSet.intersection(client)
+    |> Enum.sort()
+    # Declared names get their atoms while compiling; a replay only looks
+    # them up.
+    |> tap(&Enum.each(&1, fn name -> PhoenixVapor.Renderer.Names.atom!(name) end))
+  end
+
+  defp read(name, seen, reads) do
+    if MapSet.member?(seen, name),
+      do: seen,
+      else: name |> reads.() |> Enum.reduce(MapSet.put(seen, name), &read(&1, &2, reads))
+  end
+
   defp warn_left_out({name, missing}, file) do
     IO.warn(
       "computed `#{name}` reads #{Enum.map_join(missing, ", ", &"`#{&1}`")}, which only the " <>
@@ -153,8 +187,8 @@ defmodule PhoenixVapor.Hybrid do
       values
   end
 
-  defp generate_client_js(%SFC{file: full_path} = sfc, classification, output_dir) do
-    codegen_opts = [source_dir: Path.dirname(full_path), output_dir: output_dir]
+  defp generate_client_js(%SFC{file: full_path} = sfc, classification, recorded, output_dir) do
+    codegen_opts = [source_dir: Path.dirname(full_path), output_dir: output_dir, record: recorded]
 
     case ClientCodegen.generate(sfc.source, classification, codegen_opts) do
       {:ok, js} ->

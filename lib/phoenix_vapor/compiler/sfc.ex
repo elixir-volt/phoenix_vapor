@@ -96,6 +96,38 @@ defmodule PhoenixVapor.Compiler.SFC do
     end)
   end
 
+  @doc """
+  The assign keys a `<script lang="elixir">` function reads from its
+  argument, from its clauses' map patterns and `assigns.key` access: an
+  over-approximation, for deciding what to record.
+  """
+  @spec elixir_reads(t(), String.t()) :: [String.t()]
+  def elixir_reads(%__MODULE__{elixir: elixir}, function) do
+    name = String.to_existing_atom(function)
+
+    elixir
+    |> Enum.filter(&defines?(&1, name))
+    |> Macro.prewalk([], fn
+      {:%{}, _meta, pairs} = node, acc when is_list(pairs) ->
+        {node, for({key, _value} when is_atom(key) <- pairs, do: Atom.to_string(key)) ++ acc}
+
+      {{:., _, [{_var, _, context}, key]}, _meta, []} = node, acc
+      when is_atom(key) and is_atom(context) ->
+        {node, [Atom.to_string(key) | acc]}
+
+      node, acc ->
+        {node, acc}
+    end)
+    |> elem(1)
+    |> Enum.uniq()
+  end
+
+  defp defines?({:def, _meta, [{:when, _, [head | _guards]} | _body]}, name),
+    do: defines?({:def, [], [head]}, name)
+
+  defp defines?({:def, _meta, [{name, _, _args} | _body]}, name), do: true
+  defp defines?(_expr, _name), do: false
+
   defp signature({:when, _meta, [head | _guards]}), do: signature(head)
 
   defp signature({name, _meta, args}) when is_atom(name) do

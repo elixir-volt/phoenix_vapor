@@ -94,9 +94,13 @@ Initial render: server sends statics + dynamics, with the props JSON as the wrap
 - **Client → Server**: `"use server"` function → `pushEvent` → `handle_event` → assign change → back to step 1
 - **Client → Client**: `ref` mutation → computed recomputation → Vue re-render. No wire.
 
+### Hybrid Computeds
+
+`Hybrid.Computeds.compile/2` decides, in dependency order, how the server gets each computed: once while compiling when it reads only refs, on every render when it reads props, through its `<script lang="elixir">` counterpart when there is one, or not at all when it reads something only the browser has, such as a composable's result (`ScriptSetup.client_bindings`) or an import. A left-out computed is passed to the compiler as `:browser_only`: an expression reading it is unrendered, and a `v-if` chain stops at an unrendered condition.
+
 ### Session Replay
 
-A replayer such as PhoenixReplay renders a recorded view from its recorded assigns alone; the QuickBEAM runtimes of Reactive mode and the full runtime live in `socket.private`, out of the recording. A hybrid component's refs live in the browser: `browser/hybrid-bridge.ts` reports them as `phx_replay:state` window events between `phx_replay:start` and `phx_replay:stop` (or while `<html data-phx-replay>` says a recording is running), all of them on start and then each one that changes, through a watcher per ref, under `phoenix_vapor:<wrapper id>`. The generated `replay_render/1` (`Hybrid.ServerCodegen.build_rendered/3` in `:replay` mode) reads them from `@phoenix_replay_state`, renders without the client hook, and maps a changed `:phoenix_replay_state` or prop to the refs and computeds the template reads, for tracked re-renders. See the Hybrid guide.
+A replayer such as PhoenixReplay renders a recorded view from its recorded assigns alone; the QuickBEAM runtimes of Reactive mode and the full runtime live in `socket.private`, out of the recording. A hybrid component's client state lives in the browser. `Hybrid.build` works out which of it the server's render reads (the template, and the computeds and Elixir counterparts it reads), and setup registers those names; `browser/hybrid-bridge.ts` reports them as `phx_replay:state` window events between `phx_replay:start` and `phx_replay:stop` (or while `<html data-phx-replay>` says a recording is running), all of them on start and then the latest value of what changed, through a watcher per name, coalesced per flush interval, under `phoenix_vapor:<wrapper id>`. The generated `replay_render/1` (`Hybrid.ServerCodegen.build_rendered/3` in `:replay` mode) reads them from `@phoenix_replay_state`, renders without the client hook, and maps a changed `:phoenix_replay_state` or prop to the refs and computeds the template reads, for tracked re-renders. See the Hybrid guide.
 
 ### Custom Elixir Code
 
