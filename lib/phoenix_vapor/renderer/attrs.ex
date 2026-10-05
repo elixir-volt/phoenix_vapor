@@ -6,6 +6,8 @@ defmodule PhoenixVapor.Renderer.Attrs do
   # attribute out, a boolean attribute is present only when truthy, and
   # `class` and `style` accept Vue's object and array forms.
 
+  alias PhoenixVapor.Renderer.Value
+
   # Vue's `isBooleanAttr`, from @vue/shared.
   @boolean_attrs ~w(itemscope allowfullscreen formnovalidate ismap nomodule novalidate readonly
                     async autofocus autoplay controls default defer disabled hidden inert loop open
@@ -17,13 +19,13 @@ defmodule PhoenixVapor.Renderer.Attrs do
   def render("style", values), do: attr("style", normalize_style(values))
 
   def render(key, [value]) when key in @boolean_attrs,
-    do: if(truthy?(value) or value == "", do: " " <> key, else: "")
+    do: if(Value.truthy?(value) or value == "", do: " " <> key, else: "")
 
   def render(_key, [value]) when not (is_binary(value) or is_number(value) or is_boolean(value)),
     do: ""
 
   def render(key, values) do
-    case values |> Enum.map(&to_string/1) |> IO.iodata_to_binary() do
+    case values |> Enum.map(&Value.to_js_string/1) |> IO.iodata_to_binary() do
       "" -> " " <> key
       value -> attr(key, value)
     end
@@ -31,7 +33,9 @@ defmodule PhoenixVapor.Renderer.Attrs do
 
   defp attr(key, value), do: [?\s, key, ~s(="), escape(value), ?"] |> IO.iodata_to_binary()
 
-  defp escape(value), do: value |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
+  @doc "HTML-escapes text for an attribute value or text content."
+  @spec escape(term()) :: String.t()
+  def escape(value), do: value |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 
   @doc "Vue's `normalizeClass`: strings, arrays, and objects of class to condition."
   @spec normalize_class(term()) :: String.t()
@@ -43,7 +47,7 @@ defmodule PhoenixVapor.Renderer.Attrs do
 
   def normalize_class(map) when is_map(map) do
     map
-    |> Enum.filter(fn {_class, on} -> truthy?(on) end)
+    |> Enum.filter(fn {_class, on} -> Value.truthy?(on) end)
     |> Enum.map_join(" ", &to_string(elem(&1, 0)))
   end
 
@@ -74,6 +78,4 @@ defmodule PhoenixVapor.Renderer.Attrs do
 
   defp css_property(property),
     do: Regex.replace(~r/\B([A-Z])/, property, "-\\1") |> String.downcase()
-
-  defp truthy?(value), do: value not in [false, nil, 0, "", +0.0]
 end

@@ -8,28 +8,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     defines no `handle_event/3` of its own
   """
 
-  alias PhoenixVapor.Hybrid.Classifier
-
-  @doc """
-  Generate all server-side function ASTs for a hybrid component.
-
-  Returns a list of quoted expressions to be injected into the LiveView module.
-  """
-  @spec generate(
-          split :: map(),
-          classification :: Classifier.classification(),
-          opts :: keyword()
-        ) :: [Macro.t()]
-  def generate(split, classification, opts \\ []) do
-    props = Keyword.get(opts, :props, [])
-
-    [
-      gen_render(split, classification, props),
-      gen_handle_events(classification)
-    ]
-    |> List.flatten()
-  end
-
   @doc """
   Generate the `render/1` function.
 
@@ -37,23 +15,22 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   - All slots evaluated for the initial/full render (SEO, first paint)
   - A `data-pv-props` attribute with JSON-encoded client-consumed props
   - Change tracking that skips client-owned slots when only client props changed
+
+  ## Options
+
+    * `:values` — the refs' initial values and the computeds of only those,
+      by atom, the same on every render
+    * `:computeds` — the computeds that read props, compiled and ordered, from
+      `PhoenixVapor.Hybrid.Computeds.compile/1`
+    * `:component` — the component's name, for its wrapper element
   """
-  def gen_render(split, classification, _props, computeds \\ %{}, component_name \\ nil) do
+  def gen_render(split, classification, opts \\ []) do
     escaped_split = Macro.escape(split)
     client_props = Macro.escape(classification.client_props)
+    escaped_values = opts |> Keyword.get(:values, %{}) |> Macro.escape()
+    escaped_computeds = opts |> Keyword.get(:computeds, []) |> Macro.escape()
 
-    # Ref initializers don't depend on assigns, so evaluate them once here.
-    ref_values =
-      classification
-      |> extract_ref_defaults()
-      |> PhoenixVapor.Compiler.ScriptSetup.eval_initial_state()
-
-    escaped_ref_values = Macro.escape(ref_values)
-
-    computed_exprs = extract_computed_exprs(classification, computeds)
-    escaped_computed_exprs = Macro.escape(computed_exprs)
-
-    escaped_component_name = Macro.escape(component_name)
+    escaped_component_name = Macro.escape(opts[:component])
 
     quote do
       def render(var!(assigns)) do
@@ -61,36 +38,12 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
           unquote(escaped_split),
           var!(assigns),
           unquote(client_props),
-          unquote(escaped_ref_values),
-          unquote(escaped_computed_exprs),
+          unquote(escaped_values),
+          unquote(escaped_computeds),
           unquote(escaped_component_name)
         )
       end
     end
-  end
-
-  defp extract_ref_defaults(classification) do
-    classification.bindings
-    |> Enum.flat_map(fn
-      {name, {:client_ref, init_expr}} -> [{name, init_expr}]
-      _ -> []
-    end)
-    |> Map.new()
-  end
-
-  defp extract_computed_exprs(classification, computeds) do
-    computed_names =
-      classification.bindings
-      |> Enum.flat_map(fn
-        {name, {:mixed_computed, _, _}} -> [name]
-        {name, :client_computed} -> [name]
-        _ -> []
-      end)
-      |> MapSet.new()
-
-    computeds
-    |> Enum.filter(fn {name, _} -> MapSet.member?(computed_names, name) end)
-    |> Map.new()
   end
 
   @doc """
@@ -107,15 +60,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
         split,
         assigns,
         client_props,
-        ref_values,
-        computed_exprs,
+        values,
+        computeds,
         component_name \\ nil
       ) do
     full_assigns =
       assigns
-      |> seed_ref_values(ref_values)
+      |> seed_ref_values(values)
       |> seed_props_alias(client_props)
-      |> eval_computed_defaults(computed_exprs, ref_values)
+      |> eval_computeds(computeds, values)
 
     # The wrapper div is the root tag; the component itself may render text,
     # comments, or several elements.
@@ -184,59 +137,15 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     end)
   end
 
-  defp eval_computed_defaults(assigns, computed_exprs, ref_values) do
-    if computed_exprs == %{} do
-      assigns
-    else
-      eval_computeds_via_quickbeam(assigns, computed_exprs, ref_values)
-    end
-  end
+  # Computeds that read props, evaluated as template expressions are; one whose
+  # inputs didn't change since the process's last render keeps its value.
+  defp eval_computeds(assigns, [], _values), do: assigns
 
-  defp eval_computeds_via_quickbeam(assigns, computed_exprs, ref_values) do
-    if Code.ensure_loaded?(QuickBEAM) do
-      ref_names = MapSet.new(Map.keys(ref_values), &to_string/1)
+  defp eval_computeds(assigns, computeds, values) do
+    {_values, assigns} =
+      PhoenixVapor.Hybrid.Computeds.evaluate(computeds, values, assigns, memo: true)
 
-      vars =
-        assigns
-        |> Enum.filter(fn {k, _} -> is_atom(k) and k not in [:__changed__, :__components__] end)
-        |> Map.new(fn {k, v} ->
-          name = Atom.to_string(k)
-
-          if MapSet.member?(ref_names, name) do
-            {name, %{"value" => v}}
-          else
-            {name, v}
-          end
-        end)
-
-      {:ok, rt} = QuickBEAM.start()
-
-      try do
-        Enum.reduce(computed_exprs, assigns, fn {name, expr}, acc ->
-          case QuickBEAM.eval(rt, wrap_computed_expr(expr), vars: vars) do
-            {:ok, value} ->
-              Map.put(acc, name, value)
-
-            _ ->
-              acc
-          end
-        end)
-      after
-        QuickBEAM.stop(rt)
-      end
-    else
-      assigns
-    end
-  end
-
-  defp wrap_computed_expr(expr) do
-    trimmed = String.trim(expr)
-
-    if String.starts_with?(trimmed, "{") do
-      "(function() #{trimmed})()"
-    else
-      "(#{trimmed})"
-    end
+    assigns
   end
 
   defp encode_client_props(assigns, client_props) do

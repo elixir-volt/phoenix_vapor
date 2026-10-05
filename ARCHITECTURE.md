@@ -116,7 +116,6 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 ### Public
 - `PhoenixVapor` — `use PhoenixVapor`, which picks the mode from the `.vue` file, and `render/2`
 - `PhoenixVapor.Sigil` — `~VUE` sigil
-- `PhoenixVapor.Component` — the `vue/1` helper for function components
 - `PhoenixVapor.Vue` — `.vue` files as function components
 - `PhoenixVapor.Template` — a compiled template
 - `PhoenixVapor.ExpressionError` — an expression that fails when rendering

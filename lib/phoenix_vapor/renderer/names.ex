@@ -16,4 +16,8 @@ defmodule PhoenixVapor.Renderer.Names do
   rescue
     ArgumentError -> name
   end
+
+  @doc "Vue's `camelize`: a `side-offset` attribute is the `sideOffset` prop."
+  @spec camelize(String.t()) :: String.t()
+  def camelize(name), do: Regex.replace(~r/-(\w)/, name, fn _, char -> String.upcase(char) end)
 end

@@ -127,7 +127,7 @@ defmodule PhoenixVapor.Compiler.Packages do
         # Our own `v-for` or `v-if` around package components, such as a
         # tooltip per row, renders each block once here, in its ancestors'
         # context, and stays a hole whose blocks are the rendered templates.
-        slot.kind in [:for, :if] and Enum.any?(blocks(slot), &packages?(&1, packages)) ->
+        slot.kind in [:for, :if] and Enum.any?(Template.blocks(slot), &packages?(&1, packages)) ->
           case captures(slot, packages, known, holes, parts) do
             {:ok, parts, holes} -> {:cont, {:ok, parts, holes}}
             error -> {:halt, error}
@@ -143,19 +143,10 @@ defmodule PhoenixVapor.Compiler.Packages do
     end
   end
 
-  defp blocks(%{kind: :for, block: block}), do: [block]
-  defp blocks(%{kind: :if, branches: branches}), do: Enum.map(branches, & &1.block)
-
   defp packages?(%{slots: slots}, packages) do
-    Enum.any?(slots, fn
-      %{kind: :component, name: name} = slot ->
-        packages.(name) != nil or Enum.any?(slot.slots, &packages?(&1.block, packages))
-
-      %{kind: kind} = slot when kind in [:for, :if] ->
-        Enum.any?(blocks(slot), &packages?(&1, packages))
-
-      _slot ->
-        false
+    Enum.any?(slots, fn slot ->
+      (slot.kind == :component and packages.(slot.name) != nil) or
+        Enum.any?(Template.blocks(slot), &packages?(&1, packages))
     end)
   end
 
@@ -166,7 +157,7 @@ defmodule PhoenixVapor.Compiler.Packages do
     index = length(holes)
 
     slot
-    |> blocks()
+    |> Template.blocks()
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, parts, [slot | holes]}, fn {block, branch}, {:ok, acc, holes} ->
       case parts(block, packages, known, holes) do

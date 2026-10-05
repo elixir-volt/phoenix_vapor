@@ -9,6 +9,8 @@ defmodule PhoenixVapor.Template do
   a `v-if` branch, are templates too.
   """
 
+  alias PhoenixVapor.Renderer.Expr
+
   defstruct statics: [], slots: [], fingerprint: nil, file: nil
 
   @type position :: {pos_integer(), pos_integer()}
@@ -56,6 +58,31 @@ defmodule PhoenixVapor.Template do
     {%{template | slots: slots}, acc}
   end
 
+  @doc """
+  Stores on every slot, in this template and the blocks inside it, the root
+  assign keys its expressions read, its own and its blocks', as `:keys`.
+  Rendering skips a slot none of whose keys changed. Call it again after
+  replacing a template's expressions.
+  """
+  @spec put_keys(block) :: block when block: t() | map()
+  def put_keys(%{slots: slots} = template) do
+    slots =
+      Enum.map(slots, fn slot ->
+        {slot, nil} = map_blocks(slot, nil, &{put_keys(&1), &2})
+        keys = slot |> slot_exprs() |> Enum.flat_map(&Expr.assign_keys/1) |> Enum.uniq()
+        Map.put(slot, :keys, keys -- bound_names(slot))
+      end)
+
+    %{template | slots: slots}
+  end
+
+  # A `v-for` binds its item, key and index names inside its block; they
+  # aren't assigns.
+  defp bound_names(%{kind: :for} = slot),
+    do: for(name <- [slot.value, slot[:key], slot[:index]], is_binary(name), do: name)
+
+  defp bound_names(_slot), do: []
+
   @doc "Every expression in a template, in document order. See `map_exprs/3`."
   @spec exprs(t()) :: [{term(), map()}]
   def exprs(template) do
@@ -99,58 +126,65 @@ defmodule PhoenixVapor.Template do
     end)
   end
 
-  defp map_children(%{kind: :if, branches: branches} = slot, acc, fun) do
-    {branches, acc} =
-      Enum.map_reduce(branches, acc, fn branch, acc ->
-        {branch, acc} = map_fields(branch, [:condition], acc, at(fun, slot))
-        {block, acc} = map_exprs(branch.block, acc, fun)
-        {%{branch | block: block}, acc}
-      end)
+  # Expressions held by what contains a slot's blocks, then the blocks.
+  defp map_children(slot, acc, fun) do
+    {slot, acc} = map_containers(slot, acc, at(fun, slot))
+    map_blocks(slot, acc, &map_exprs(&1, &2, fun))
+  end
 
+  defp map_containers(%{kind: :if, branches: branches} = slot, acc, fun) do
+    {branches, acc} = Enum.map_reduce(branches, acc, &map_fields(&1, [:condition], &2, fun))
     {%{slot | branches: branches}, acc}
   end
 
-  defp map_children(%{kind: :for, block: block} = slot, acc, fun) do
-    {block, acc} = map_exprs(block, acc, fun)
-    {%{slot | block: block}, acc}
-  end
-
-  defp map_children(%{kind: :component} = slot, acc, fun) do
-    {props, acc} = map_props(slot.props, acc, at(fun, slot))
-
-    {contents, acc} =
-      Enum.map_reduce(slot.slots, acc, fn content, acc ->
-        {content, acc} = map_fields(content, [:name_value], acc, at(fun, slot))
-        {block, acc} = map_exprs(content.block, acc, fun)
-        {%{content | block: block}, acc}
-      end)
-
+  defp map_containers(%{kind: :component} = slot, acc, fun) do
+    {props, acc} = map_props(slot.props, acc, fun)
+    {contents, acc} = Enum.map_reduce(slot.slots, acc, &map_fields(&1, [:name_value], &2, fun))
     {%{slot | props: props, slots: contents}, acc}
   end
 
-  defp map_children(%{kind: :slot} = slot, acc, fun) do
-    {props, acc} = map_props(slot.props, acc, at(fun, slot))
-
-    {fallback, acc} =
-      case slot.fallback do
-        nil -> {nil, acc}
-        block -> map_exprs(block, acc, fun)
-      end
-
-    {%{slot | props: props, fallback: fallback}, acc}
-  end
-
-  defp map_children(%{kind: :fragment, template: template} = slot, acc, fun) do
-    {template, acc} = map_exprs(template, acc, fun)
-    {%{slot | template: template}, acc}
-  end
-
-  defp map_children(%{kind: :root_attrs} = slot, acc, fun) do
-    {props, acc} = map_props(slot.props, acc, at(fun, slot))
+  defp map_containers(%{kind: kind} = slot, acc, fun) when kind in [:slot, :root_attrs] do
+    {props, acc} = map_props(slot.props, acc, fun)
     {%{slot | props: props}, acc}
   end
 
-  defp map_children(slot, acc, _fun), do: {slot, acc}
+  defp map_containers(slot, acc, _fun), do: {slot, acc}
+
+  @doc """
+  Maps the blocks directly inside a slot, threading an accumulator: a
+  `v-if`'s branches, a `v-for`'s body, a component's slot content, a
+  `<slot>`'s fallback, and a fragment's template. Other slots have none.
+  """
+  @spec map_blocks(map(), acc, (block, acc -> {block, acc})) :: {map(), acc}
+        when acc: term(), block: t() | map()
+  def map_blocks(%{kind: :if, branches: branches} = slot, acc, fun) do
+    {branches, acc} = Enum.map_reduce(branches, acc, &map_block(&1, :block, &2, fun))
+    {%{slot | branches: branches}, acc}
+  end
+
+  def map_blocks(%{kind: :for} = slot, acc, fun), do: map_block(slot, :block, acc, fun)
+
+  def map_blocks(%{kind: :component, slots: contents} = slot, acc, fun) do
+    {contents, acc} = Enum.map_reduce(contents, acc, &map_block(&1, :block, &2, fun))
+    {%{slot | slots: contents}, acc}
+  end
+
+  def map_blocks(%{kind: :slot, fallback: nil} = slot, acc, _fun), do: {slot, acc}
+  def map_blocks(%{kind: :slot} = slot, acc, fun), do: map_block(slot, :fallback, acc, fun)
+  def map_blocks(%{kind: :fragment} = slot, acc, fun), do: map_block(slot, :template, acc, fun)
+  def map_blocks(slot, acc, _fun), do: {slot, acc}
+
+  defp map_block(container, field, acc, fun) do
+    {block, acc} = fun.(Map.fetch!(container, field), acc)
+    {Map.put(container, field, block), acc}
+  end
+
+  @doc "The blocks directly inside a slot. See `map_blocks/3`."
+  @spec blocks(map()) :: [t() | map()]
+  def blocks(slot) do
+    {_slot, blocks} = map_blocks(slot, [], &{&1, [&1 | &2]})
+    Enum.reverse(blocks)
+  end
 
   # Expressions in a slot's props, branches, and slot contents are reported
   # with the slot, which has their position.

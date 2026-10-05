@@ -5,33 +5,15 @@ defmodule PhoenixVapor.Renderer do
 
   alias PhoenixVapor.{ExpressionError, Template}
   alias PhoenixVapor.Compiler.Split
-  alias PhoenixVapor.Renderer.{Attrs, Expr, Names}
+  alias PhoenixVapor.Renderer.{Attrs, Expr, Names, Value}
 
-  def inject_scope_id(%Phoenix.LiveView.Rendered{static: static} = rendered, scope_id) do
-    case static do
-      [first | rest] ->
-        %{rendered | static: [inject_attr_into_first_tag(first, scope_id) | rest]}
+  @doc """
+  Renders a template against assigns.
 
-      _ ->
-        rendered
-    end
-  end
-
-  # A tag name ends at whitespace, "/" or ">", so the attribute goes right
-  # after it; attribute values may contain ">".
-  defp inject_attr_into_first_tag(html, attr) do
-    case Regex.run(~r{\A\s*<[a-zA-Z][^\s/>]*}, html) do
-      [open] ->
-        open <>
-          " " <> attr <> binary_part(html, byte_size(open), byte_size(html) - byte_size(open))
-
-      nil ->
-        html
-    end
-  end
-
-  # ── Rendering ──
-
+    * `:root_attrs` — attributes to put on the root element of a template
+      compiled with `root_attrs: true`, as a parent's fall through to a child
+      component's
+  """
   @spec to_rendered(Template.t() | map(), map(), keyword()) :: Phoenix.LiveView.Rendered.t()
   def to_rendered(template, assigns, opts \\ [])
 
@@ -46,6 +28,12 @@ defmodule PhoenixVapor.Renderer do
   defp render_block(template, assigns), do: render(template, assigns, root: nil)
 
   defp render(%Template{statics: statics, slots: slots} = template, assigns, opts) do
+    assigns =
+      case opts[:root_attrs] do
+        nil -> assigns
+        attrs -> Map.put(assigns, :__vapor_attrs__, attrs)
+      end
+
     dynamic = fn track_changes? ->
       changed =
         case assigns do
@@ -64,11 +52,6 @@ defmodule PhoenixVapor.Renderer do
         end
       end)
     end
-
-    statics =
-      if Keyword.get(opts, :vapor_metadata, false),
-        do: inject_vapor_metadata(statics, slots),
-        else: statics
 
     %Phoenix.LiveView.Rendered{
       static: statics,
@@ -101,12 +84,10 @@ defmodule PhoenixVapor.Renderer do
     |> Enum.uniq()
   end
 
-  defp slot_keys(slot), do: slot |> Template.slot_exprs() |> Enum.flat_map(&Expr.assign_keys/1)
-
   # ── Slot evaluation ──
 
   defp eval_slot(%{kind: :text, value: value}, assigns),
-    do: value |> Expr.eval(assigns) |> display() |> escape()
+    do: value |> Expr.eval(assigns) |> Value.display() |> Attrs.escape()
 
   # A package component rendered at compile time, with the template's own
   # content inside it.
@@ -114,7 +95,7 @@ defmodule PhoenixVapor.Renderer do
     do: render_block(template, assigns)
 
   defp eval_slot(%{kind: :html, value: value}, assigns),
-    do: value |> Expr.eval(assigns) |> display()
+    do: value |> Expr.eval(assigns) |> Value.display()
 
   defp eval_slot(%{kind: :attr} = slot, assigns) do
     name = slot.name || to_string(Expr.eval(slot.name_value, assigns))
@@ -127,7 +108,7 @@ defmodule PhoenixVapor.Renderer do
 
       "style" ->
         Attrs.render("style", [
-          [slot.static, value, if(truthy?(show), do: nil, else: "display:none")]
+          [slot.static, value, if(Value.truthy?(show), do: nil, else: "display:none")]
         ])
 
       name when slot.value == nil ->
@@ -146,14 +127,14 @@ defmodule PhoenixVapor.Renderer do
   end
 
   defp eval_slot(%{kind: :model, tag: "textarea", value: value}, assigns),
-    do: value |> Expr.eval(assigns) |> display() |> escape()
+    do: value |> Expr.eval(assigns) |> Value.display() |> Attrs.escape()
 
   defp eval_slot(%{kind: :model} = slot, assigns) do
     value = Expr.eval(slot.value, assigns)
 
     case slot.type do
       "checkbox" when is_list(value) -> Attrs.render("checked", [slot.static_value in value])
-      "checkbox" -> Attrs.render("checked", [truthy?(value)])
+      "checkbox" -> Attrs.render("checked", [Value.truthy?(value)])
       "radio" -> Attrs.render("checked", [value == slot.static_value])
       _type -> Attrs.render("value", [value])
     end
@@ -161,7 +142,7 @@ defmodule PhoenixVapor.Renderer do
 
   defp eval_slot(%{kind: :if, branches: branches}, assigns) do
     Enum.find_value(branches, "", fn %{condition: condition, block: block} ->
-      if condition == nil or truthy?(Expr.eval(condition, assigns)),
+      if condition == nil or Value.truthy?(Expr.eval(condition, assigns)),
         do: render_block(block, assigns)
     end)
   end
@@ -204,9 +185,9 @@ defmodule PhoenixVapor.Renderer do
     {props, attrs} =
       slot.props
       |> eval_props(assigns)
-      |> Enum.split_with(fn {key, _value} -> camelize(key) in component.props end)
+      |> Enum.split_with(fn {key, _value} -> Names.camelize(key) in component.props end)
 
-    props = Map.new(props, fn {key, value} -> {camelize(key), value} end)
+    props = Map.new(props, fn {key, value} -> {Names.camelize(key), value} end)
     declared = Map.new(component.props, &{&1, Map.get(props, &1)})
 
     child_assigns =
@@ -239,7 +220,9 @@ defmodule PhoenixVapor.Renderer do
     name = slot.name || to_string(Expr.eval(slot.name_value, assigns))
 
     slot_props =
-      slot.props |> eval_props(assigns) |> Map.new(fn {key, value} -> {camelize(key), value} end)
+      slot.props
+      |> eval_props(assigns)
+      |> Map.new(fn {key, value} -> {Names.camelize(key), value} end)
 
     case Map.get(Map.get(assigns, :__vapor_slots__, %{}), name) do
       nil when slot.fallback == nil -> ""
@@ -262,7 +245,7 @@ defmodule PhoenixVapor.Renderer do
       end)
 
     own =
-      if show && not truthy?(Expr.eval(show, assigns)),
+      if show && not Value.truthy?(Expr.eval(show, assigns)),
         do: own ++ [{"style", "display:none"}],
         else: own
 
@@ -368,26 +351,6 @@ defmodule PhoenixVapor.Renderer do
   defp loop_items(n) when is_integer(n) and n > 0, do: Enum.map(1..n, &{&1, &1 - 1, nil})
   defp loop_items(_value), do: []
 
-  # Vue's `toDisplayString`.
-  defp display(nil), do: ""
-  defp display(value) when is_binary(value), do: value
-
-  # JavaScript prints a whole float without a fraction.
-  defp display(value) when is_float(value) do
-    whole = trunc(value)
-    if whole == value, do: Integer.to_string(whole), else: Float.to_string(value)
-  end
-
-  defp display(value) when is_map(value) or is_list(value), do: Jason.encode!(value, pretty: true)
-  defp display(value), do: to_string(value)
-
-  defp escape(text), do: text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
-
-  defp truthy?(value), do: value not in [false, nil, 0, "", +0.0]
-
-  # Vue matches `side-offset` to a `sideOffset` prop.
-  defp camelize(key), do: Regex.replace(~r/-(\w)/, key, fn _, char -> String.upcase(char) end)
-
   defp maybe_put_assign(assigns, nil, _value), do: assigns
   defp maybe_put_assign(assigns, name, value), do: put_assign(assigns, name, value)
 
@@ -403,29 +366,25 @@ defmodule PhoenixVapor.Renderer do
 
   # A slot re-renders when anything it reads changes, including what the
   # blocks inside it read.
-  defp slot_changed?(slot, changed),
-    do: slot |> slot_keys() |> Enum.any?(&MapSet.member?(changed, &1))
+  # The keys are stored when compiling; see `PhoenixVapor.Template.put_keys/1`.
+  defp slot_changed?(%{keys: keys}, changed), do: Enum.any?(keys, &MapSet.member?(changed, &1))
 
   # ── Helpers ──
 
-  # The client patcher locates slots from the statics; an attribute slot is the
-  # whole attribute, so it also needs the attribute's name.
-  defp inject_vapor_metadata([first | rest], slots) do
-    if String.starts_with?(String.trim_leading(first), "<") do
-      statics_json = Jason.encode!([first | rest])
-      keys_json = Jason.encode!(Enum.map(slots, &attribute_name/1))
-
-      attr =
-        ~s(data-vapor data-vapor-statics="#{Phoenix.HTML.Engine.html_escape(statics_json)}") <>
-          ~s( data-vapor-keys="#{Phoenix.HTML.Engine.html_escape(keys_json)}")
-
-      [inject_attr_into_first_tag(first, attr) | rest]
-    else
-      [first | rest]
-    end
+  @doc """
+  The attributes reactive mode's client patcher reads from a template's root
+  element: the statics, to locate each slot, and each slot's attribute name,
+  since an attribute slot is the whole attribute. The root's own attributes
+  are one slot, `""`, which the patcher leaves to LiveView.
+  """
+  @spec vapor_metadata(Template.t()) :: [{String.t(), String.t()}]
+  def vapor_metadata(%Template{statics: statics, slots: slots}) do
+    [
+      {"data-vapor", ""},
+      {"data-vapor-statics", Jason.encode!(statics)},
+      {"data-vapor-keys", Jason.encode!(Enum.map(slots, &attribute_name/1))}
+    ]
   end
-
-  defp inject_vapor_metadata(static, _slots), do: static
 
   defp attribute_name(%{kind: :attr, name: name}), do: name
 
@@ -433,5 +392,6 @@ defmodule PhoenixVapor.Renderer do
        when type in ["checkbox", "radio"], do: "checked"
 
   defp attribute_name(%{kind: :model, tag: "input"}), do: "value"
+  defp attribute_name(%{kind: :root_attrs}), do: ""
   defp attribute_name(_slot), do: nil
 end

@@ -1,6 +1,8 @@
 defmodule PhoenixVapor.RegressionsTest do
   use ExUnit.Case, async: true
 
+  alias PhoenixVapor.Compiler.ScriptSetup
+
   alias PhoenixVapor.Fixtures
 
   alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen}
@@ -20,25 +22,34 @@ defmodule PhoenixVapor.RegressionsTest do
 
       [scope] = Regex.run(~r/data-v-[0-9a-f]{8}/, Scoped.__vue_css_card__())
 
-      assert html =~ ~s(<div #{scope} title="a &gt; b" class="card">Hi</div>)
+      # As Vue's server renderer writes it, after the element's own attributes.
+      assert html =~ ~s(<div title="a &gt; b" class="card" #{scope}>Hi</div>)
     end
 
-    test "vapor metadata goes after the tag name" do
-      split = Vize.split_template!(~s(<div title="a > b"><p>{{ x }}</p></div>))
-      [first | _] = PhoenixVapor.Renderer.to_rendered(split, %{x: 1}, vapor_metadata: true).static
+    test "vapor metadata goes on the root element with its own attributes" do
+      template =
+        ~s(<div title="a > b"><p>{{ x }}</p></div>)
+        |> Vize.split_template!(root_attrs: true)
+        |> PhoenixVapor.Compiler.Split.compile()
 
-      assert first =~
-               ~r/\A<div data-vapor data-vapor-statics="[^"]*" data-vapor-keys="[^"]*" title="a &gt; b">/
+      metadata = PhoenixVapor.Renderer.vapor_metadata(template)
+
+      html =
+        template
+        |> PhoenixVapor.Renderer.to_rendered(%{x: 1}, root_attrs: metadata)
+        |> Phoenix.HTML.Safe.to_iodata()
+        |> IO.iodata_to_binary()
+
+      assert html =~
+               ~r/\A<div title="a &gt; b" data-vapor data-vapor-statics="[^"]*" data-vapor-keys="[^"]*">/
     end
   end
 
   test "the client module leaves out a <script lang=\"elixir\"> after <script setup>" do
     sfc = File.read!(Fixtures.path("ElixirAfterSetup.vue"))
     %{script_setup: %{content: script}} = Vize.parse_sfc!(sfc)
-    {refs, computeds, functions, bodies, props} = PhoenixVapor.Compiler.ScriptSetup.parse(script)
-
-    {:ok, js} =
-      ClientCodegen.generate(sfc, Classifier.classify(refs, computeds, functions, bodies, props))
+    classification = script |> PhoenixVapor.Compiler.ScriptSetup.parse() |> Classifier.classify()
+    {:ok, js} = ClientCodegen.generate(sfc, classification)
 
     refute js =~ "def mount"
     assert js =~ "const count = ref(0)"
@@ -69,18 +80,19 @@ defmodule PhoenixVapor.RegressionsTest do
             ~s|const props = defineProps({ users: Array, title: { type: String } })|,
             ~s|const props = defineProps<{ users: string[]; title?: string }>()|
           ] do
-        assert {_, _, _, _, ["users", "title"]} = PhoenixVapor.Compiler.ScriptSetup.parse(script)
+        assert PhoenixVapor.Compiler.ScriptSetup.parse(script).props == ["users", "title"]
       end
     end
 
     test "props the template reads go to the client; props only server actions read don't" do
       classification =
         Classifier.classify(
-          %{"q" => ~s("")},
-          %{},
-          ["save"],
-          %{"save" => ~s|"use server"; audit(secret)|},
-          ["title", "secret"],
+          %ScriptSetup{
+            refs: %{"q" => ~s("")},
+            computeds: %{},
+            functions: %{"save" => ~s|"use server"; audit(secret)|},
+            props: ["title", "secret"]
+          },
           ["title", "q"]
         )
 

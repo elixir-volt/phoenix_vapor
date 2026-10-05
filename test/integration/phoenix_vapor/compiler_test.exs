@@ -122,16 +122,23 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
       assert html =~ "<li>Grace: Member</li>"
     end
 
+    test "store the assign keys each slot reads, for change tracking" do
+      sfc = PhoenixVapor.Compiler.SFC.read!(Fixtures.path("components/ElixirFunctions.vue"))
+      {template, _files, []} = PhoenixVapor.Compiler.compile(sfc, module: ElixirFunctionsLive)
+
+      # roleLabel renders through role_tone/1, so it isn't an assign.
+      assert [%{kind: :for, keys: ["members"], block: block}] = template.slots
+      assert [%{keys: ["member"]}, %{keys: ["member"]}] = block.slots
+    end
+
     test "without one, are reported with where to define it" do
+      sfc = PhoenixVapor.Compiler.SFC.read!(Fixtures.path("components/ElixirFunctions.vue"))
+
       {_template, _files, [diagnostic]} =
-        PhoenixVapor.Compiler.compile(~S|<b>{{ roleLabel(role) }}</b>|,
-          file: Fixtures.path("components/ElixirFunctions.vue"),
-          script: "function roleLabel(role) { return role }",
-          elixir: {__MODULE__, %{"role_tone" => MapSet.new([1])}}
-        )
+        PhoenixVapor.Compiler.compile(%{sfc | elixir: []}, module: __MODULE__)
 
       assert diagnostic.message ==
-               "`roleLabel(role)` calls roleLabel, which runs only in the browser; " <>
+               "`roleLabel(member.role)` calls roleLabel, which runs only in the browser; " <>
                  ~s(define role_label in <script lang="elixir"> to render it on the server)
     end
   end
@@ -157,7 +164,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
       assert html =~ ~r/<li><button[^>]*data-state="closed"[^>]*>math<\/button><\/li>/
       assert html =~ ~r/<li><button[^>]*data-state="closed"[^>]*>poetry<\/button><\/li>/
 
-      # The dialog's `open` is an expression of a ref's initial value: closed.
+      # The dialog's `open` is a computed of a ref's initial value: closed.
       assert html =~ ~r/<button[^>]*aria-expanded="false"[^>]*>Remove<\/button>/
       refute html =~ "Remove Ada?"
     end
@@ -167,7 +174,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
         PhoenixVapor.Compiler.compile(~S|<TabsList>Tabs</TabsList>|,
           file: Fixtures.path("components/PackageFold.vue"),
           script: ~s(import { TabsList } from "reka-ui"),
-          fold: :all
+          target: :browser
         )
 
       assert %{severity: :unrendered, message: message} = diagnostic

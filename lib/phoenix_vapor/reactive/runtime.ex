@@ -39,7 +39,7 @@ defmodule PhoenixVapor.Reactive.Runtime do
     config = %{
       refs: Keyword.get(opts, :refs, %{}),
       computeds: Keyword.get(opts, :computeds, %{}),
-      functions: build_functions_map(opts)
+      functions: Keyword.get(opts, :functions, %{})
     }
 
     case setup_runtime(config, pool) do
@@ -77,14 +77,5 @@ defmodule PhoenixVapor.Reactive.Runtime do
           error
       end
     end
-  end
-
-  # ── Config helpers ──
-
-  defp build_functions_map(opts) do
-    bodies = Keyword.get(opts, :function_bodies, %{})
-
-    Keyword.get(opts, :functions, [])
-    |> Map.new(fn name -> {name, Map.get(bodies, name, "")} end)
   end
 end

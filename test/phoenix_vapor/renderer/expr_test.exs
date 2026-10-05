@@ -3,103 +3,152 @@ defmodule PhoenixVapor.ExprTest do
 
   alias PhoenixVapor.Renderer.Expr
 
+  # Templates compile each expression once, then evaluate it per render.
+  defp eval(source, assigns), do: source |> Expr.compile() |> Expr.eval(assigns)
+  defp keys(source), do: source |> Expr.compile() |> Expr.assign_keys()
+
   describe "eval/2" do
     test "resolves identifiers and nested access" do
-      assert Expr.eval("msg", %{msg: "hello"}) == "hello"
-      assert Expr.eval("user.name", %{user: %{name: "Dan"}}) == "Dan"
+      assert eval("msg", %{msg: "hello"}) == "hello"
+      assert eval("user.name", %{user: %{name: "Dan"}}) == "Dan"
 
       assigns = %{user: %{address: %{city: "Moscow"}}}
-      assert Expr.eval("user.address.city", assigns) == "Moscow"
+      assert eval("user.address.city", assigns) == "Moscow"
     end
 
     test "supports atom and string keys" do
-      assert Expr.eval("x", %{x: 1}) == 1
-      assert Expr.eval("x", %{"x" => 2}) == 2
+      assert eval("x", %{x: 1}) == 1
+      assert eval("x", %{"x" => 2}) == 2
     end
 
     test "returns nil for missing keys" do
-      assert Expr.eval("missing", %{}) == nil
-    end
-
-    test "passes static expressions through" do
-      assert Expr.eval({:static_, "hello"}, %{}) == "hello"
+      assert eval("missing", %{}) == nil
     end
 
     test "evaluates literals" do
-      assert Expr.eval("true", %{}) == true
-      assert Expr.eval("false", %{}) == false
-      assert Expr.eval("null", %{}) == nil
+      assert eval("true", %{}) == true
+      assert eval("false", %{}) == false
+      assert eval("null", %{}) == nil
     end
 
     test "evaluates conditional expressions" do
-      assert Expr.eval(~s[ok ? "y" : "n"], %{ok: true}) == "y"
-      assert Expr.eval(~s[ok ? "y" : "n"], %{ok: false}) == "n"
+      assert eval(~s[ok ? "y" : "n"], %{ok: true}) == "y"
+      assert eval(~s[ok ? "y" : "n"], %{ok: false}) == "n"
     end
 
     test "evaluates arithmetic and comparisons" do
-      assert Expr.eval("a + b", %{a: 2, b: 3}) == 5
-      assert Expr.eval("a - b", %{a: 10, b: 3}) == 7
-      assert Expr.eval("a * b", %{a: 4, b: 5}) == 20
-      assert Expr.eval("a > b", %{a: 5, b: 3}) == true
-      assert Expr.eval("a === b", %{a: 1, b: 1}) == true
-      assert Expr.eval("a !== b", %{a: 1, b: 2}) == true
+      assert eval("a + b", %{a: 2, b: 3}) == 5
+      assert eval("a - b", %{a: 10, b: 3}) == 7
+      assert eval("a * b", %{a: 4, b: 5}) == 20
+      assert eval("a > b", %{a: 5, b: 3}) == true
+      assert eval("a === b", %{a: 1, b: 1}) == true
+      assert eval("a !== b", %{a: 1, b: 2}) == true
     end
 
     test "evaluates logical expressions" do
-      assert Expr.eval("a && b", %{a: true, b: "yes"}) == "yes"
-      assert Expr.eval("a && b", %{a: false, b: "yes"}) == false
-      assert Expr.eval("a || b", %{a: nil, b: "fallback"}) == "fallback"
-      assert Expr.eval("a ?? b", %{a: nil, b: "default"}) == "default"
-      assert Expr.eval("a ?? b", %{a: 0, b: "default"}) == 0
+      assert eval("a && b", %{a: true, b: "yes"}) == "yes"
+      assert eval("a && b", %{a: false, b: "yes"}) == false
+      assert eval("a || b", %{a: nil, b: "fallback"}) == "fallback"
+      assert eval("a ?? b", %{a: nil, b: "default"}) == "default"
+      assert eval("a ?? b", %{a: 0, b: "default"}) == 0
     end
 
     test "evaluates unary expressions" do
-      assert Expr.eval("!x", %{x: false}) == true
-      assert Expr.eval("-x", %{x: 5}) == -5
+      assert eval("!x", %{x: false}) == true
+      assert eval("-x", %{x: 5}) == -5
     end
 
     test "evaluates member and array access" do
-      assert Expr.eval("items.length", %{items: [1, 2, 3]}) == 3
-      assert Expr.eval("items[1]", %{items: ["a", "b", "c"]}) == "b"
+      assert eval("items.length", %{items: [1, 2, 3]}) == 3
+      assert eval("items[1]", %{items: ["a", "b", "c"]}) == "b"
     end
 
     test "evaluates typeof" do
-      assert Expr.eval("typeof x", %{x: 42}) == "number"
-      assert Expr.eval("typeof x", %{x: "hi"}) == "string"
-      assert Expr.eval("typeof x", %{x: nil}) == "undefined"
+      assert eval("typeof x", %{x: 42}) == "number"
+      assert eval("typeof x", %{x: "hi"}) == "string"
+      # `nil` is `null`, whose type is "object"; a missing name is `undefined`.
+      assert eval("typeof x", %{x: nil}) == "object"
+      assert eval("typeof x", %{}) == "undefined"
     end
 
     test "evaluates string and array methods" do
-      assert Expr.eval(~s[s.trim()], %{s: "  hi  "}) == "hi"
-      assert Expr.eval(~s[s.toUpperCase()], %{s: "hi"}) == "HI"
-      assert Expr.eval(~s[s.toLowerCase()], %{s: "HI"}) == "hi"
+      assert eval(~s[s.trim()], %{s: "  hi  "}) == "hi"
+      assert eval(~s[s.toUpperCase()], %{s: "hi"}) == "HI"
+      assert eval(~s[s.toLowerCase()], %{s: "HI"}) == "hi"
 
       assigns = %{items: ["a", "b", "c"]}
-      assert Expr.eval(~s[items.includes("b")], assigns) == true
-      assert Expr.eval(~s[items.includes("z")], assigns) == false
-    end
-  end
-
-  describe "eval_values/2" do
-    test "concatenates values" do
-      values = [{:static_, "Hello "}, "name", {:static_, "!"}]
-      assert Expr.eval_values(values, %{name: "World"}) == "Hello World!"
+      assert eval(~s[items.includes("b")], assigns) == true
+      assert eval(~s[items.includes("z")], assigns) == false
     end
   end
 
   describe "assign_keys/1" do
     test "extracts identifiers" do
-      assert Expr.assign_keys("msg") == ["msg"]
-      assert "user" in Expr.assign_keys("user.name")
-      assert Expr.assign_keys({:static_, "text"}) == []
+      assert keys("msg") == ["msg"]
+      assert "user" in keys("user.name")
+      assert Expr.assign_keys({:value, "text"}) == []
     end
 
     test "extracts identifiers from complex expressions" do
-      keys = Expr.assign_keys("a > b ? x : y")
+      keys = keys("a > b ? x : y")
       assert "a" in keys
       assert "b" in keys
       assert "x" in keys
       assert "y" in keys
+    end
+  end
+
+  describe "JavaScript semantics" do
+    test "truthiness follows JavaScript" do
+      assert eval(~s(count ? "yes" : "no"), %{count: 0}) == "no"
+      assert eval(~s(count ? "yes" : "no"), %{count: 0.0}) == "no"
+      assert eval("!name", %{name: ""}) == true
+      assert eval(~s(label || "fallback"), %{label: ""}) == "fallback"
+      assert eval(~s(items && items.length), %{items: []}) == 0
+      assert eval(~s(x ?? "default"), %{}) == "default"
+      assert eval(~s(x ?? "default"), %{x: 0}) == 0
+    end
+
+    test "comparisons convert as JavaScript does" do
+      # `undefined > 0` is false, though Elixir orders atoms after numbers.
+      assert eval("items.length > 0", %{}) == false
+      assert eval("count > 0", %{count: nil}) == false
+      assert eval("count === 1", %{count: 1.0}) == true
+      assert eval(~s(count == "1"), %{count: 1}) == true
+      assert eval(~s(count === "1"), %{count: 1}) == false
+      assert eval("x == null", %{}) == true
+      assert eval(~s("b" > "a"), %{}) == true
+      assert eval(~s("10" < 9), %{}) == false
+    end
+
+    test "arithmetic and concatenation convert as JavaScript does" do
+      assert eval("a + b", %{a: "1", b: 2}) == "12"
+      assert eval("a + b", %{a: 1, b: 2}) == 3
+      assert eval("n + 1", %{n: nil}) == 1
+      assert eval("n + 1", %{}) == :nan
+      assert eval("1 / 0", %{}) == :infinity
+      assert eval(~s("x" * 2), %{}) == :nan
+      assert eval("`${a}-${b}`", %{a: 1.0, b: nil}) == "1-null"
+      assert eval("`a${x}b`", %{x: 1}) == "a1b"
+    end
+  end
+
+  describe "compile/1" do
+    test "tags what only JavaScript evaluates" do
+      assert {:expr, _, _, ["name"]} = Expr.compile("name.trim().toUpperCase()")
+      assert {:expr, _, _, ["items"]} = Expr.compile(~s|items.join(", ")|)
+      assert {:js, _, _, ["items"]} = Expr.compile("items.filter(i => i.on)")
+      assert {:js, _, _, ["Math", "a", "b"]} = Expr.compile("Math.max(a, b)")
+      assert {:js, _, _, _} = Expr.compile("a ** 2")
+    end
+
+    test "evaluates a JavaScript-only expression in QuickBEAM" do
+      assert eval("items.filter(i => i.on).length", %{items: [%{on: true}, %{on: false}]}) == 1
+    end
+
+    test "a method the value doesn't have raises, as it throws in the browser" do
+      error = assert_raise PhoenixVapor.ExpressionError, fn -> eval("n.trim()", %{n: 1}) end
+      assert Exception.message(error) =~ "`trim` isn't a function of that value"
     end
   end
 end

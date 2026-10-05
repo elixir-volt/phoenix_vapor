@@ -64,8 +64,7 @@ defmodule PhoenixVapor.RuntimeTest do
         Runtime.start_link(
           refs: %{"count" => "0"},
           computeds: %{"doubled" => "count * 2"},
-          functions: ["increment", "decrement", "reset"],
-          function_bodies: %{
+          functions: %{
             "increment" => "count++",
             "decrement" => "count--",
             "reset" => "count = 0"
@@ -96,8 +95,7 @@ defmodule PhoenixVapor.RuntimeTest do
         Runtime.start_link(
           refs: %{"items" => ~s{["a", "b"]}},
           computeds: %{"count" => "items.length"},
-          functions: ["addItem", "removeFirst"],
-          function_bodies: %{
+          functions: %{
             "addItem" => "items.push(\"item\" + (items.length + 1))",
             "removeFirst" => "items.shift()"
           }
@@ -123,8 +121,7 @@ defmodule PhoenixVapor.RuntimeTest do
         Runtime.start_link(
           refs: %{"user" => ~s|{name: "Alice", age: 30}|},
           computeds: %{"greeting" => ~s{"Hi " + user.name}},
-          functions: ["rename"],
-          function_bodies: %{"rename" => ~s{user.name = __params.name}}
+          functions: %{"rename" => ~s{user.name = __params.name}}
         )
 
       {:ok, s} = Runtime.get_state(rt)
@@ -140,8 +137,7 @@ defmodule PhoenixVapor.RuntimeTest do
       {:ok, rt} =
         Runtime.start_link(
           refs: %{"value" => "0"},
-          functions: ["setValue"],
-          function_bodies: %{"setValue" => "value = Number(__params.value)"}
+          functions: %{"setValue" => "value = Number(__params.value)"}
         )
 
       {:ok, s} = Runtime.call_handler(rt, "setValue", %{"value" => "42"})
@@ -156,8 +152,7 @@ defmodule PhoenixVapor.RuntimeTest do
       {:ok, rt} =
         Runtime.start_link(
           refs: %{"history" => "[]"},
-          functions: ["record"],
-          function_bodies: %{"record" => ~s{history.push(__params.event)}}
+          functions: %{"record" => ~s{history.push(__params.event)}}
         )
 
       {:ok, _} = Runtime.call_handler(rt, "record", %{"event" => "click"})
@@ -213,8 +208,7 @@ defmodule PhoenixVapor.RuntimeTest do
         Runtime.start_link(
           refs: %{"x" => "0", "y" => "0"},
           computeds: %{"sum" => "x + y"},
-          functions: ["moveTo"],
-          function_bodies: %{"moveTo" => "x = Number(__params.x); y = Number(__params.y)"}
+          functions: %{"moveTo" => "x = Number(__params.x); y = Number(__params.y)"}
         )
 
       {:ok, s} = Runtime.call_handler(rt, "moveTo", %{"x" => "3", "y" => "4"})
@@ -262,8 +256,7 @@ defmodule PhoenixVapor.RuntimeTest do
           pool: pool,
           refs: %{"count" => "0"},
           computeds: %{"doubled" => "count * 2"},
-          functions: ["increment"],
-          function_bodies: %{"increment" => "count++"}
+          functions: %{"increment" => "count++"}
         )
 
       {:ok, rt2} =
@@ -271,8 +264,7 @@ defmodule PhoenixVapor.RuntimeTest do
           pool: pool,
           refs: %{"count" => "100"},
           computeds: %{"doubled" => "count * 2"},
-          functions: ["increment"],
-          function_bodies: %{"increment" => "count++"}
+          functions: %{"increment" => "count++"}
         )
 
       {:ok, _} = Runtime.call_handler(rt1, "increment")
@@ -299,8 +291,7 @@ defmodule PhoenixVapor.RuntimeTest do
             Runtime.start_link(
               pool: pool,
               refs: %{"value" => "#{i}"},
-              functions: ["double"],
-              function_bodies: %{"double" => "value = value * 2"}
+              functions: %{"double" => "value = value * 2"}
             )
 
           rt

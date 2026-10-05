@@ -5,7 +5,7 @@ defmodule PhoenixVapor.ScriptSetupTest do
 
   describe "parse/1" do
     test "extracts refs with initial values" do
-      {refs, _, _, _, _} =
+      %ScriptSetup{refs: refs} =
         ScriptSetup.parse("""
         import { ref } from "vue"
         const count = ref(0)
@@ -16,7 +16,7 @@ defmodule PhoenixVapor.ScriptSetupTest do
     end
 
     test "extracts computed expressions" do
-      {_, computeds, _, _, _} =
+      %ScriptSetup{computeds: computeds} =
         ScriptSetup.parse("""
         import { ref, computed } from "vue"
         const count = ref(0)
@@ -27,31 +27,52 @@ defmodule PhoenixVapor.ScriptSetupTest do
     end
 
     test "extracts function names" do
-      {_, _, functions, _, _} =
+      %ScriptSetup{functions: functions} =
         ScriptSetup.parse("""
         function increment() { count.value++ }
         function reset() { count.value = 0 }
         """)
 
-      assert "increment" in functions
-      assert "reset" in functions
+      assert functions == %{"increment" => "count.value++", "reset" => "count.value = 0"}
     end
 
     test "extracts defineProps" do
-      {_, _, _, _, props} = ScriptSetup.parse(~s|defineProps(["title", "count"])|)
+      %ScriptSetup{props: props} = ScriptSetup.parse(~s|defineProps(["title", "count"])|)
 
       assert props == ["title", "count"]
     end
   end
 
-  describe "eval_initial_state/1" do
+  describe "eval_initial_state/2" do
     test "evaluates initial state via QuickBEAM" do
       refs = %{"count" => "0", "items" => "[]", "name" => "\"world\""}
-      state = ScriptSetup.eval_initial_state(refs)
+      state = ScriptSetup.eval_initial_state(refs, start_supervised!(QuickBEAM))
 
       assert state.count == 0
       assert state.items == []
       assert state.name == "world"
+    end
+  end
+
+  describe "parse/1 for the compiler" do
+    test "reads imports with their attributes, top-level constants and callables" do
+      setup =
+        ScriptSetup.parse("""
+        import Card from "./Card.vue"
+        import { button } from "./variants" with { type: "macro" }
+        const classes = button({ size: "sm" })
+        const format = (n) => n.toFixed(2)
+        function roleTone(role) { return role }
+        """)
+
+      assert setup.imports["Card"] == %{source: "./Card.vue", imported: :default, attributes: %{}}
+      assert setup.imports["button"].attributes == %{"type" => "macro"}
+      assert [{"classes", _node, ~s|button({ size: "sm" })|}, {"format", _, _}] = setup.consts
+      assert setup.callables == ["format", "roleTone"]
+    end
+
+    test "a script that doesn't parse declares nothing" do
+      assert %ScriptSetup{refs: %{}, functions: %{}, props: []} = ScriptSetup.parse("const = ")
     end
   end
 end

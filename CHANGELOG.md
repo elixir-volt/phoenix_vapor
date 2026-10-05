@@ -4,16 +4,25 @@
 
 ### Breaking changes
 
+- `PhoenixVapor.Component` and its `vue/1` macro, which returned its argument unchanged, are removed; `use PhoenixVapor` imports only the `~VUE` sigil. Use `~VUE` directly.
+- Template expressions follow JavaScript's semantics, as Vue renders them in the browser: truthiness (`0`, `""` and `NaN` are falsy in `v-if`, `? :`, `!`, `&&` and `||`), `===` (`1 === 1.0`), `==`, relational comparison (`undefined > 0` is false), `+` concatenation and arithmetic with `NaN` and `Infinity`, and `typeof null`. A missing assign is `undefined` and `nil` is `null`. Before, Elixir's semantics leaked through, so `v-if="items.length > 0"` rendered with no `items`.
 - Modules are grouped by role: `PhoenixVapor.Compiler.*` compiles templates, `PhoenixVapor.Renderer.*` renders them, and each mode's modules sit under it. `PhoenixVapor.Runtime` is now `PhoenixVapor.Reactive.Runtime`, `PhoenixVapor.LiveVue` is `PhoenixVapor.Full`, `PhoenixVapor.VueRuntime` is `PhoenixVapor.Full.Runtime`, and `PhoenixVapor.ScriptSetup` is `PhoenixVapor.Compiler.ScriptSetup`; the runtimes and `ScriptSetup` are internal. `use PhoenixVapor`, `~VUE`, `PhoenixVapor.Vue`, `PhoenixVapor.Template` and `PhoenixVapor.ExpressionError` are unchanged.
 
 ### Added
 
+- An expression only JavaScript can evaluate, such as `items.filter(i => i.on)` or `Math.max(a, b)`, is reported at compile time as a warning: it runs in QuickBEAM on every render, while the rest of rendering is Elixir. A method a value doesn't have, such as `trim()` on a number, raises `PhoenixVapor.ExpressionError`, as it throws in the browser.
 - In hybrid mode, components from packages, such as Reka UI, render on the server when everything they receive is known at compile time. Vue's server renderer runs them once in QuickBEAM while the template compiles, so rendering runs no JavaScript. Nested package components render together, providers such as `TooltipProvider` render only their content, and in hybrid mode the initial values of refs count as known. One that can't render is reported with the reason, such as a prop known only when rendering or an error from the component. Outside hybrid mode, where nothing takes over in the browser, only package components that render just their content, such as providers, render; others remain a compile error.
 - A macro call that reads props known only when rendering runs at compile time once per combination of the values their TypeScript types allow, up to 64, and rendering looks the result up. Types come from TypeScript's own checker, from the project's `node_modules`, so variant types derived from a tailwind-variants config work. A value outside the type raises `PhoenixVapor.ExpressionError`.
 - A package component's props may be expressions of known values, such as `:open="selected !== null"` over a ref's initial value, and package parts inside the template's own `v-for` or `v-if`, such as a tooltip per row, render in their ancestors' context.
 - A template's call to a `<script setup>` function renders on the server through the function of the same name in snake_case that `<script lang="elixir">` defines, such as `role_tone/1` for `roleTone(role)`. The full runtime now leaves a `<script lang="elixir">` block out of its browser bundle.
 - `PhoenixVapor.Volt`, a Volt plugin that resolves `phoenix_vapor` imports from a path or umbrella dependency, which `resolve_dirs: ["deps"]` doesn't find.
 - The `file:` option and `PhoenixVapor.Vue.component/2` take any expression known at compile time, such as `Path.join(@templates, "Card.vue")`, besides a path relative to the module's file.
+
+### Fixed
+
+- The QuickBEAM runtime that ran macro calls while compiling was never stopped, and the one for package components leaked when compiling raised. One runtime per compile now serves both and stops in an `after`.
+- A hybrid component started a QuickBEAM runtime on every render to evaluate its computed values, and a computed that failed rendered as missing without a report. Computeds now evaluate as template expressions do: one that reads only refs is evaluated once while compiling, and package components can render with it; one that reads props is evaluated when rendering, on the LiveView process's runtime, with its last value reused while its inputs are unchanged. A computed's other computeds are evaluated first, so lists such as a filtered view of props render on the server. A failure is a compile-time warning, or an `ExpressionError` when rendering.
+- A template literal's text between expressions rendered empty: `` `a${x}b` `` gave `1`.
 
 ## 0.5.0 - 2026-10-03
 

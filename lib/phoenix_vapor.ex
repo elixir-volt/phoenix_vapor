@@ -50,14 +50,14 @@ defmodule PhoenixVapor do
       PhoenixVapor.render("<div>{{ msg }}</div>", %{msg: "Hello"})
   """
 
-  alias PhoenixVapor.Renderer
+  alias PhoenixVapor.{Compiler, Renderer}
+  alias PhoenixVapor.Compiler.SFC
 
   defmacro __using__(opts) do
     case Keyword.get(opts, :file) do
       nil ->
         quote do
           import PhoenixVapor.Sigil
-          import PhoenixVapor.Component
         end
 
       file ->
@@ -72,79 +72,38 @@ defmodule PhoenixVapor do
     end
   end
 
-  defp do_use_file(file, :reactive, _opts, _caller) do
-    quote do
-      use PhoenixVapor.Reactive, file: unquote(file)
-    end
-  end
-
-  defp do_use_file(_file, runtime, _opts, _caller) when runtime != nil do
+  defp do_use_file(_file, runtime, _opts, _caller) when runtime not in [nil, :reactive] do
     raise ArgumentError,
           "unknown :runtime #{inspect(runtime)}; use :reactive or :full, or leave it out " <>
             "to choose between server-only and hybrid from the component"
   end
 
-  defp do_use_file(file, nil, opts, caller) do
-    full_path = PhoenixVapor.Compiler.SFC.path!(file, caller)
-    sfc_source = File.read!(full_path)
+  defp do_use_file(file, runtime, opts, caller) do
+    sfc = SFC.load!(file, caller)
 
-    desc = Vize.parse_sfc!(sfc_source)
-
-    script_content =
-      case desc.script_setup do
-        %{content: c} -> c
-        nil -> ""
-      end
-
-    {refs, _computeds, _functions, _function_bodies, _props} =
-      PhoenixVapor.Compiler.ScriptSetup.parse(script_content)
-
-    has_client_state = map_size(refs) > 0
-
-    if has_client_state do
-      all_opts = Keyword.put(opts, :file, full_path)
-
-      quote do
-        use PhoenixVapor.Hybrid, unquote(all_opts)
-      end
-    else
-      do_use_server_only(full_path, desc, caller)
+    cond do
+      runtime == :reactive -> PhoenixVapor.Reactive.build(sfc)
+      SFC.client_state?(sfc) -> PhoenixVapor.Hybrid.build(sfc, opts, caller)
+      true -> server_only(sfc, caller)
     end
   end
 
-  defp do_use_server_only(full_path, desc, caller) do
-    {template_content, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
-
-    script_content =
-      case desc.script_setup do
-        %{content: c} -> c
-        nil -> ""
-      end
-
-    {split, component_files} =
-      PhoenixVapor.Compiler.compile!(template_content,
-        file: full_path,
-        origin: origin,
-        script: script_content,
-        elixir: {caller.module, PhoenixVapor.Compiler.SFC.elixir_functions(desc, full_path)},
-        unrendered: :raise
-      )
-
+  # Without client state, the template renders on the server, and the rest
+  # of the LiveView is the module's own Elixir.
+  defp server_only(sfc, caller) do
+    {split, component_files} = Compiler.compile!(sfc, module: caller.module)
     escaped_split = Macro.escape(split)
-
-    elixir_block_ast = PhoenixVapor.Compiler.SFC.elixir_block(desc, full_path)
 
     quote do
       import PhoenixVapor.Sigil
-      import PhoenixVapor.Component
-      @external_resource unquote(full_path)
+      @external_resource unquote(sfc.file)
       for file <- unquote(component_files), do: @external_resource(file)
 
       def render(var!(assigns)) do
         PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns))
       end
 
-      unquote_splicing(elixir_block_ast)
+      unquote_splicing(sfc.elixir)
     end
   end
 

@@ -22,6 +22,8 @@ defmodule PhoenixVapor.Vue do
   element gets its scope attribute. `<script>` blocks are ignored.
   """
 
+  alias PhoenixVapor.Compiler.SFC
+
   @doc """
   Define a function component from a `.vue` file's template.
 
@@ -29,26 +31,15 @@ defmodule PhoenixVapor.Vue do
   the `data-v-*` scope attribute into the root element.
   """
   defmacro component(name, path) do
-    full_path = PhoenixVapor.Compiler.SFC.path!(path, __CALLER__)
-
-    source = File.read!(full_path)
-    desc = Vize.parse_sfc!(source)
-    {template, origin} = PhoenixVapor.Compiler.SFC.template!(desc, full_path)
-    script = (desc.script_setup && desc.script_setup.content) || ""
-
-    {split, component_files} =
-      PhoenixVapor.Compiler.compile!(template,
-        file: full_path,
-        origin: origin,
-        script: script,
-        unrendered: :raise
-      )
-
+    sfc = SFC.load!(path, __CALLER__)
+    full_path = sfc.file
+    {split, component_files} = PhoenixVapor.Compiler.compile!(sfc, root_attrs: true)
     escaped_split = Macro.escape(split)
 
-    {scope_id, scoped_css} = scoped_css(source, full_path)
+    {scope_id, scoped_css} = scoped_css(sfc)
 
     css_fn_name = :"__vue_css_#{name}__"
+    root_attrs = if scope_id, do: [{scope_id, ""}], else: []
 
     quote do
       @external_resource unquote(full_path)
@@ -57,23 +48,19 @@ defmodule PhoenixVapor.Vue do
       def unquote(css_fn_name)(), do: unquote(scoped_css)
 
       def unquote(name)(var!(assigns)) do
-        rendered = PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns))
-
-        if unquote(scope_id) do
-          PhoenixVapor.Renderer.inject_scope_id(rendered, unquote(scope_id))
-        else
-          rendered
-        end
+        PhoenixVapor.Renderer.to_rendered(unquote(escaped_split), var!(assigns),
+          root_attrs: unquote(root_attrs)
+        )
       end
     end
   end
 
   # Vize generates the scope id the way its bundler integrations do and
   # scopes the CSS with it; the same id goes on the root element.
-  defp scoped_css(sfc_source, path) do
-    if Enum.any?(Vize.parse_sfc!(sfc_source).styles, & &1.scoped) do
-      id = Vize.SFC.scope_id(path, root: File.cwd!())
-      {"data-v-#{id}", Vize.compile_sfc!(sfc_source, scope_id: id).css}
+  defp scoped_css(%SFC{} = sfc) do
+    if Enum.any?(sfc.descriptor.styles, & &1.scoped) do
+      id = Vize.SFC.scope_id(sfc.file, root: File.cwd!())
+      {"data-v-#{id}", Vize.compile_sfc!(sfc.source, scope_id: id).css}
     else
       {nil, nil}
     end

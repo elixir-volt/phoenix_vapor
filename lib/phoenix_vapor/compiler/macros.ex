@@ -20,7 +20,8 @@ defmodule PhoenixVapor.Compiler.Macros do
   # macro call that depends on anything else, such as a prop typed `string`,
   # can't be folded and is reported.
 
-  alias PhoenixVapor.Compiler.PropTypes
+  alias PhoenixVapor.Compiler.{PropTypes, ScriptSetup}
+  alias PhoenixVapor.JS.{FreeNames, Session}
   alias PhoenixVapor.Template
 
   @max_combinations 64
@@ -33,8 +34,7 @@ defmodule PhoenixVapor.Compiler.Macros do
           optional(:known) => %{String.t() => term()},
           optional(:elixir) => {module(), map()} | nil,
           file: Path.t(),
-          imports: %{String.t() => map()},
-          script: String.t(),
+          setup: ScriptSetup.t(),
           static_props:
             %{static: %{String.t() => term()}, dynamic: MapSet.t(), declared: [String.t()]}
             | nil
@@ -47,38 +47,33 @@ defmodule PhoenixVapor.Compiler.Macros do
   defp macro?(%{attributes: attributes}), do: attributes["type"] == "macro"
 
   @doc """
-  Folds the macro calls in a compiled split. `runtime` is a QuickBEAM runtime
-  shared across one compile, or nil to start one; the runtime in use is
-  returned with the split and diagnostics, `{split, runtime, diagnostics}`.
+  Folds the macro calls in a compiled split, running them in the compile's
+  `PhoenixVapor.JS.Session`. Returns the split and diagnostics.
   """
-  @spec fold(Template.t(), context(), pid() | nil) :: {Template.t(), pid() | nil, [map()]}
-  def fold(split, ctx, runtime) do
-    macros = for {local, import} <- ctx.imports, macro?(import), into: %{}, do: {local, import}
+  @spec fold(Template.t(), context(), Session.t()) :: {Template.t(), [map()]}
+  def fold(split, ctx, session) do
+    macros =
+      for {local, import} <- ctx.setup.imports, macro?(import), into: %{}, do: {local, import}
 
     if macros == %{} do
-      {split, runtime, []}
+      {split, []}
     else
       env = environment(macros, ctx)
-      runtime = runtime || start_runtime()
-      bundle_id = load_bundle(runtime, macros, ctx.file)
+      bundle_id = Session.once(session, {:macros, ctx.file}, &load_bundle(&1, macros, ctx.file))
+      runtime = Session.runtime(session)
       env = Map.put(env, :bundle_id, bundle_id)
 
-      env = Map.merge(env, %{file: ctx.file, script: ctx.script})
+      env = Map.merge(env, %{file: ctx.file, script: ctx.setup.source, session: session})
       {split, diagnostics} = Template.map_exprs(split, [], &fold_expr(&1, &2, &3, env, runtime))
-      {split, runtime, Enum.reverse(diagnostics)}
+      {split, Enum.reverse(diagnostics)}
     end
   end
-
-  @doc "Stops a runtime `fold/3` started."
-  @spec stop(pid() | nil) :: :ok
-  def stop(nil), do: :ok
-  def stop(runtime), do: QuickBEAM.stop(runtime)
 
   # ── Which names can be folded ──
 
   defp environment(macros, ctx) do
     macro_names = Map.keys(macros)
-    consts = foldable_consts(ctx.script, macro_names, ctx.static_props)
+    consts = foldable_consts(ctx.setup.consts, macro_names, ctx.static_props)
 
     %{
       macros: macros,
@@ -90,31 +85,16 @@ defmodule PhoenixVapor.Compiler.Macros do
 
   # Top-level `const name = init` declarations whose initializer reads only
   # foldable names, in source order, so each can use the ones before it.
-  defp foldable_consts(script, macro_names, static_props) do
-    case OXC.parse(script, "setup.ts") do
-      {:ok, %{body: body}} ->
-        body
-        |> Enum.flat_map(fn
-          %{type: :variable_declaration, kind: kind, declarations: declarations}
-          when kind in [:const, "const"] ->
-            for %{id: %{type: :identifier, name: name}, init: %{} = init} <- declarations,
-                do: {name, init, slice(script, init)}
-
-          _ ->
-            []
-        end)
-        |> Enum.reduce({MapSet.new(macro_names), []}, fn {name, init, source}, {known, acc} ->
-          case classify(refs(init), known, static_props) do
-            :foldable -> {MapSet.put(known, name), [{name, source} | acc]}
-            _other -> {known, acc}
-          end
-        end)
-        |> elem(1)
-        |> Enum.reverse()
-
-      _ ->
-        []
-    end
+  defp foldable_consts(consts, macro_names, static_props) do
+    consts
+    |> Enum.reduce({MapSet.new(macro_names), []}, fn {name, init, source}, {known, acc} ->
+      case classify(refs(init), known, static_props) do
+        :foldable -> {MapSet.put(known, name), [{name, source} | acc]}
+        _other -> {known, acc}
+      end
+    end)
+    |> elem(1)
+    |> Enum.reverse()
   end
 
   # Whether an expression reading `refs` reads no macro-derived name (`:none`),
@@ -146,49 +126,12 @@ defmodule PhoenixVapor.Compiler.Macros do
 
   # The free names an expression reads. `props.x` is reported as such, so a
   # macro call can depend on one prop without depending on all of them.
-  defp refs(node), do: node |> collect_refs([]) |> Enum.reverse()
-
-  defp collect_refs(%{type: :identifier, name: name}, acc), do: [name | acc]
-
-  defp collect_refs(
-         %{
-           type: :member_expression,
-           object: %{type: :identifier, name: "props"},
-           property: %{name: prop},
-           computed: false
-         },
-         acc
-       ),
-       do: ["props." <> prop | acc]
-
-  defp collect_refs(%{type: :member_expression, object: object, property: property} = node, acc) do
-    acc = collect_refs(object, acc)
-    if node[:computed], do: collect_refs(property, acc), else: acc
-  end
-
-  defp collect_refs(%{type: :property, key: key, value: value} = node, acc) do
-    acc = if node[:computed], do: collect_refs(key, acc), else: acc
-    collect_refs(value, acc)
-  end
-
-  # Functions in the expression bind their own names; leave them alone.
-  defp collect_refs(%{type: type}, acc)
-       when type in [:arrow_function_expression, :function_expression],
-       do: ["(function)" | acc]
-
-  defp collect_refs(%{} = node, acc) do
-    node
-    |> Map.drop([:type, :start, :end])
-    |> Enum.reduce(acc, fn {_key, value}, acc -> collect_refs(value, acc) end)
-  end
-
-  defp collect_refs(list, acc) when is_list(list), do: Enum.reduce(list, acc, &collect_refs/2)
-  defp collect_refs(_value, acc), do: acc
+  defp refs(node), do: FreeNames.of(node, props: true)
 
   # ── Folding ──
 
-  defp fold_expr({:expr, source, node, _keys} = expr, slot, diagnostics, env, runtime)
-       when is_map(node) do
+  defp fold_expr({tag, source, node, _keys} = expr, slot, diagnostics, env, runtime)
+       when tag in [:expr, :js] and is_map(node) do
     case classify(refs(node), env.derived, env.static_props) do
       :none ->
         {expr, diagnostics}
@@ -232,7 +175,7 @@ defmodule PhoenixVapor.Compiler.Macros do
       |> Enum.map(&prop_name/1)
       |> Enum.uniq()
 
-    with {:ok, domains} <- PropTypes.literal_values(runtime, env.file, env.script, props),
+    with {:ok, domains} <- PropTypes.literal_values(env.session, env.file, env.script, props),
          {:ok, combinations} <- combinations(props, domains) do
       Enum.reduce_while(combinations, {:ok, %{}}, fn values, {:ok, table} ->
         case evaluate(runtime, source, with_props(env, props, values)) do
@@ -347,11 +290,6 @@ defmodule PhoenixVapor.Compiler.Macros do
 
   # ── The macro modules ──
 
-  defp start_runtime do
-    {:ok, runtime} = QuickBEAM.start(handlers: PropTypes.handlers())
-    runtime
-  end
-
   # Bundles the file's macro imports with Volt, resolved from the SFC's
   # directory as the browser build resolves them, and loads them under an id.
   defp load_bundle(runtime, macros, file) do
@@ -374,6 +312,4 @@ defmodule PhoenixVapor.Compiler.Macros do
               PhoenixVapor.JS.error_message(reason)
     end
   end
-
-  defp slice(source, %{start: start, end: stop}), do: binary_part(source, start, stop - start)
 end
