@@ -79,6 +79,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       |> seed_ref_values(values)
       |> seed_props_alias(spec.client_props)
       |> eval_computeds(computeds, values)
+      |> translate_changed(spec)
 
     # The wrapper div is the root tag; the component itself may render text,
     # comments, or several elements.
@@ -121,6 +122,29 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   end
 
   defp with_recorded_refs(spec, _assigns), do: {spec.values, spec.computeds}
+
+  # Change tracking skips a slot none of whose names changed, but what changes
+  # is often not what the template reads: `:__pv_refs__` changes the refs, a
+  # prop changes `props`, and either changes the computeds that read them.
+  defp translate_changed(%{__changed__: changed} = assigns, spec) when is_map(changed) do
+    names = MapSet.new(Map.keys(changed), &to_string/1)
+    names = if "__pv_refs__" in names, do: MapSet.union(names, MapSet.new(spec.refs)), else: names
+
+    names =
+      if Enum.any?(spec.client_props, &(&1 in names)), do: MapSet.put(names, "props"), else: names
+
+    # In order, so a computed reading another computed sees its change.
+    names =
+      Enum.reduce(spec.constant ++ spec.computeds, names, fn {name, expr}, names ->
+        if Enum.any?(PhoenixVapor.Renderer.Expr.assign_keys(expr), &(&1 in names)),
+          do: MapSet.put(names, name),
+          else: names
+      end)
+
+    %{assigns | __changed__: Map.new(names, &{&1, true})}
+  end
+
+  defp translate_changed(assigns, _spec), do: assigns
 
   defp wrapper_statics(nil, _mode), do: [~s(<div data-pv data-pv-props="), ~s(">), "</div>"]
 

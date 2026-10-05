@@ -111,6 +111,40 @@ defmodule PhoenixVapor.Integration.ReplayTest do
       assert live =~ ~s(phx-hook="PhoenixVaporHybrid")
     end
 
+    # What a tracked render sends: the dynamic parts LiveView diffs, with an
+    # unchanged slot as nothing.
+    defp sent(%Phoenix.LiveView.Rendered{} = rendered),
+      do: rendered.dynamic.(true) |> Enum.map_join("|", &sent/1)
+
+    defp sent(nil), do: ""
+    defp sent(list) when is_list(list), do: Enum.map_join(list, "|", &sent/1)
+    defp sent(%Phoenix.LiveView.Comprehension{} = comprehension), do: inspect(comprehension)
+    defp sent(value), do: to_string(value)
+
+    test "a tracked render sends what a reported ref changed, as a seek does" do
+      assigns = %{title: "Team", users: @users, __pv_refs__: %{"search" => "Ad"}}
+
+      sent =
+        assigns
+        |> Map.put(:__changed__, %{__pv_refs__: true})
+        |> HybridLive.replay_render()
+        |> sent()
+
+      # The input's value and the result count; the title didn't change.
+      assert sent =~ ~s(value="Ad")
+      assert sent |> String.split("|") |> List.last() == "1"
+      refute sent =~ "Team"
+    end
+
+    test "a tracked render sends the computeds a changed prop feeds" do
+      assigns = %{title: "Team", users: tl(@users)}
+
+      sent =
+        assigns |> Map.put(:__changed__, %{users: true}) |> HybridLive.replay_render() |> sent()
+
+      assert sent |> String.split("|") |> List.last() == "1"
+    end
+
     test "ignores reported names that aren't refs" do
       [rendered] =
         replay(&HybridLive.replay_render/1, [
