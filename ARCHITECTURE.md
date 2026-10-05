@@ -96,7 +96,7 @@ Initial render: server sends statics + dynamics, with the props JSON as the wrap
 
 ### Session Replay
 
-A replayer such as PhoenixReplay renders a recorded view from its recorded assigns alone. While a session is recorded, the client reports its refs (`PhoenixVapor.Hybrid.Recording`), and `replay_render/1` renders the template with them and without the client hook. See the Hybrid guide.
+A replayer such as PhoenixReplay renders a recorded view from its recorded assigns alone; the QuickBEAM runtimes of Reactive mode and the full runtime live in `socket.private`, out of the recording. A hybrid component's refs live in the browser: `browser/hybrid-bridge.ts` reports them as `phx_replay:state` window events between `phx_replay:start` and `phx_replay:stop`, all of them on start and then only the changed ones, under `phoenix_vapor:<wrapper id>`. The generated `replay_render/1` (`Hybrid.ServerCodegen.build_rendered/3` in `:replay` mode) reads them from `@phoenix_replay_state`, renders without the client hook, and maps a changed `:phoenix_replay_state` or prop to the refs and computeds the template reads, for tracked re-renders. See the Hybrid guide.
 
 ### Custom Elixir Code
 
@@ -162,7 +162,6 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 - `PhoenixVapor.Hybrid.Computeds` — `computed()` values for the server's render
 - `PhoenixVapor.Hybrid.ServerCodegen` — Elixir code generation
 - `PhoenixVapor.Hybrid.ClientCodegen` — Vue 3 JS generation
-- `PhoenixVapor.Hybrid.Recording` — the client's refs, reported while a session is recorded
 - `PhoenixVapor.Full` — the full runtime (`runtime: :full`)
 - `PhoenixVapor.Full.Runtime` — QuickBEAM GenServer for the full Vue runtime
 

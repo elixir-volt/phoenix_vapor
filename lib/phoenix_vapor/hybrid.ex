@@ -78,10 +78,6 @@ defmodule PhoenixVapor.Hybrid do
 
       import PhoenixVapor.Sigil
 
-      # While a session is recorded, the client reports its refs.
-      require Phoenix.LiveView
-      Phoenix.LiveView.on_mount(PhoenixVapor.Hybrid.Recording)
-
       unquote(render_ast)
       unquote_splicing(event_asts)
       unquote_splicing(sfc.elixir)

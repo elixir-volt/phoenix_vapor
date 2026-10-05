@@ -79,6 +79,9 @@ defmodule PhoenixVapor.Integration.ReplayTest do
   describe "hybrid" do
     @users [%{"id" => 1, "name" => "Ada"}, %{"id" => 2, "name" => "Bob"}]
 
+    # What PhoenixReplay merges the client's reports into, by state key.
+    defp state(refs), do: %{"phoenix_vapor:pv-Hybrid" => refs}
+
     test "follows the recorded props, with the refs' initial values" do
       [both, one] =
         replay(&HybridLive.replay_render/1, [
@@ -94,7 +97,7 @@ defmodule PhoenixVapor.Integration.ReplayTest do
       [initial, searched] =
         replay(&HybridLive.replay_render/1, [
           %{title: "Team", users: @users},
-          %{title: "Team", users: @users, __pv_refs__: %{"search" => "Ad"}}
+          %{title: "Team", users: @users, phoenix_replay_state: state(%{"search" => "Ad"})}
         ])
 
       assert initial =~ "<p>2 results</p>"
@@ -122,11 +125,11 @@ defmodule PhoenixVapor.Integration.ReplayTest do
     defp sent(value), do: to_string(value)
 
     test "a tracked render sends what a reported ref changed, as a seek does" do
-      assigns = %{title: "Team", users: @users, __pv_refs__: %{"search" => "Ad"}}
+      assigns = %{title: "Team", users: @users, phoenix_replay_state: state(%{"search" => "Ad"})}
 
       sent =
         assigns
-        |> Map.put(:__changed__, %{__pv_refs__: true})
+        |> Map.put(:__changed__, %{phoenix_replay_state: true})
         |> HybridLive.replay_render()
         |> sent()
 
@@ -145,10 +148,21 @@ defmodule PhoenixVapor.Integration.ReplayTest do
       assert sent |> String.split("|") |> List.last() == "1"
     end
 
+    test "render/1 ignores recorded refs; only a replay applies them" do
+      assigns = %{title: "Team", users: @users, phoenix_replay_state: state(%{"search" => "Ad"})}
+      [live] = replay(&HybridLive.render/1, [assigns])
+
+      assert live =~ "<p>2 results</p>"
+    end
+
     test "ignores reported names that aren't refs" do
       [rendered] =
         replay(&HybridLive.replay_render/1, [
-          %{title: "Team", users: @users, __pv_refs__: %{"title" => "Hijacked", "search" => ""}}
+          %{
+            title: "Team",
+            users: @users,
+            phoenix_replay_state: state(%{"title" => "Hijacked", "search" => ""})
+          }
         ])
 
       assert rendered =~ "<h1>Team</h1>"

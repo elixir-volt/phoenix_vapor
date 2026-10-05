@@ -111,6 +111,12 @@ A page can mount the same component several times; each mount has its own props 
 
 A session replayer such as [PhoenixReplay](https://github.com/elixir-volt/phoenix_replay) records the assigns each render changed, then shows the session by rendering the view with them, without running `mount/3`, events, or the page's JavaScript. Server-only templates, Reactive mode and the full runtime replay as they are, since `render/1` reads only assigns; their QuickBEAM runtimes live in `socket.private`, out of the recording.
 
-A hybrid component's refs live in the browser, so the server never sees them change. While a session is being recorded, the client reports them, debounced, and the server keeps them in one assign, `:__pv_refs__`, which the recording captures like any other. When nothing is recorded, the client sends nothing.
+A hybrid component's refs live in the browser, so the server never sees them change. They're recorded through PhoenixReplay's client-state events on `window`, so PhoenixVapor depends on PhoenixReplay neither in Elixir nor in JavaScript:
 
-Each hybrid LiveView also defines `replay_render/1`: the same template without the client hook and `phx-update="ignore"`, with the recorded refs in place of their initial values, and the computeds evaluated with them. A replayer calls it instead of `render/1` when the view exports it.
+- When recording starts with client state, `phx_replay:start`, each hybrid component reports all of its refs as a `phx_replay:state` event, and then, as they change, only the refs that changed. A component that mounts during a recording reports its refs then. Before `phx_replay:start`, and after `phx_replay:stop`, nothing is dispatched.
+- The state key is `phoenix_vapor:` and the component's wrapper id, such as `phoenix_vapor:pv-Contacts`, which stays the same across reconnects.
+- Only plain data is reported: strings, numbers, booleans, `null`, arrays and plain objects. A template ref to an element or a component is left out.
+
+Each hybrid LiveView also defines `replay_render/1`, which the replay calls instead of `render/1`: the same template without the client hook and `phx-update="ignore"`, with the refs recorded under the component's key in `@phoenix_replay_state` in place of their initial values, and the computeds evaluated with them. `render/1` never uses recorded refs.
+
+PhoenixReplay drops a report whose changes exceed 8,192 bytes of JSON. Each report carries only the refs that changed, so this matters only for a single ref holding that much, such as a large list kept in a ref: changes to it aren't recorded.

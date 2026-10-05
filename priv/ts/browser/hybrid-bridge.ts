@@ -16,7 +16,7 @@ export interface Bridge {
     callback?: (reply: unknown) => void
   ): void
   handleEvent(event: string, callback: (payload: unknown) => void): void
-  /** Reports `refs` while the session is recorded; see `recordRefs`. */
+  /** Reports `refs` while a session replayer records; see `reportRefs`. */
   record?(refs: Refs, watch: Watch): void
 }
 
@@ -45,11 +45,8 @@ export interface HybridComponent {
 interface HookContext extends Bridge {
   el: HTMLElement
   instance?: HybridInstance
-  stopRecording?: () => void
+  stopReporting?: () => void
 }
-
-// How long the refs must stay unchanged before they're reported.
-const REPORT_DELAY = 250
 
 // A value as plain data: strings, numbers, booleans, null, arrays and plain
 // objects. Anything else, such as a template ref's element or a component
@@ -73,8 +70,8 @@ function plain(value: unknown, seen: Set<object>): unknown {
   return result
 }
 
-// A component's refs as plain data, for the `__pv_refs` event.
-function snapshot(refs: Refs): object {
+// A component's refs as plain data, by name.
+function snapshot(refs: Refs): Record<string, unknown> {
   const values: Record<string, unknown> = {}
 
   for (const [name, ref] of Object.entries(refs)) {
@@ -85,41 +82,87 @@ function snapshot(refs: Refs): object {
   return values
 }
 
-/**
- * While the server says the session is being recorded, with `pv:record`,
- * reports the registered refs as `__pv_refs`, debounced, so the recording
- * has the client's state. Until then a registration is only kept.
- */
-function recordRefs(hook: HookContext): (refs: Refs, watch: Watch) => void {
-  let recording = false
-  const waiting: Array<() => void> = []
-  const stops: Array<() => void> = []
+// A session replayer, such as PhoenixReplay, records state that lives only in
+// the browser through window events, so PhoenixVapor needs no dependency on
+// it: `phx_replay:start` and `phx_replay:stop` say when a session is recorded,
+// with `{state: null}` when client state isn't, and `phx_replay:state`
+// reports `{key, changes}`, a shallow delta merged into what's recorded under
+// `key`. Recording may start before or after a component mounts.
+const START_EVENT = "phx_replay:start"
+const STOP_EVENT = "phx_replay:stop"
+const STATE_EVENT = "phx_replay:state"
 
-  const start = (refs: Refs, watch: Watch) => {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const report = () => hook.pushEvent("__pv_refs", snapshot(refs))
-    const changed = () => {
-      clearTimeout(timer)
-      timer = setTimeout(report, REPORT_DELAY)
-    }
+type Reporter = { start(): void; stop(): void }
 
-    // Their initial values are the server's too, so only changes are reported.
-    stops.push(watch(() => snapshot(refs), changed, { deep: true, immediate: false }))
-    stops.push(() => clearTimeout(timer))
-  }
+let recording = false
+const reporters = new Set<Reporter>()
 
-  hook.handleEvent("pv:record", () => {
+if (typeof window !== "undefined") {
+  window.addEventListener(START_EVENT, (event) => {
+    const detail = (event as CustomEvent<{ state?: unknown } | null>).detail
+    if (detail?.state == null) return
+
     recording = true
-    for (const begin of waiting.splice(0)) begin()
+    for (const reporter of reporters) reporter.start()
   })
 
-  hook.stopRecording = () => {
-    for (const stop of stops.splice(0)) stop()
+  window.addEventListener(STOP_EVENT, () => {
+    recording = false
+    for (const reporter of reporters) reporter.stop()
+  })
+}
+
+/**
+ * Reports a component's refs under `key` while a session is recorded: all of
+ * them when recording starts, or when the component mounts during one, then
+ * only the refs that changed.
+ */
+function reportRefs(hook: HookContext, key: string): (refs: Refs, watch: Watch) => void {
+  const report = (changes: Record<string, unknown>) => {
+    if (Object.keys(changes).length > 0)
+      window.dispatchEvent(new CustomEvent(STATE_EVENT, { detail: { key, changes } }))
   }
 
   return (refs, watch) => {
-    if (recording) start(refs, watch)
-    else waiting.push(() => start(refs, watch))
+    let stopWatching: (() => void) | undefined
+    let last: Record<string, string> = {}
+
+    const reporter: Reporter = {
+      start() {
+        stopWatching?.()
+        const values = snapshot(refs)
+        last = Object.fromEntries(Object.entries(values).map(([n, v]) => [n, JSON.stringify(v)]))
+        report(values)
+
+        stopWatching = watch(
+          () => snapshot(refs),
+          (next) => {
+            const changes: Record<string, unknown> = {}
+
+            for (const [name, value] of Object.entries(next as Record<string, unknown>)) {
+              const json = JSON.stringify(value)
+              if (last[name] !== json) changes[name] = value
+              last[name] = json
+            }
+
+            report(changes)
+          },
+          { deep: true, immediate: false }
+        )
+      },
+      stop() {
+        stopWatching?.()
+        stopWatching = undefined
+      }
+    }
+
+    reporters.add(reporter)
+    if (recording) reporter.start()
+
+    hook.stopReporting = () => {
+      reporter.stop()
+      reporters.delete(reporter)
+    }
   }
 }
 
@@ -153,7 +196,8 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
         pushEventTo: (selector, event, payload, callback) =>
           this.pushEventTo(selector, event, payload, callback),
         handleEvent: (event, callback) => this.handleEvent(event, callback),
-        record: recordRefs(this)
+        // Stable across reconnects; the server replays under the same key.
+        record: reportRefs(this, `phoenix_vapor:${this.el.id}`)
       }
 
       this.instance = component.__mount(this.el, bridge, readProps(this.el) ?? {})
@@ -168,7 +212,7 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
     },
 
     destroyed(this: HookContext) {
-      this.stopRecording?.()
+      this.stopReporting?.()
       this.instance?.unmount()
       this.instance = undefined
     }
