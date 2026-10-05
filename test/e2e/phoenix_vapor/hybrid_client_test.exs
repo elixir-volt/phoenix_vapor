@@ -18,12 +18,19 @@ defmodule PhoenixVapor.E2E.HybridClientTest do
 
   const users = defineModel("users")
   const note = ref("bye")
+  const selected = ref([2])
 
   function remove(id) {
     "use server"
     // Already removed: nothing to send.
     if (!users.value.some(u => u.id === id)) return
     users.value = users.value.filter(u => u.id !== id)
+  }
+
+  function removeSelected() {
+    "use server"
+    users.value = users.value.filter(u => !selected.value.includes(u.id))
+    selected.value = []
   }
   </script>
 
@@ -32,6 +39,7 @@ defmodule PhoenixVapor.E2E.HybridClientTest do
       <li v-for="u in users" :key="u.id">{{ u.name }}</li>
     </ul>
     <button @click="remove(1)">Remove</button>
+    <button class="selected" @click="removeSelected()">Remove selected</button>
   </template>
   """
 
@@ -103,6 +111,19 @@ defmodule PhoenixVapor.E2E.HybridClientTest do
 
     assert {:ok, %{"a" => [["remove", %{"id" => 1}]], "b" => []}} =
              QuickBEAM.eval(rt, "globalThis.events")
+  end
+
+  test "a server action sends what it read on entry, not what its body left", %{rt: rt} do
+    {:ok, _} =
+      QuickBEAM.eval(
+        rt,
+        ~s|document.querySelector("#a button.selected").dispatchEvent(new Event("click"))|
+      )
+
+    refute html(rt, "a") =~ "Bob"
+
+    assert {:ok, [["removeSelected", %{"selected" => [2]}]]} =
+             QuickBEAM.eval(rt, "globalThis.events.a")
   end
 
   test "a server action whose body returns early isn't sent", %{rt: rt} do

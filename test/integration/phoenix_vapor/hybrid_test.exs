@@ -345,7 +345,7 @@ defmodule PhoenixVapor.Integration.HybridTest do
 
     test "deleteContact sends id param" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ ~s|bridge.action("deleteContact", {"id": id})|
+      assert js =~ ~s|const __pvParams = JSON.parse(JSON.stringify({"id": id}));|
     end
 
     test "clearSearch sends no action" do

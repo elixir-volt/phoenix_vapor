@@ -58,6 +58,15 @@ interface HookContext extends Bridge {
   el: HTMLElement
   instance?: HybridInstance
   stopReporting?: () => void
+  /** Server actions sent and not yet answered. */
+  pending?: number
+  // Without a callback, LiveView returns a promise that settles once the
+  // server has answered, or fails to.
+  pushEvent(
+    event: string,
+    payload: object,
+    callback?: (reply: unknown) => void
+  ): Promise<unknown> | undefined
 }
 
 // A value as plain data: strings, numbers, booleans, null, arrays and plain
@@ -238,6 +247,20 @@ function applyProps(hook: HookContext) {
   if (props) hook.instance!.applyProps(props)
 }
 
+// LiveView settles the push after it has applied the action's diff, so the
+// props read then are the server's answer: a change the server declined goes
+// away. A failed push settles too.
+function sendAction(hook: HookContext, event: string, payload: object) {
+  hook.pending = (hook.pending ?? 0) + 1
+
+  const settle = () => {
+    hook.pending = Math.max((hook.pending ?? 1) - 1, 0)
+    if (hook.pending === 0) applyProps(hook)
+  }
+
+  void hook.pushEvent(event, payload)?.then(settle, settle)
+}
+
 export function createHybridHook(components: Record<string, HybridComponent>) {
   return {
     mounted(this: HookContext) {
@@ -254,9 +277,7 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
         pushEventTo: (selector, event, payload, callback) =>
           this.pushEventTo(selector, event, payload, callback),
         handleEvent: (event, callback) => this.handleEvent(event, callback),
-        // LiveView replies after it has applied the action's diff, so the
-        // props read then are the server's answer.
-        action: (event, payload) => this.pushEvent(event, payload, () => applyProps(this)),
+        action: (event, payload) => sendAction(this, event, payload),
         // Stable across reconnects; the server replays under the same key.
         record: reportRefs(this, `phoenix_vapor:${this.el.id}`)
       }
@@ -264,11 +285,15 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
       this.instance = component.__mount(this.el, bridge, readProps(this.el) ?? {})
     },
 
+    // While actions are in flight, the props the server sends between their
+    // answers would undo the optimistic changes of those still pending; the
+    // last answer applies them.
     updated(this: HookContext) {
-      applyProps(this)
+      if (!this.pending) applyProps(this)
     },
 
     reconnected(this: HookContext) {
+      this.pending = 0
       applyProps(this)
     },
 

@@ -28,6 +28,8 @@
 
 ### Fixed
 
+- A server action sent the refs it read as they were after its body ran, so `selectedIds.value = []` at the end of the body sent an empty selection. It sends them as they were when it was called.
+- While several server actions were in flight, the first answer reapplied the server's props, undoing the optimistic changes of the others until their own answers came. The props now apply once every action in flight has been answered, or has failed.
 - An optimistic change the server declined stayed on screen: when `handle_event/3` left the assign unchanged, no new props came. Once the server has handled a server action, the component's props and models are the server's again.
 - A server action whose body returned early, such as `if (!id) return`, wasn't recognized: its body was parsed as a script, where `return` is a syntax error, so it was a client handler and never reached the server.
 - A hybrid component's prop that only the template read, as `props.saved`, stayed on the server: the browser never received it, and the server's own first paint rendered it empty. A prop the template reads now goes to the browser, and one only `"use server"` functions read still stays on the server.
