@@ -1,6 +1,6 @@
 # PhoenixVapor Hybrid Architecture
 
-> **Design document.** This is an early design for hybrid mode, not the current implementation or the current plan. It describes a Vue Vapor client that hydrates the server's render; the implemented client is a standard Vue 3 component on the virtual DOM, mounted fresh, and that is a decision, explained in [ARCHITECTURE.md](../ARCHITECTURE.md#why-standard-vue-in-the-browser). The server side also differs: `"use server"` bodies are not translated to Elixir.
+> **Design document.** This is an early design for hybrid mode, not the current implementation or the current plan. It describes a Vue Vapor client that hydrates the server's render; the implemented client is a standard Vue 3 component on the virtual DOM, mounted fresh, and that is a decision, explained in [ARCHITECTURE.md](../ARCHITECTURE.md#why-standard-vue-in-the-browser). The server side also differs: `"use server"` bodies are not translated to Elixir; they run in the browser before the action reaches `handle_event/3`. Data the browser changes is a `defineModel()` model, not a written prop, and the examples below use it.
 
 One `.vue` file. The compiler decides what runs where. No LiveView leakage. Instant local UI. Server-authoritative domain state.
 
@@ -14,10 +14,10 @@ You write a normal Vue SFC:
 <script setup>
 import { ref, computed } from "vue"
 
-defineProps(["users"])              // comes from the server (DB, assigns)
+const users = defineModel("users")  // comes from the server (DB, assigns)
 const search = ref("")             // lives in the browser (instant)
 const filtered = computed(() =>    // derived from both — runs on client
-  users.filter(u => u.name.includes(search.value))
+  users.value.filter(u => u.name.includes(search.value))
 )
 
 function clearSearch() {           // pure client — no network
@@ -26,7 +26,7 @@ function clearSearch() {           // pure client — no network
 
 function deleteUser(id) {          // needs the server
   "use server"
-  users = users.filter(u => u.id !== id)
+  users.value = users.value.filter(u => u.id !== id)
 }
 </script>
 
@@ -62,10 +62,10 @@ The compiler looks at your `<script setup>` and applies simple rules:
 | `computed` using a prop | Derivation needing server data | **Mixed computed** (runs on client, reads server + client) |
 | `computed` using only refs | Pure local derivation | **Client computed** |
 | Function writing only to refs | `clearSearch()` | **Client handler** (no wire) |
-| Function writing to a prop | `banUser()` | **Server action** (auto-detected) |
+| Function writing a model | `banUser()` | **Server action** (auto-detected) |
 | Function with `"use server"` | `deleteUser()` | **Server action** (explicit) |
 
-No annotations needed for 90% of cases. `"use server"` is the escape hatch for ambiguous ones (functions that need the server but don't visibly write to props — like sending an email).
+No annotations needed for 90% of cases. `"use server"` is the escape hatch for ambiguous ones (functions that need the server but don't visibly write to a model — like sending an email).
 
 ---
 
@@ -317,7 +317,7 @@ Borrowed from React/Next.js. Marks a function as running on the server:
 ```vue
 function deleteUser(id) {
   "use server"
-  users = users.filter(u => u.id !== id)
+  users.value = users.value.filter(u => u.id !== id)
 }
 ```
 
@@ -331,16 +331,16 @@ function deleteUser(id) {
 - Function where the compiler can't tell it needs the server
 
 **When you DON'T need it:**
-- Function that writes to a prop → auto-detected as server action
+- Function that writes a model → auto-detected as server action
 - Function that only writes to client refs → auto-detected as client handler
 
 ```vue
-// No directive needed — compiler sees it writes to `users` (a prop)
+// No directive needed — compiler sees it writes `users` (a model)
 function banUser(id) {
-  users = users.map(u => u.id === id ? { ...u, banned: true } : u)
+  users.value = users.value.map(u => u.id === id ? { ...u, banned: true } : u)
 }
 
-// Directive needed — no visible prop write, but needs server
+// Directive needed — no visible model write, but needs server
 function sendInvite(email) {
   "use server"
   // This body only makes sense on the server

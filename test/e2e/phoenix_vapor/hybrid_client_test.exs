@@ -16,18 +16,20 @@ defmodule PhoenixVapor.E2E.HybridClientTest do
   <script setup>
   import { ref } from "vue"
 
-  const props = defineProps(["users"])
+  const users = defineModel("users")
   const note = ref("bye")
 
   function remove(id) {
     "use server"
-    props.users = props.users.filter(u => u.id !== id)
+    // Already removed: nothing to send.
+    if (!users.value.some(u => u.id === id)) return
+    users.value = users.value.filter(u => u.id !== id)
   }
   </script>
 
   <template>
     <ul>
-      <li v-for="u in props.users" :key="u.id">{{ u.name }}</li>
+      <li v-for="u in users" :key="u.id">{{ u.name }}</li>
     </ul>
     <button @click="remove(1)">Remove</button>
   </template>
@@ -57,7 +59,7 @@ defmodule PhoenixVapor.E2E.HybridClientTest do
       const el = document.createElement("div");
       el.id = id;
       document.body.appendChild(el);
-      instances[id] = __mount(el, { pushEvent: (event, params) => events[id].push([event, params]) }, { users });
+      instances[id] = __mount(el, { action: (event, params) => events[id].push([event, params]) }, { users });
     }
     """)
 
@@ -101,6 +103,15 @@ defmodule PhoenixVapor.E2E.HybridClientTest do
 
     assert {:ok, %{"a" => [["remove", %{"id" => 1}]], "b" => []}} =
              QuickBEAM.eval(rt, "globalThis.events")
+  end
+
+  test "a server action whose body returns early isn't sent", %{rt: rt} do
+    click = ~s|document.querySelector("#a button").dispatchEvent(new Event("click"))|
+
+    {:ok, _} = QuickBEAM.eval(rt, click)
+    {:ok, _} = QuickBEAM.eval(rt, click)
+
+    assert {:ok, [["remove", %{"id" => 1}]]} = QuickBEAM.eval(rt, "globalThis.events.a")
   end
 
   test "props applied after mount re-render that instance", %{rt: rt} do

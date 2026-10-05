@@ -26,7 +26,8 @@ defmodule PhoenixVapor.Hybrid.Classifier do
           bindings: %{String.t() => binding_kind()},
           handlers: %{String.t() => handler_kind()},
           client_props: [String.t()],
-          server_only_props: [String.t()]
+          server_only_props: [String.t()],
+          models: [String.t()]
         }
 
   @doc """
@@ -36,21 +37,22 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   """
   @spec classify(ScriptSetup.t(), [String.t()]) :: classification()
   def classify(%ScriptSetup{} = setup, template_names \\ []) do
-    %{refs: refs, computeds: computeds, functions: function_bodies, props: props} = setup
+    %{refs: refs, computeds: computeds, functions: function_bodies, models: models} = setup
+    # A model is a prop the browser may change, so the server sends it too.
+    models = Map.keys(models)
+    props = setup.props ++ models
     prop_set = MapSet.new(props)
     ref_set = MapSet.new(Map.keys(refs))
 
     bindings =
       build_bindings(props, refs, computeds, prop_set, ref_set)
 
-    computed_set = MapSet.new(Map.keys(computeds))
-    all_client = MapSet.union(ref_set, computed_set)
-
-    handlers =
-      build_handlers(function_bodies, prop_set, all_client)
+    handlers = build_handlers(function_bodies, MapSet.new(models))
 
     client_props =
       compute_client_props(bindings, handlers, function_bodies, refs, props, template_names)
+      |> Enum.concat(models)
+      |> Enum.uniq()
 
     server_only_props = props -- client_props
 
@@ -58,7 +60,8 @@ defmodule PhoenixVapor.Hybrid.Classifier do
       bindings: bindings,
       handlers: handlers,
       client_props: client_props,
-      server_only_props: server_only_props
+      server_only_props: server_only_props,
+      models: models
     }
   end
 
@@ -94,28 +97,39 @@ defmodule PhoenixVapor.Hybrid.Classifier do
   end
 
   # Each body is parsed once: a `"use server"` directive, or a write to a
-  # prop, makes it a server action.
-  defp build_handlers(function_bodies, prop_set, _client_set) do
+  # model, which the server owns, makes it a server action.
+  # A body is parsed as a function's, so it may `return`.
+  @wrapper "function __handler() {\n"
+
+  defp build_handlers(function_bodies, model_set) do
     Map.new(function_bodies, fn {name, body} ->
       kind =
-        case OXC.parse(body, "fn.js") do
-          {:ok, ast} -> handler_kind(body, ast, prop_set)
-          {:error, _errors} -> :client_handler
+        case OXC.parse(@wrapper <> body <> "\n}", "fn.js") do
+          {:ok, %{body: [%{body: %{body: statements}} = function]}} ->
+            handler_kind(body, statements, function, model_set)
+
+          _error ->
+            :client_handler
         end
 
       {name, kind}
     end)
   end
 
-  defp handler_kind(body, %{body: [first | _]} = ast, prop_set) do
+  defp handler_kind(body, [first | _rest], function, model_set) do
     cond do
-      use_server?(first) -> {:server_action, after_directive(body, first)}
-      writes_to_prop?(ast, prop_set) -> {:server_action, body}
-      true -> :client_handler
+      use_server?(first) ->
+        {:server_action, after_directive(body, first.end - byte_size(@wrapper))}
+
+      writes_to_model?(function, model_set) ->
+        {:server_action, body}
+
+      true ->
+        :client_handler
     end
   end
 
-  defp handler_kind(_body, _ast, _prop_set), do: :client_handler
+  defp handler_kind(_body, [], _function, _model_set), do: :client_handler
 
   defp use_server?(%{type: :expression_statement, directive: "use server"}), do: true
 
@@ -127,32 +141,36 @@ defmodule PhoenixVapor.Hybrid.Classifier do
 
   defp use_server?(_statement), do: false
 
-  defp after_directive(body, %{end: directive_end}) do
+  defp after_directive(body, directive_end) do
     body
     |> binary_part(directive_end, byte_size(body) - directive_end)
     |> String.trim_leading(";")
     |> String.trim()
   end
 
-  defp writes_to_prop?(ast, prop_set),
-    do: ast |> collect_assignment_targets() |> Enum.any?(&MapSet.member?(prop_set, &1))
-
-  defp collect_assignment_targets(ast) do
-    OXC.collect(ast, fn
-      %{type: :assignment_expression, left: %{type: :identifier, name: name}} ->
-        {:keep, name}
-
-      %{type: :update_expression, argument: %{type: :identifier, name: name}} ->
-        {:keep, name}
-
-      _ ->
-        :skip
+  # `model.value = ...`, or `model.value++`.
+  defp writes_to_model?(ast, model_set) do
+    ast
+    |> OXC.collect(fn
+      %{type: :assignment_expression, left: target} -> {:keep, model_target(target)}
+      %{type: :update_expression, argument: target} -> {:keep, model_target(target)}
+      _node -> :skip
     end)
+    |> Enum.any?(&MapSet.member?(model_set, &1))
   end
 
-  # The client renders the whole component, so it needs every prop that the
-  # template or client-side code reads. Props only server actions read stay
-  # on the server. A template that reads `props` whole, as `v-bind="props"`
+  defp model_target(%{
+         type: :member_expression,
+         object: %{type: :identifier, name: name},
+         property: %{name: "value"}
+       }),
+       do: name
+
+  defp model_target(_target), do: nil
+
+  # The client renders the whole component and runs its functions, so it
+  # needs every prop that the template or the script reads. A prop nothing
+  # reads stays on the server. A template that reads `props` whole, as `v-bind="props"`
   # does, needs them all.
   defp compute_client_props(bindings, handlers, function_bodies, refs, props, template_names) do
     computed_deps =
@@ -161,9 +179,9 @@ defmodule PhoenixVapor.Hybrid.Classifier do
         _ -> []
       end)
 
-    client_code =
-      Map.values(refs) ++
-        for {name, :client_handler} <- handlers, do: Map.get(function_bodies, name, "")
+    # Server actions' bodies run in the browser too, before the server gets
+    # the action.
+    client_code = Map.values(refs) ++ for({name, _kind} <- handlers, do: function_bodies[name])
 
     read =
       client_code

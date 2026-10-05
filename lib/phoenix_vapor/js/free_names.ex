@@ -20,11 +20,19 @@ defmodule PhoenixVapor.JS.FreeNames do
     node
     |> walk(MapSet.new(), Keyword.get(opts, :props, false), [])
     |> Enum.reverse()
+    |> Enum.map(&elem(&1, 0))
     |> Enum.uniq()
   end
 
-  defp walk(%{type: :identifier, name: name}, bound, _props?, acc),
-    do: if(MapSet.member?(bound, name), do: acc, else: [name | acc])
+  @doc """
+  Each free occurrence of a name in `node`, with where it starts, in source
+  order: a name bound in one place and free in another is free only there.
+  """
+  @spec occurrences(map() | [map()] | nil) :: [{String.t(), non_neg_integer()}]
+  def occurrences(node), do: node |> walk(MapSet.new(), false, []) |> Enum.reverse()
+
+  defp walk(%{type: :identifier, name: name} = node, bound, _props?, acc),
+    do: if(MapSet.member?(bound, name), do: acc, else: [{name, node[:start]} | acc])
 
   defp walk(
          %{
@@ -32,12 +40,12 @@ defmodule PhoenixVapor.JS.FreeNames do
            object: %{type: :identifier, name: "props"},
            property: %{name: prop},
            computed: false
-         },
+         } = node,
          bound,
          true,
          acc
        ) do
-    if MapSet.member?(bound, "props"), do: acc, else: ["props." <> prop | acc]
+    if MapSet.member?(bound, "props"), do: acc, else: [{"props." <> prop, node[:start]} | acc]
   end
 
   defp walk(

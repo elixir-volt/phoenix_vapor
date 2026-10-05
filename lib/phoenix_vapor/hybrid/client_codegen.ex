@@ -3,8 +3,9 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   Generates client-side JavaScript for hybrid components.
 
   Takes Vize's compiled SFC output and:
-  1. Replaces server action bodies with optimistic prop updates and a `pushEvent`
-  2. Exports `__mount/3`, which mounts one instance with its own props and bridge
+  1. Sends each server action to the server through the bridge after its body runs
+  2. Exports `__mount/3`, which mounts one instance with its own props and bridge,
+     and applies each model's `update:` event to its props
   """
 
   alias PhoenixVapor.Hybrid.Classifier
@@ -43,8 +44,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
   @doc """
   Transform Vize's compiled SFC output for hybrid mode.
 
-  Replaces server action bodies with optimistic prop updates followed by a
-  `pushEvent`, and wraps the component with the bridge exports.
+  Sends each server action to the server through the bridge once its body
+  has run, and wraps the component with the bridge exports.
   """
   @spec transform(String.t(), Classifier.classification(), keyword()) :: String.t()
   def transform(vize_code, classification, opts \\ []) do
@@ -55,7 +56,8 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
         setup_patches(ast, Keyword.get_lazy(opts, :record, fn -> client_refs(classification) end)) ++
         default_export_patches(ast) ++ import_patches(ast, opts)
 
-    preamble(classification) <> "\n" <> OXC.patch_string(vize_code, patches) <> exports()
+    preamble(classification) <>
+      "\n" <> OXC.patch_string(vize_code, patches) <> exports(classification)
   end
 
   defp import_patches(ast, opts) do
@@ -103,16 +105,23 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   # Each mount gets its own props and bridge, provided to the component's
   # setup as `__pv`, so a page can mount the same component several times.
-  defp exports do
+  defp exports(classification) do
     """
 
     export { __component as default };
 
+    // The models, which the component may change: a change shows at once, as
+    // in a parent component, and the server's next props are the truth.
+    const __models = #{Jason.encode!(Map.get(classification, :models, []))};
+
     export function __mount(el, bridge, props = {}) {
       const state = __reactive({ ...props });
+      const listeners = Object.fromEntries(
+        __models.map((model) => ["onUpdate:" + model, (value) => { state[model] = value; }])
+      );
       // Rendering through h() reads the props inside the root render effect,
       // so applyProps re-renders. createApp(component, props) would copy them.
-      const app = __createApp({ render: () => __h(__component, state) });
+      const app = __createApp({ render: () => __h(__component, { ...state, ...listeners }) });
       // While a session is recorded, the bridge reports the refs setup registers.
       const record = (sources) => bridge.record?.(sources, __watch, __unref);
       app.provide("__pv", { bridge, props: state, record });
@@ -196,53 +205,22 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
     end)
   end
 
+  # The body runs as written, so a model it writes changes at once; then the
+  # server gets the action. A `return` or a `throw` in the body, such as a
+  # guard, stops it before it reaches the server.
   defp server_action_patch(%{id: %{name: name}, params: params, body: body}, code, classification) do
-    push =
-      "__pv.bridge.pushEvent(#{Jason.encode!(name)}, #{event_params(body, params, code, classification)});"
+    action =
+      "__pv.bridge.action(#{Jason.encode!(name)}, #{event_params(body, params, code, classification)});"
 
-    statements = Enum.flat_map(body.body, &optimistic_update(&1, code, classification)) ++ [push]
-    change = IO.iodata_to_binary([Enum.map(statements, &["\n  ", &1]), "\n"])
+    start =
+      case body.body do
+        [%{directive: "use server", end: directive_end} | _rest] -> directive_end
+        _statements -> body.start + 1
+      end
 
-    patch(body.start + 1, body.end - 1, change)
+    statements = slice(code, %{start: start, end: body.end - 1})
+    patch(body.start + 1, body.end - 1, IO.iodata_to_binary([statements, "\n  ", action, "\n"]))
   end
-
-  # `prop = expr` and `props.prop = expr` apply locally before the server confirms.
-  defp optimistic_update(
-         %{
-           type: :expression_statement,
-           expression: %{type: :assignment_expression, operator: "=", left: left, right: right}
-         },
-         code,
-         classification
-       ) do
-    case assigned_prop(left, classification) do
-      nil -> []
-      prop -> ["__pv.props[#{Jason.encode!(prop)}] = #{slice(code, right)};"]
-    end
-  end
-
-  defp optimistic_update(_statement, _code, _classification), do: []
-
-  defp assigned_prop(%{type: :identifier, name: name}, classification) do
-    if name in all_props(classification), do: name
-  end
-
-  defp assigned_prop(
-         %{
-           type: :member_expression,
-           computed: false,
-           object: %{type: :identifier, name: "props"},
-           property: %{name: name}
-         },
-         classification
-       ) do
-    if name in all_props(classification), do: name
-  end
-
-  defp assigned_prop(_left, _classification), do: nil
-
-  defp all_props(classification),
-    do: classification.client_props ++ classification.server_only_props
 
   # Sends the action's arguments and the current value of each client ref or
   # computed it reads.

@@ -24,7 +24,8 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
           callables: [String.t()],
           client_bindings: [String.t()],
           offsets: %{String.t() => non_neg_integer()},
-          props: [String.t()]
+          props: [String.t()],
+          models: %{String.t() => String.t()}
         }
 
   defstruct source: "",
@@ -36,7 +37,8 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
             callables: [],
             client_bindings: [],
             offsets: %{},
-            props: []
+            props: [],
+            models: %{}
 
   @doc """
   Reads a `<script setup>` block. A script that doesn't parse declares
@@ -54,6 +56,9 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
       exist only in the browser. `ref()`s, with their initial values, are
       `:refs` instead.
     * `:props` — the props `defineProps` declares, in any of its forms
+    * `:models` — the models `defineModel` declares, by the name they're
+      bound to: `const open = defineModel("open")` is `%{"open" => "open"}`,
+      and an unnamed `defineModel()` is the `"modelValue"` model
   """
   @spec parse(String.t() | nil) :: t()
   def parse(nil), do: %__MODULE__{}
@@ -73,7 +78,8 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
           callables: callables(ast),
           client_bindings: client_bindings(ast, imports),
           offsets: offsets(ast),
-          props: props(source)
+          props: props(source),
+          models: models(ast)
         }
 
       {:error, _errors} ->
@@ -132,12 +138,28 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
 
   # Where each top-level declaration starts in the script, for diagnostics.
   defp offsets(%{body: body}) do
-    for %{type: :variable_declaration, declarations: declarations, start: start} <- body,
-        %{id: id} <- declarations,
-        name <- binding_names(id),
-        into: %{},
-        do: {name, start}
+    for statement <- body, name <- declared(statement), into: %{}, do: {name, statement.start}
   end
+
+  defp declared(%{type: :variable_declaration, declarations: declarations}),
+    do: Enum.flat_map(declarations, &binding_names(&1.id))
+
+  defp declared(%{type: :function_declaration, id: %{name: name}}), do: [name]
+  defp declared(_statement), do: []
+
+  # `const name = defineModel(...)`: the model's name is the first argument
+  # when it's a string, and `modelValue` otherwise.
+  defp models(%{body: body}) do
+    for %{type: :variable_declaration, declarations: declarations} <- body,
+        %{id: %{type: :identifier, name: name}, init: %{type: :call_expression} = call} <-
+          declarations,
+        %{callee: %{type: :identifier, name: "defineModel"}} <- [call],
+        into: %{},
+        do: {name, model_name(call.arguments)}
+  end
+
+  defp model_name([%{type: :literal, value: name} | _rest]) when is_binary(name), do: name
+  defp model_name(_arguments), do: "modelValue"
 
   # `const name = callee(arg)`: the first argument's source by name.
   defp calls(ast, source, callee) do
@@ -188,8 +210,8 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
 
   # Calls the compiler runs or understands: Vue's compiler macros, `ref()`,
   # `computed()`, and helpers imported as macros.
-  @understood ~w(ref computed defineProps withDefaults defineEmits defineExpose defineOptions
-                 defineSlots)
+  @understood ~w(ref computed defineProps withDefaults defineModel defineEmits defineExpose
+                 defineOptions defineSlots)
 
   defp client_bindings(%{body: body}, imports) do
     for %{type: :variable_declaration, declarations: declarations} <- body,

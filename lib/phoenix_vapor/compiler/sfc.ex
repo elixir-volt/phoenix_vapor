@@ -65,18 +65,21 @@ defmodule PhoenixVapor.Compiler.SFC do
   doesn't.
   """
   @spec setup_line(t(), String.t()) :: pos_integer()
-  def setup_line(%__MODULE__{setup: setup, descriptor: %{script_setup: %{loc: loc}}}, name) do
+  def setup_line(%__MODULE__{setup: setup} = sfc, name) do
     case setup.offsets do
-      %{^name => offset} ->
-        loc.start_line +
-          (setup.source |> binary_part(0, offset) |> String.split("\n") |> length()) - 1
-
-      _other ->
-        1
+      %{^name => offset} -> setup_line_at(sfc, offset)
+      _other -> 1
     end
   end
 
-  def setup_line(_sfc, _name), do: 1
+  @doc "The line in the file of an offset into `<script setup>`'s source."
+  @spec setup_line_at(t(), non_neg_integer()) :: pos_integer()
+  def setup_line_at(%__MODULE__{setup: setup, descriptor: %{script_setup: %{loc: loc}}}, offset),
+    do:
+      loc.start_line + (setup.source |> binary_part(0, offset) |> String.split("\n") |> length()) -
+        1
+
+  def setup_line_at(_sfc, _offset), do: 1
 
   @doc """
   The line in the file where `<script lang="elixir">` first defines
@@ -106,12 +109,13 @@ defmodule PhoenixVapor.Compiler.SFC do
   def template!(%__MODULE__{template: template}), do: template
 
   @doc """
-  Whether `<script setup>` declares state the browser owns: a `ref()`, or a
-  name bound by a call the compiler can't run, such as a composable's.
+  Whether `<script setup>` declares state the browser owns or changes: a
+  `ref()`, a `defineModel()`, or a name bound by a call the compiler can't
+  run, such as a composable's.
   """
   @spec client_state?(t()) :: boolean()
   def client_state?(%__MODULE__{setup: setup}),
-    do: map_size(setup.refs) > 0 or setup.client_bindings != []
+    do: map_size(setup.refs) > 0 or map_size(setup.models) > 0 or setup.client_bindings != []
 
   @doc """
   What a template call to a `<script setup>` function can render through on

@@ -333,41 +333,42 @@ defmodule PhoenixVapor.Integration.HybridTest do
   end
 
   describe "client JS: server actions" do
-    test "deleteContact has pushEvent call" do
+    test "deleteContact sends an action" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ ~s(__pv.bridge.pushEvent("deleteContact")
+      assert js =~ ~s(__pv.bridge.action("deleteContact")
     end
 
-    test "deleteSelected has pushEvent call" do
+    test "deleteSelected sends an action" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ ~s(__pv.bridge.pushEvent("deleteSelected")
+      assert js =~ ~s(__pv.bridge.action("deleteSelected")
     end
 
     test "deleteContact sends id param" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ ~s|pushEvent("deleteContact", {"id": id})|
+      assert js =~ ~s|bridge.action("deleteContact", {"id": id})|
     end
 
-    test "clearSearch does NOT have pushEvent" do
+    test "clearSearch sends no action" do
       js = ContactsLive.__hybrid_client_js__()
-      refute js =~ ~s(pushEvent("clearSearch")
+      refute js =~ ~s(bridge.action("clearSearch")
     end
 
-    test "toggleSelect does NOT have pushEvent" do
+    test "toggleSelect sends no action" do
       js = ContactsLive.__hybrid_client_js__()
-      refute js =~ ~s(pushEvent("toggleSelect")
+      refute js =~ ~s(bridge.action("toggleSelect")
     end
 
-    test "openDialog does NOT have pushEvent" do
+    test "openDialog sends no action" do
       js = ContactsLive.__hybrid_client_js__()
-      refute js =~ ~s(pushEvent("openDialog")
+      refute js =~ ~s(bridge.action("openDialog")
     end
   end
 
   describe "client JS: Vue component structure" do
-    test "has component props declaration" do
+    test "declares the props, and the model with its update event" do
       js = ContactsLive.__hybrid_client_js__()
-      assert js =~ ~s(props: ["contacts")
+      assert js =~ ~s(_mergeModels(["title"], {\n    "contacts": {})
+      assert js =~ ~s(emits: ["update:contacts"])
     end
 
     test "has setup function" do

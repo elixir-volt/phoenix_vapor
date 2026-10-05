@@ -65,12 +65,15 @@ The compiler analyzes `<script setup>` and classifies each binding:
 
 | Pattern | Classification |
 |---------|---------------|
-| `defineProps(["x"])` | Server prop |
+| `defineProps(["x"])` | Server prop, read-only in the browser |
+| `defineModel("x")` | Model: a server prop the browser may change |
 | `ref(value)` | Client ref |
 | `computed` using any prop | Mixed computed |
 | Function with `"use server"` | Server action |
-| Function writing to a prop | Server action (auto-detected) |
+| Function writing a model's `.value` | Server action (auto-detected) |
 | Function writing only to refs | Client handler |
+
+A server action's body runs in the browser as written, and the action is sent after it, through the bridge's `action/2`, so a `return` or `throw` in the body sends nothing. The generated `__mount` passes an `onUpdate:<model>` listener per model, so a model write updates the mount's props at once. `action/2` pushes the event and, in LiveView's reply, which comes after the action's diff is applied, reapplies `data-pv-props`: an assign the server changed is already there, and one it left unchanged replaces the optimistic value. Because the body runs in the browser, the props it reads are client props. A write to `props.x`, or to a prop name the script never binds (`JS.FreeNames.occurrences/1`), is a compile error (`Hybrid.build`).
 
 Server renders full HTML for first paint (SEO). The hook then mounts the Vue component with `createApp` in place of that HTML; the wrapper is `phx-update="ignore"`, so later server renders don't touch the DOM Vue owns. Client interactions (search, sort, select) are instant — zero network. Server actions send events over the existing LiveView WebSocket.
 
@@ -91,7 +94,7 @@ Initial render: server sends statics + dynamics, with the props JSON as the wrap
 ### State Sync
 
 - **Server → Client**: LiveView assign changes → re-render → diff with props JSON → hook's `updated()` → the instance's `applyProps()` → Vue reactivity propagates
-- **Client → Server**: `"use server"` function → `pushEvent` → `handle_event` → assign change → back to step 1
+- **Client → Server**: server action → its body runs (a model write updates the props at once) → `pushEvent` → `handle_event` → assign change → back to step 1
 - **Client → Client**: `ref` mutation → computed recomputation → Vue re-render. No wire.
 
 ### Hybrid Computeds

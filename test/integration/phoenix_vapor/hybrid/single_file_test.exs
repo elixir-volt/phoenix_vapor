@@ -66,9 +66,9 @@ defmodule PhoenixVapor.Integration.Hybrid.SingleFileTest do
       assert {:ok, _} = OXC.parse(js, "output.js")
     end
 
-    test "client JS has deleteItem pushEvent" do
+    test "client JS sends the deleteItem action" do
       js = FruitsLive.__hybrid_client_js__()
-      assert js =~ ~s(pushEvent("deleteItem")
+      assert js =~ ~s(bridge.action("deleteItem")
     end
   end
 
@@ -106,7 +106,7 @@ defmodule PhoenixVapor.Integration.Hybrid.SingleFileTest do
       assert html =~ ~s(data-pv-props="{&quot;saved&quot;:0}")
     end
 
-    test "while one only a server action reads stays on the server" do
+    test "while one nothing in the component reads stays on the server" do
       c = TemplatePropsLive.__hybrid_classification__()
       assert c.client_props == ["saved"]
       assert c.server_only_props == ["owner"]

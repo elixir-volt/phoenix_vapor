@@ -16,6 +16,12 @@ export interface Bridge {
     callback?: (reply: unknown) => void
   ): void
   handleEvent(event: string, callback: (payload: unknown) => void): void
+  /**
+   * Sends a server action. Once the server has handled it, the component's
+   * props are the server's again, so an optimistic change to a model that
+   * the server declined goes away.
+   */
+  action(event: string, payload: object): void
   /** Reports `refs` while a session replayer records; see `reportRefs`. */
   record?(sources: Sources, watch: Watch, unref: Unref): void
 }
@@ -248,6 +254,9 @@ export function createHybridHook(components: Record<string, HybridComponent>) {
         pushEventTo: (selector, event, payload, callback) =>
           this.pushEventTo(selector, event, payload, callback),
         handleEvent: (event, callback) => this.handleEvent(event, callback),
+        // LiveView replies after it has applied the action's diff, so the
+        // props read then are the server's answer.
+        action: (event, payload) => this.pushEvent(event, payload, () => applyProps(this)),
         // Stable across reconnects; the server replays under the same key.
         record: reportRefs(this, `phoenix_vapor:${this.el.id}`)
       }

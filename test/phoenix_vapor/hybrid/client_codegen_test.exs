@@ -134,7 +134,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
   end
 
   describe "server action rewriting" do
-    test "rewrites server action to pushEvent call" do
+    test "a server action sends itself through the bridge" do
       js =
         generate("""
         <script setup>
@@ -146,22 +146,43 @@ defmodule PhoenixVapor.Hybrid.ClientCodegenTest do
         <template><button @click="deleteUser(1)">x</button></template>
         """)
 
-      assert js =~ "pushEvent"
+      assert js =~ "__pv.bridge.action"
       assert js =~ ~s("deleteUser")
     end
 
-    test "generates optimistic update for prop assignment" do
+    test "runs the action's body, then sends the action, unless the body returns first" do
       js =
         generate("""
         <script setup>
-        defineProps(["users"])
-        function deleteUser(id) { "use server"; users = users.filter(u => u.id !== id) }
+        const users = defineModel("users")
+        function deleteUser(id) {
+          "use server"
+          if (!id) return
+          users.value = users.value.filter(u => u.id !== id)
+        }
         </script>
         <template><button @click="deleteUser(1)">x</button></template>
         """)
 
-      assert js =~ ~s|__pv.props["users"] = users.filter(u => u.id !== id);|
-      refute js =~ "__serverProps"
+      assert js =~
+               ~s|if (!id) return\n  users.value = users.value.filter(u => u.id !== id)\n\n  __pv.bridge.action("deleteUser", {"id": id});|
+
+      refute js =~ ~s|"use server"|
+      assert {:ok, _ast} = OXC.parse(js, "client.js")
+    end
+
+    test "the mount applies each model's update to its props" do
+      js =
+        generate("""
+        <script setup>
+        const users = defineModel("users")
+        const open = defineModel("open")
+        </script>
+        <template><p>{{ users.length }} {{ open }}</p></template>
+        """)
+
+      assert js =~ ~s|const __models = ["open","users"];|
+      assert js =~ ~s|__h(__component, { ...state, ...listeners })|
     end
 
     test "client handler is NOT rewritten" do
