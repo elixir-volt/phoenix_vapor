@@ -1,12 +1,12 @@
 defmodule PhoenixVapor.Hybrid.ServerCodegen do
-  @moduledoc """
-  Generates Elixir code (AST) for the server side of a hybrid component.
+  @moduledoc false
 
-  Produces:
-  - `render/1` — produces `%Rendered{}` with server slots + props payload
-  - `handle_event/3` — no-op fallbacks for server actions, when the module
-    defines no `handle_event/3` of its own
-  """
+  # Generates Elixir code (AST) for the server side of a hybrid component.
+  #
+  # Produces:
+  # - `render/1` — produces `%Rendered{}` with server slots + props payload
+  # - `handle_event/3` — no-op fallbacks for server actions, when the module
+  # defines no `handle_event/3` of its own
 
   alias PhoenixVapor.Renderer.Names
 

@@ -110,7 +110,7 @@ defmodule PhoenixVapor.Full do
   end
 
   @doc """
-  Returns the value of a `PhoenixVapor.Full.Runtime` result, or raises its
+  Returns the value of a call into the component's runtime, or raises its
   error. Generated callbacks use it so a JavaScript exception surfaces as
   itself rather than as a `MatchError`.
   """

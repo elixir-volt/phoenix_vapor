@@ -1,12 +1,12 @@
 defmodule PhoenixVapor.Hybrid.ClientCodegen do
-  @moduledoc """
-  Generates client-side JavaScript for hybrid components.
+  @moduledoc false
 
-  Takes Vize's compiled SFC output and:
-  1. Sends each server action to the server through the bridge after its body runs
-  2. Exports `__mount/3`, which mounts one instance with its own props and bridge,
-     and applies each model's `update:` event to its props
-  """
+  # Generates client-side JavaScript for hybrid components.
+  #
+  # Takes Vize's compiled SFC output and:
+  # 1. Sends each server action to the server through the bridge after its body runs
+  # 2. Exports `__mount/3`, which mounts one instance with its own props and bridge,
+  # and applies each model's `update:` event to its props
 
   alias PhoenixVapor.Hybrid.Classifier
 

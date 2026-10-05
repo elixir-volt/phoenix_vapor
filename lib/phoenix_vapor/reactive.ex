@@ -8,8 +8,8 @@ defmodule PhoenixVapor.Reactive do
   fully functional LiveView with auto-generated mount, render, and
   event handlers.
 
-  A persistent `PhoenixVapor.Reactive.Runtime` (QuickBEAM + Vue reactivity) is
-  started per LiveView process. `ref()` values become reactive state,
+  A persistent runtime (QuickBEAM with Vue's reactivity) is started per
+  LiveView process. `ref()` values become reactive state,
   `computed()` auto-update when deps change, and functions execute in
   the persistent JS context — state survives across events.
 
@@ -155,7 +155,7 @@ defmodule PhoenixVapor.Reactive do
   def param_assigns(_not_mounted_at_router, _keys), do: %{}
 
   @doc """
-  Converts the state a `PhoenixVapor.Reactive.Runtime` returns into assigns.
+  Converts the state the component's runtime returns into assigns.
 
   `keys` are the ref and computed names declared in the component, as atoms
   created when it compiled.

@@ -45,6 +45,7 @@ defmodule PhoenixVapor.MixProject do
         "ex_dna",
         "reach.check --dead-code --smells --strict --baseline .reach-baseline.json",
         "dialyzer",
+        "docs --warnings-as-errors",
         "volt.js.check --type-aware --type-check"
       ],
       # tsgolint and the e2e tests' Vue come from node_modules; the e2e tests
@@ -95,7 +96,8 @@ defmodule PhoenixVapor.MixProject do
         Internals: ["ARCHITECTURE.md", "docs/hybrid-architecture.md"],
         Comparisons: ~r/docs\/comparisons\//
       ],
-      skip_undefined_reference_warnings_on: ["ARCHITECTURE.md"]
+      # Both name internal modules on purpose: where they live, and what moved.
+      skip_undefined_reference_warnings_on: ["ARCHITECTURE.md", "CHANGELOG.md"]
     ]
   end
 
@@ -107,7 +109,7 @@ defmodule PhoenixVapor.MixProject do
       {:jason, "~> 1.4"},
       {:quickbeam, "~> 0.11.2"},
       {:volt, "~> 0.21.0", runtime: false},
-      {:ex_doc, "~> 0.40.3", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.40.3", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
