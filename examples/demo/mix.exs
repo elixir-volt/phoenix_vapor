@@ -27,7 +27,7 @@ defmodule VaporDemo.MixProject do
 
   def cli do
     [
-      preferred_envs: [precommit: :test]
+      preferred_envs: [ci: :test, lint: :test, precommit: :test]
     ]
   end
 
@@ -76,11 +76,24 @@ defmodule VaporDemo.MixProject do
       setup: [
         "deps.get",
         "npm.install",
-        "phoenix_vapor.bundle --name reka-dialog",
+        "phoenix_vapor.bundle --entry assets/js/bundles/reka-dialog.js",
         "assets.build"
       ],
       "assets.build": ["volt.build --tailwind"],
       "assets.deploy": ["volt.build --tailwind", "phx.digest"],
+      # What CI runs, after installing Playwright's browser.
+      ci: [
+        "npm.install",
+        "phoenix_vapor.bundle --entry assets/js/bundles/reka-dialog.js",
+        "assets.build",
+        "lint",
+        "test"
+      ],
+      lint: [
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "volt.js.check --type-aware --type-check"
+      ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end

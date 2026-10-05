@@ -24,3 +24,8 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+config :phoenix_test, playwright: [assets_dir: "."]
+
+# Counts reactive patches in the browser, for the end-to-end tests.
+config :vapor_demo, vapor_debug: true

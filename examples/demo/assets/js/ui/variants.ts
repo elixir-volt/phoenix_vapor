@@ -7,15 +7,15 @@ export const button = tv({
       default: "bg-zinc-900 text-white hover:bg-zinc-800",
       destructive: "bg-red-600 text-white hover:bg-red-500",
       outline: "border border-zinc-300 bg-white hover:bg-zinc-100",
-      ghost: "hover:bg-zinc-100",
+      ghost: "hover:bg-zinc-100"
     },
     size: {
       sm: "h-8 px-3",
       md: "h-9 px-4",
-      lg: "h-10 px-6",
-    },
+      lg: "h-10 px-6"
+    }
   },
-  defaultVariants: { variant: "default", size: "md" },
+  defaultVariants: { variant: "default", size: "md" }
 })
 
 export const badge = tv({
@@ -25,10 +25,10 @@ export const badge = tv({
       neutral: "bg-zinc-100 text-zinc-700",
       success: "bg-emerald-100 text-emerald-700",
       warning: "bg-amber-100 text-amber-800",
-      danger: "bg-red-100 text-red-700",
-    },
+      danger: "bg-red-100 text-red-700"
+    }
   },
-  defaultVariants: { tone: "neutral" },
+  defaultVariants: { tone: "neutral" }
 })
 
 export const card = tv({
@@ -37,8 +37,8 @@ export const card = tv({
     header: "border-b border-zinc-100 px-5 py-4",
     title: "text-base font-semibold text-zinc-900",
     description: "text-sm text-zinc-500",
-    body: "px-5 py-4",
-  },
+    body: "px-5 py-4"
+  }
 })
 
 export type ButtonProps = VariantProps<typeof button>

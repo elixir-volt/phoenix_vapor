@@ -2,12 +2,15 @@
   "dependencies": {
     "@vueuse/core": "^14.3.0",
     "@vueuse/shared": "^14.3.0",
+    "es-toolkit": "^1.52.0",
     "reka-ui": "^2.9.2",
-    "vue": "^3.5.0",
+    "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^3.1.1",
-    "tailwind-merge": "^3.3.1"
+    "vue": "^3.5.0"
   },
   "devDependencies": {
+    "oxlint-tsgolint": "0.22.1",
+    "playwright": "1.59.1",
     "typescript": "^5.9.3"
   }
 }

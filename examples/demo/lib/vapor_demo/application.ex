@@ -11,9 +11,9 @@ defmodule VaporDemo.Application do
       VaporDemoWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:vapor_demo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: VaporDemo.PubSub},
-      # Start a worker by calling: VaporDemo.Worker.start_link(arg)
-      # {VaporDemo.Worker, arg},
-      # Start to serve requests, typically the last entry
+      # The workspace's data, in memory for the demo.
+      VaporDemo.Contacts,
+      VaporDemo.Projects,
       VaporDemoWeb.Endpoint
     ]
 

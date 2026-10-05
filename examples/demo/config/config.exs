@@ -23,7 +23,7 @@ config :vapor_demo, VaporDemoWeb.Endpoint,
 
 # Configure Volt (replaces esbuild + tailwind)
 config :volt,
-  entry: "assets/js/app.js",
+  entry: "assets/js/app.ts",
   outdir: "priv/static/assets",
   root: "assets",
   sources: ["**/*.{js,ts,jsx,tsx,vue}"],
@@ -34,7 +34,6 @@ config :volt,
   aliases: %{"@" => "assets/js"},
   # PhoenixVapor is a path dependency, so `deps/` doesn't have it.
   plugins: [PhoenixVapor.Volt],
-
   tailwind: [
     css: "assets/css/app.css",
     sources: [
@@ -42,6 +41,25 @@ config :volt,
       %{base: "assets/", pattern: "**/*.{js,ts,vue}"}
     ]
   ]
+
+# The hand-written TypeScript, for `mix volt.js.check`: the app and the
+# browser tests' helpers. The hybrid components' browser halves under
+# assets/js/hybrid are generated, and the Reka bundle's entry is plain
+# JavaScript; both are left out. Formatting options are the `volt:` key in
+# .formatter.exs.
+config :volt, :lint,
+  root: ".",
+  sources: ["assets/js/**/*.ts", "test/support/**/*.ts"],
+  ignore: ["assets/js/hybrid/**", "assets/js/bundles/**"],
+  # Installed by `mix npm.install` from package.json.
+  tsgolint: "node_modules/.bin/tsgolint",
+  plugins: ["typescript"],
+  env: ["browser"],
+  rules: %{
+    "correctness" => :deny,
+    "typescript/consistent-type-imports" => :deny,
+    "typescript/no-floating-promises" => :deny
+  }
 
 # Configure Elixir's Logger
 config :logger, :default_formatter,

@@ -10,31 +10,23 @@ defmodule VaporDemoWeb.Router do
     plug :put_secure_browser_headers
   end
 
-  pipeline :api do
-    plug :accepts, ["json"]
-  end
-
   scope "/", VaporDemoWeb do
     pipe_through :browser
 
-    live "/", HomeLive
-    live "/counter", CounterLive
-    live "/todo", TodoLive
-    live "/showcase", ShowcaseLive
-    live "/reactive", ReactiveCounterLive
-    live "/reactive-list", ReactiveListLive
-    live "/dialog", DialogLive
-    live "/vapor-test", VaporTestLive
-    live "/compare", CompareLive
-    live "/hybrid", HybridUsersLive
-    live "/contacts", HybridContactsLive
-    live "/search", HybridSearchLive
-    live "/playground/hybrid", Playground.SettingsHybridLive
-    live "/playground/full", Playground.SettingsFullLive
-  end
+    live_session :demo do
+      live "/", HomeLive
 
-  # Other scopes may use custom stacks.
-  # scope "/api", VaporDemoWeb do
-  #   pipe_through :api
-  # end
+      # A small workspace, the demo's app.
+      live "/contacts", Workspace.ContactsLive
+      live "/settings", Workspace.SettingsLive
+
+      # One page per way to use PhoenixVapor.
+      live "/modes/sigil", Modes.SigilLive
+      live "/modes/server", Modes.ServerLive
+      live "/modes/reactive", Modes.ReactiveLive
+      live "/modes/hybrid", Modes.HybridLive
+      live "/modes/full", Modes.FullLive
+      live "/modes/compare", Modes.CompareLive
+    end
+  end
 end
