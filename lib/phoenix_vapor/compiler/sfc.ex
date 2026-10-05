@@ -78,6 +78,22 @@ defmodule PhoenixVapor.Compiler.SFC do
 
   def setup_line(_sfc, _name), do: 1
 
+  @doc """
+  The line in the file where `<script lang="elixir">` first defines
+  `function`, or 1 when it doesn't.
+  """
+  @spec elixir_line(t(), String.t()) :: pos_integer()
+  def elixir_line(%__MODULE__{elixir: elixir, descriptor: %{script: %{loc: loc}}}, function) do
+    name = String.to_existing_atom(function)
+
+    case Enum.find(elixir, &defines?(&1, name)) do
+      {:def, meta, _args} -> loc.start_line + Keyword.get(meta, :line, 1) - 1
+      nil -> 1
+    end
+  end
+
+  def elixir_line(_sfc, _function), do: 1
+
   @doc "The template, raising when the file has no `<template>` block."
   @spec template!(t()) :: String.t()
   def template!(%__MODULE__{template: nil, file: file}) do
@@ -116,12 +132,17 @@ defmodule PhoenixVapor.Compiler.SFC do
 
   @doc """
   The assign keys a `<script lang="elixir">` function reads from its
-  argument, from its clauses' map patterns and `assigns.key` access: an
-  over-approximation, for deciding what to record.
+  argument: an over-approximation, for deciding what to record.
+
+  A key in a map pattern (`%{contacts: contacts}`) or read as `assigns.key`
+  is required: the function fails without it. One read as `assigns[:key]`
+  is optional, nil when missing. With `required: true`, only the required
+  keys.
   """
-  @spec elixir_reads(t(), String.t()) :: [String.t()]
-  def elixir_reads(%__MODULE__{elixir: elixir}, function) do
+  @spec elixir_reads(t(), String.t(), keyword()) :: [String.t()]
+  def elixir_reads(%__MODULE__{elixir: elixir}, function, opts \\ []) do
     name = String.to_existing_atom(function)
+    optional? = not Keyword.get(opts, :required, false)
 
     elixir
     |> Enum.filter(&defines?(&1, name))
@@ -131,6 +152,10 @@ defmodule PhoenixVapor.Compiler.SFC do
 
       {{:., _, [{_var, _, context}, key]}, _meta, []} = node, acc
       when is_atom(key) and is_atom(context) ->
+        {node, [Atom.to_string(key) | acc]}
+
+      {{:., _, [Access, :get]}, _meta, [_assigns, key]} = node, acc
+      when optional? and is_atom(key) ->
         {node, [Atom.to_string(key) | acc]}
 
       node, acc ->

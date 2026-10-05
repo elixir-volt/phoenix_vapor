@@ -76,6 +76,29 @@ defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest do
       assert html =~ "initial: B"
     end
 
+    test "warns about a counterpart that requires state only the browser has",
+         %{twin_warnings: warnings} do
+      assert warnings =~ "`sorted/1` requires `sortKey`, which only the browser has"
+      assert warnings =~ "HybridComposablesTwins.vue:42"
+      # matching/1 requires search, a ref, and themed/1 reads theme as optional.
+      refute warnings =~ "`matching/1`"
+      refute warnings =~ "`themed/1`"
+    end
+
+    test "a counterpart reading state as assigns[:key] renders live and in a replay" do
+      html = __MODULE__.TwinsLive.render(%{contacts: @contacts, __changed__: nil}) |> html()
+      assert html =~ "themed: Bob:light, Ada:light, Cy:light"
+
+      state = %{"phoenix_vapor:pv-HybridComposablesTwins" => %{"theme" => "dark"}}
+
+      replayed =
+        %{contacts: @contacts, phoenix_replay_state: state, __changed__: nil}
+        |> __MODULE__.TwinsLive.replay_render()
+        |> html()
+
+      assert replayed =~ "themed: Bob:dark, Ada:dark, Cy:dark"
+    end
+
     test "a counterpart reading composable state waits for its value, as what reads it does" do
       html = __MODULE__.TwinsLive.render(%{contacts: @contacts, __changed__: nil}) |> html()
 
@@ -147,10 +170,11 @@ defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest do
       assert html =~ "sorted by email"
     end
 
-    test "an Elixir counterpart's reads are recorded" do
-      # matching's counterpart reads search.
+    test "an Elixir counterpart's reads are recorded, optional ones too" do
+      # matching's counterpart reads search, and themed's reads theme, which
+      # nothing else reads.
       js = __MODULE__.TwinsLive.__hybrid_client_js__()
-      assert js =~ "__pv?.record({ search, sortKey });"
+      assert js =~ "__pv?.record({ search, sortKey, theme });"
     end
   end
 end

@@ -96,7 +96,7 @@ Initial render: server sends statics + dynamics, with the props JSON as the wrap
 
 ### Hybrid Computeds
 
-`Hybrid.Computeds.compile/2` decides, in dependency order, how the server gets each computed: once while compiling when it reads only refs, on every render when it reads props, through its `<script lang="elixir">` counterpart when there is one, or not at all when it reads something only the browser has, such as a composable's result (`ScriptSetup.client_bindings`) or an import. A left-out computed is passed to the compiler as `:browser_only`: an expression reading it is unrendered, and a `v-if` chain stops at an unrendered condition.
+`Hybrid.Computeds.compile/2` decides, in dependency order, how the server gets each computed: once while compiling when it reads only refs, on every render when it reads props, through its `<script lang="elixir">` counterpart when there is one, or not at all when it reads something only the browser has, such as a composable's result (`ScriptSetup.client_bindings`) or an import. A left-out computed is passed to the compiler as `:browser_only`: an expression reading it is unrendered, and a `v-if` chain stops at an unrendered condition. A counterpart's reads come from its source (`SFC.elixir_reads/3`): keys in its patterns and `assigns.key` are required, and rendering skips a counterpart missing one, as `__absent__` says; `assigns[:key]` is optional. All of them are recorded.
 
 ### Session Replay
 

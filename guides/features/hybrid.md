@@ -156,7 +156,21 @@ end
 </script>
 ```
 
-The server calls `filtered/1` on every render, and in a session replay with the recorded state. It reads `search` rather than `debouncedSearch`, which only the browser has. A counterpart that matches on composable state, such as `%{sortKey: key}`, isn't called until the render has that state, in a replay that recorded it, and what reads its computed waits with it. The two versions can drift apart: if they disagree, the list changes when the browser mounts, which is visible but not an error. A computed named after a LiveView callback, such as `render` or `mount`, can't have a counterpart; rename the computed.
+The server calls `filtered/1` on every render, and in a session replay with the recorded state. It reads `search` rather than `debouncedSearch`, which only the browser has. The two versions can drift apart: if they disagree, the list changes when the browser mounts, which is visible but not an error. A computed named after a LiveView callback, such as `render` or `mount`, can't have a counterpart; rename the computed.
+
+How a counterpart reads a key decides what happens when the render doesn't have it:
+
+- A key in the pattern, such as `%{contacts: contacts}`, or read as `assigns.key`, is required. Match on what every render has: props, refs and constants.
+- A key read as `assigns[:key]` is optional: `nil` when the render doesn't have it. Read state only the browser has this way, such as a composable's value, and fall back to the default the browser starts with.
+
+```elixir
+def sorted(%{contacts: contacts} = assigns) do
+  key = assigns[:sortKey] || "name"
+  Enum.sort_by(contacts, & &1[key])
+end
+```
+
+The live render has no `sortKey`, which comes from `useLocalStorage`, so it sorts by name; a replay that recorded `sortKey` sorts by its value. A counterpart that requires state only the browser has, such as `def sorted(%{sortKey: key})`, is never called on the live render, so its computed, and what reads it, is missing from the first paint until a replay; the compiler warns about it. Both kinds of key are recorded.
 
 ### Callbacks in the template
 

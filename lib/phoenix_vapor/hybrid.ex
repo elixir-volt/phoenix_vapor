@@ -47,6 +47,7 @@ defmodule PhoenixVapor.Hybrid do
           )
 
         Enum.each(plan.left_out, &warn_left_out(&1, sfc))
+        warn_skipped_twins(plan, sfc)
 
         refs = ScriptSetup.eval_initial_state(sfc.setup.refs, runtime)
         values = constant_values(plan.constant, refs, constants, runtime, sfc.file)
@@ -143,7 +144,9 @@ defmodule PhoenixVapor.Hybrid do
             "the Elixir counterpart of computed `#{name}` takes the assigns: define #{function}/1"
       end
 
-      {name, {module, String.to_existing_atom(function), SFC.elixir_reads(sfc, function)}}
+      # Rendering skips a counterpart whose required reads are missing.
+      reads = SFC.elixir_reads(sfc, function, required: true)
+      {name, {module, String.to_existing_atom(function), reads}}
     end
   end
 
@@ -213,6 +216,41 @@ defmodule PhoenixVapor.Hybrid do
         "browser has, so the server leaves it, and what reads it, out of the first paint",
       file: Path.relative_to_cwd(sfc.file),
       line: SFC.setup_line(sfc, name)
+    )
+  end
+
+  # A counterpart that requires state the live render never has, such as a
+  # composable's value or a left-out computed, is never called there, so its
+  # computed is missing from the first paint; only a replay has the state.
+  # Counterparts are in order, so one skipped makes those requiring it
+  # skipped too.
+  defp warn_skipped_twins(plan, %SFC{setup: setup} = sfc) do
+    absent = setup.client_bindings ++ Enum.map(plan.left_out, &elem(&1, 0))
+
+    Enum.reduce(plan.per_render, absent, fn
+      {name, {:elixir, _module, function, reads}}, absent ->
+        case Enum.filter(reads, &(&1 in absent)) do
+          [] ->
+            absent
+
+          missing ->
+            warn_skipped_twin(name, Atom.to_string(function), missing, sfc)
+            [name | absent]
+        end
+
+      _computed, absent ->
+        absent
+    end)
+  end
+
+  defp warn_skipped_twin(name, function, missing, sfc) do
+    IO.warn(
+      "`#{function}/1` requires #{Enum.map_join(missing, ", ", &"`#{&1}`")}, which only the " <>
+        "browser has, so the live render never calls it and leaves `#{name}` out of the " <>
+        "first paint. Read state that may be missing as `assigns[:#{hd(missing)}]` rather " <>
+        "than in a pattern",
+      file: Path.relative_to_cwd(sfc.file),
+      line: SFC.elixir_line(sfc, function)
     )
   end
 

@@ -22,6 +22,9 @@ const PAGE = 2
 const firstPage = computed(() => props.contacts.slice(0, PAGE).map(c => c.name).join(", "))
 function initial(name) { return name[0] }
 const firstInitial = computed(() => initial(props.contacts[0].name))
+// Reads a composable's value that only its counterpart reads, as optional.
+const theme = useLocalStorage("theme", "light")
+const themed = computed(() => props.contacts.map(c => `${c.name}:${theme.value}`).join(", "))
 // Reads only what the server has.
 const total = computed(() => props.contacts.length)
 </script>
@@ -38,6 +41,10 @@ def initial(name), do: String.first(name)
 
 def sorted(%{contacts: contacts, sortKey: key}),
   do: contacts |> Enum.sort_by(& &1[key]) |> Enum.map(& &1["name"])
+
+# theme may be missing: the live render renders the default.
+def themed(%{contacts: contacts} = assigns),
+  do: Enum.map_join(contacts, ", ", &"#{&1["name"]}:#{assigns[:theme] || "light"}")
 </script>
 
 <template>
@@ -52,5 +59,6 @@ def sorted(%{contacts: contacts, sortKey: key}),
     <p v-if="sortKey === 'name'">by name</p>
     <p v-else>by something else</p>
     <ol><li v-for="name in sorted" :key="name">{{ name }}</li></ol>
+    <p>themed: {{ themed }}</p>
   </div>
 </template>
