@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.6.0 - 2026-10-06
+
+### Upgrading from 0.5
+
+A hybrid server action no longer writes props. Declare the data it changes as a model, and write the model's `.value`:
+
+```diff
+-const props = defineProps(["contacts"])
++const contacts = defineModel("contacts")
+
+ function deleteContact(id) {
+   "use server"
+-  props.contacts = props.contacts.filter((c) => c.id !== id)
++  contacts.value = contacts.value.filter((c) => c.id !== id)
+ }
+```
+
+Read the model as `contacts.value` in the script and as `contacts` in the template; the LiveView assigns it as `contacts`, as before. The compiler reports each remaining `props.x = ...` with its line. The body of a server action now runs in the browser, so a guard (`if (!id) return`) keeps it from reaching the server, and a prop it reads is sent to the browser. See Breaking changes below and the Hybrid guide's Server actions section.
+
 ### Breaking changes
 
 - Require Volt 0.21. Its `mix volt.js.check` type-checks a `.vue` file's scripts with the project's `tsconfig.json`, path aliases and declaration files included, and leaves `<script lang="elixir">` out, so hybrid components type-check as written.
@@ -32,7 +51,7 @@
 - While several server actions were in flight, the first answer reapplied the server's props, undoing the optimistic changes of the others until their own answers came. The props now apply once every action in flight has been answered, or has failed.
 - An optimistic change the server declined stayed on screen: when `handle_event/3` left the assign unchanged, no new props came. Once the server has handled a server action, the component's props and models are the server's again.
 - A server action whose body returned early, such as `if (!id) return`, wasn't recognized: its body was parsed as a script, where `return` is a syntax error, so it was a client handler and never reached the server.
-- A hybrid component's prop that only the template read, as `props.saved`, stayed on the server: the browser never received it, and the server's own first paint rendered it empty. A prop the template reads now goes to the browser, and one only `"use server"` functions read still stays on the server.
+- A hybrid component's prop that only the template read, as `props.saved`, stayed on the server: the browser never received it, and the server's own first paint rendered it empty. A prop the template reads now goes to the browser.
 - Reactive mode's direct DOM patching assumed the template was the LiveView's whole render, so inside a layout it matched the layout's slots instead of the template's, and updates didn't reach the page. It now finds the template in the rendered tree, and patches directly only when a diff changes nothing outside it.
 - A hybrid computed that read something only the browser has, such as a composable's result (`refDebounced`) or an import (`sortBy` from es-toolkit), failed every server render with `ExpressionError`. The server now decides this when compiling: it leaves such a computed, and what reads it, out of the first paint, with a warning naming what it lacks. An expression reading it isn't rendered, and a `v-if` chain whose condition reads it renders no branch, rather than its `v-else`.
 - The QuickBEAM runtime that ran macro calls while compiling was never stopped, and the one for package components leaked when compiling raised. One runtime per compile now serves both and stops in an `after`.

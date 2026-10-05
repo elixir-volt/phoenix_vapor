@@ -44,7 +44,7 @@ PhoenixVapor is experimental. It is pre-1.0, so minor releases may change its AP
 
 ```elixir
 def deps do
-  [{:phoenix_vapor, "~> 0.5"}]
+  [{:phoenix_vapor, "~> 0.6"}]
 end
 ```
 
