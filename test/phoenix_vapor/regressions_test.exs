@@ -84,20 +84,22 @@ defmodule PhoenixVapor.RegressionsTest do
       end
     end
 
-    test "props the template reads go to the client; props only server actions read don't" do
+    test "props the template or a server action reads go to the client; others don't" do
+      # A server action's body runs in the browser before the server gets the
+      # action, so what it reads must be there.
       classification =
         Classifier.classify(
           %ScriptSetup{
             refs: %{"q" => ~s("")},
             computeds: %{},
             functions: %{"save" => ~s|"use server"; audit(secret)|},
-            props: ["title", "secret"]
+            props: ["title", "secret", "unused"]
           },
           ["title", "q"]
         )
 
-      assert classification.client_props == ["title"]
-      assert classification.server_only_props == ["secret"]
+      assert classification.client_props == ["title", "secret"]
+      assert classification.server_only_props == ["unused"]
     end
   end
 

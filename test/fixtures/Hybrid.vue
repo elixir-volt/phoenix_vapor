@@ -1,10 +1,11 @@
 <script setup>
 import { ref, computed } from "vue"
 
-defineProps(["users", "title"])
+defineProps(["title"])
+const users = defineModel("users")
 
 const search = ref("")
-const filtered = computed(() => users.filter(u => u.name.includes(search.value)))
+const filtered = computed(() => users.value.filter(u => u.name.includes(search.value)))
 
 function clearSearch() {
   search.value = ""
@@ -12,7 +13,7 @@ function clearSearch() {
 
 function deleteUser(id) {
   "use server"
-  users = users.filter(u => u.id !== id)
+  users.value = users.value.filter(u => u.id !== id)
 }
 </script>
 

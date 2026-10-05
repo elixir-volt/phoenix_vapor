@@ -1,27 +1,27 @@
 # Hybrid Mode
 
-Hybrid mode splits a `.vue` component between the server and the browser. The server owns the data, passed in as props, and Vue in the browser owns UI state. Searching, sorting, and selecting happen in the browser without a round trip; changes to the data go through server actions over the LiveView socket.
+Hybrid mode splits a `.vue` component between the server and the browser. The server owns the data, passed in as props and models, and Vue in the browser owns UI state. Searching, sorting, and selecting happen in the browser without a round trip; changes to the data go through server actions over the LiveView socket.
 
 ```vue
 <script setup>
 import { ref, computed } from "vue"
 
-const props = defineProps(["contacts"])
+const contacts = defineModel("contacts")
 const search = ref("")
 
 const filtered = computed(() =>
-  props.contacts.filter(c => c.name.toLowerCase().includes(search.value.toLowerCase()))
+  contacts.value.filter(c => c.name.toLowerCase().includes(search.value.toLowerCase()))
 )
 
 function deleteContact(id) {
   "use server"
-  props.contacts = props.contacts.filter(c => c.id !== id)
+  contacts.value = contacts.value.filter(c => c.id !== id)
 }
 </script>
 
 <template>
   <input v-model="search" placeholder="Search..." />
-  <p>{{ filtered.length }} of {{ props.contacts.length }} contacts</p>
+  <p>{{ filtered.length }} of {{ contacts.length }} contacts</p>
   <div v-for="contact in filtered" :key="contact.id">
     {{ contact.name }}
     <button @click="deleteContact(contact.id)">×</button>
@@ -45,7 +45,7 @@ defmodule MyAppWeb.ContactsLive do
 end
 ```
 
-A `.vue` file is hybrid when its [`<script setup>`](https://vuejs.org/api/sfc-script-setup.html) declares a [`ref()`](https://vuejs.org/api/reactivity-core.html#ref). Write the script as standard Vue: read [props](https://vuejs.org/guide/components/props.html) through `props.x` and refs through `.value`.
+A `.vue` file is hybrid when its [`<script setup>`](https://vuejs.org/api/sfc-script-setup.html) declares state the browser owns or changes: a [`ref()`](https://vuejs.org/api/reactivity-core.html#ref), a [`defineModel()`](https://vuejs.org/api/sfc-script-setup.html#definemodel), or a composable's result. Write the script as standard Vue: read [props](https://vuejs.org/guide/components/props.html) through `props.x`, and refs and models through `.value`.
 
 ## What runs where
 
@@ -53,25 +53,38 @@ The compiler reads `<script setup>` and classifies each binding:
 
 | In the script | Becomes |
 | --- | --- |
-| `defineProps(...)` (array, object, or TypeScript form) | props, assigned on the server |
+| `defineProps(...)` (array, object, or TypeScript form) | props, assigned on the server, which the browser only reads |
+| `defineModel("name")` | a model: assigned on the server, which the browser may change |
 | `ref(...)` | client state |
 | `computed(...)` | client computed, recomputed when props change |
 | a function with `"use server"` | a server action |
-| a function that assigns a prop | a server action |
+| a function that writes a model's `.value` | a server action |
 | any other function | a client handler |
 
 The server renders the component for the first paint, including the components it imports from `.vue` files; see [Components](templates.md#components). The browser then mounts the Vue component in its place, and LiveView leaves the wrapper's contents alone (`phx-update="ignore"`). The client is a standard Vue 3 component on the virtual DOM, not Vapor mode, so component libraries such as [Reka UI](https://reka-ui.com) work in it as they are.
 
-Props reach the client as JSON in the wrapper's `data-pv-props` attribute. They include every prop the template or client-side code reads; props read only by server actions stay on the server. When an assign changes, LiveView sends the new JSON and the component re-renders.
+Props and models reach the client as JSON in the wrapper's `data-pv-props` attribute. They include every model, and every prop the template or the script reads, server actions included, since their bodies run in the browser; a prop nothing reads stays on the server. A value the browser must never see, such as a token, isn't a prop: read it in `handle_event/3`. When an assign changes, LiveView sends the new JSON and the component re-renders.
 
 ## Server actions
 
+Data the browser may change, and the server owns, is a [model](https://vuejs.org/guide/components/v-model.html#component-v-model): `const contacts = defineModel("contacts")`, assigned on the server as `contacts`. Name a model after its variable; the LiveView assigns it by that name. In Vue, writing a model asks the component's owner to update it; here the owner is the server.
+
 Calling a server action in the browser does two things:
 
-1. It applies the action's prop assignments locally, so the UI updates at once. Above, `props.contacts = ...` removes the contact before the server answers.
-2. It pushes an event named after the function, with the function's arguments and the current value of each ref or computed it reads: `%{"id" => 1}` above.
+1. It runs the function's body, as Vue code. Writing a model's `.value` updates it at once, so the UI changes before the server answers: above, `contacts.value = ...` removes the contact.
+2. Then it sends the action: an event named after the function, with the function's arguments and the current value of each ref or computed it reads, `%{"id" => 1}` above. A body that returns or throws first sends nothing, so a guard validates in the browser:
 
-The server-side logic is your `handle_event/3`, and the new assigns it returns flow back as props. The function body in the `.vue` file only describes the optimistic update. If the module defines no `handle_event/3`, PhoenixVapor generates no-op handlers for the actions. Once you define one, handle every action it can receive.
+```js
+function saveName() {
+  "use server"
+  if (!dirty.value) return
+  project.value = { ...project.value, name: name.value }
+}
+```
+
+The server-side logic is your `handle_event/3`. Once it has handled the action, the props and models are the server's again: the new assigns it returns replace the browser's optimistic values, and if it left an assign unchanged, declining the change, the optimistic value goes away. If the module defines no `handle_event/3`, PhoenixVapor generates no-op handlers for the actions. Once you define one, handle every action it can receive.
+
+Props are read-only, as in Vue: writing `props.contacts`, or `contacts` for a prop the script doesn't declare, is a compile error that points at `defineModel`.
 
 ## Single-file components
 

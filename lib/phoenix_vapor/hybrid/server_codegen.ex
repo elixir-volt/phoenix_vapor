@@ -8,6 +8,8 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     defines no `handle_event/3` of its own
   """
 
+  alias PhoenixVapor.Renderer.Names
+
   @doc """
   Generate `render/1`, and `replay_render/1` for a session replayer.
 
@@ -31,9 +33,14 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       `@phoenix_replay_state`; by default, the refs
   """
   def gen_render(split, classification, opts \\ []) do
+    models = Map.get(classification, :models, [])
+    # Declared names get their atoms while compiling; rendering looks them up.
+    Enum.each(models, &Names.atom!/1)
+
     spec = %{
       split: split,
       client_props: classification.client_props,
+      models: models,
       recorded:
         Keyword.get_lazy(opts, :recorded, fn ->
           for {name, {:client_ref, _init}} <- classification.bindings, do: name
@@ -91,7 +98,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       |> seed_ref_values(Map.get(spec, :constants, %{}))
       |> seed_ref_values(values)
       |> seed_props_alias(spec.client_props)
-      |> eval_computeds(computeds, values)
+      |> eval_computeds(computeds, models(values, spec, assigns))
       |> translate_changed(mode, spec)
 
     # The wrapper div is the root tag; the component itself may render text,
@@ -233,6 +240,16 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     Enum.reduce(ref_values, assigns, fn {key, value}, acc ->
       acc |> Map.put_new(key, value) |> Map.put_new(to_string(key), value)
     end)
+  end
+
+  # Script setup reads a model as `.value`, as it does a ref, so the
+  # computeds see each model's assign among the values they wrap.
+  defp models(values, spec, assigns) do
+    for model <- Map.get(spec, :models, []),
+        key = Names.existing(model),
+        Map.has_key?(assigns, key),
+        into: values,
+        do: {key, Map.fetch!(assigns, key)}
   end
 
   # Computeds that read props, evaluated as template expressions are; one whose

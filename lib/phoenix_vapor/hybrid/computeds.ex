@@ -44,7 +44,7 @@ defmodule PhoenixVapor.Hybrid.Computeds do
       functions at their Elixir counterparts
   """
   @spec compile(ScriptSetup.t(), keyword()) :: plan()
-  def compile(%ScriptSetup{computeds: computeds, props: props, refs: refs}, opts \\ []) do
+  def compile(%ScriptSetup{computeds: computeds, refs: refs} = setup, opts \\ []) do
     twins = Keyword.get(opts, :twins, %{})
     rewrite = Keyword.get(opts, :rewrite, & &1)
 
@@ -61,6 +61,9 @@ defmodule PhoenixVapor.Hybrid.Computeds do
       end)
 
     known = Keyword.get(opts, :known, [])
+    # A model is a prop the browser may change: the server has it on every
+    # render, as an assign.
+    props = setup.props ++ Map.keys(setup.models)
     server = MapSet.new(Map.keys(refs) ++ props ++ known ++ ["props" | Expr.globals()])
     dynamic = MapSet.new(["props" | props])
 

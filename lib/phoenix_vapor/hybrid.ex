@@ -29,6 +29,8 @@ defmodule PhoenixVapor.Hybrid do
   # stubs, and its client module.
   @spec build(SFC.t(), keyword(), Macro.Env.t()) :: Macro.t()
   def build(%SFC{} = sfc, opts, caller) do
+    check_models!(sfc)
+    check_prop_writes!(sfc)
     elixir = {caller.module, SFC.elixir_functions(sfc)}
 
     # The browser's first render uses the refs' initial values, the
@@ -218,6 +220,75 @@ defmodule PhoenixVapor.Hybrid do
       line: SFC.setup_line(sfc, name)
     )
   end
+
+  # The LiveView assigns a model by its name, which the template and script
+  # read by the variable's.
+  defp check_models!(%SFC{setup: setup} = sfc) do
+    for {name, model} <- setup.models, name != model do
+      raise CompileError,
+        file: sfc.file,
+        line: SFC.setup_line(sfc, name),
+        description:
+          "the model `#{model}` is bound to `#{name}`: name it after its variable, " <>
+            "`const #{name} = defineModel(\"#{name}\")`, the assign the LiveView sets"
+    end
+  end
+
+  # Props are read-only in Vue, so `props.x = ...` is a mistake, and so is
+  # `x = ...` for a prop the script never declares, which fails in the
+  # browser. A value the browser changes, and the server owns, is a model. (A
+  # destructured prop is a `const`, which JavaScript itself won't let the
+  # script write.)
+  defp check_prop_writes!(%SFC{setup: %{props: props, source: source}} = sfc) do
+    with {:ok, ast} <- OXC.parse(source, "setup.ts"),
+         free = MapSet.new(PhoenixVapor.JS.FreeNames.occurrences(ast)),
+         [{prop, offset} | _rest] <- prop_writes(ast, props, free) do
+      raise CompileError,
+        file: sfc.file,
+        line: SFC.setup_line_at(sfc, offset),
+        description:
+          "the prop `#{prop}` is written, but props are read-only. Declare a value the " <>
+            "browser changes as a model, `const #{prop} = defineModel(\"#{prop}\")`, and " <>
+            "write `#{prop}.value`; see the Hybrid guide's Server actions section"
+    else
+      _none -> :ok
+    end
+  end
+
+  # `free` holds each free occurrence of a name with its offset, so a write
+  # to a parameter or a local named like a prop isn't one.
+  defp prop_writes(ast, props, free) do
+    OXC.collect(ast, fn
+      %{type: :assignment_expression, left: target} ->
+        prop_write(target, props, free)
+
+      %{type: :update_expression, argument: target} ->
+        prop_write(target, props, free)
+
+      _node ->
+        :skip
+    end)
+  end
+
+  defp prop_write(
+         %{
+           type: :member_expression,
+           object: %{type: :identifier, name: "props"},
+           property: %{name: prop}
+         } = target,
+         props,
+         _free
+       ) do
+    if prop in props, do: {:keep, {prop, target.start}}, else: :skip
+  end
+
+  defp prop_write(%{type: :identifier, name: name, start: start}, props, free) do
+    if name in props and MapSet.member?(free, {name, start}),
+      do: {:keep, {name, start}},
+      else: :skip
+  end
+
+  defp prop_write(_target, _props, _free), do: :skip
 
   # A counterpart that requires state the live render never has, such as a
   # composable's value or a left-out computed, is never called there, so its

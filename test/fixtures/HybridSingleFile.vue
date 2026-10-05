@@ -12,17 +12,18 @@ end
 <script setup>
 import { ref, computed } from "vue"
 
-const props = defineProps(["items", "title"])
+defineProps(["title"])
+const items = defineModel("items")
 
 const search = ref("")
 
 const filtered = computed(() =>
-  (props.items || []).filter(i => i.toLowerCase().includes(search.value.toLowerCase()))
+  (items.value || []).filter(i => i.toLowerCase().includes(search.value.toLowerCase()))
 )
 
 function deleteItem(name) {
   "use server"
-  props.items = props.items.filter(i => i !== name)
+  items.value = items.value.filter(i => i !== name)
 }
 </script>
 

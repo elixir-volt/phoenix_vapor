@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed } from "vue"
 
-const props = defineProps(["contacts", "title"])
+const props = defineProps(["title"])
+const contacts = defineModel("contacts")
 
 const search = ref("")
 const sortKey = ref("name")
@@ -10,7 +11,7 @@ const showDialog = ref(false)
 
 const filtered = computed(() => {
   const term = search.value.toLowerCase()
-  return (props.contacts || [])
+  return (contacts.value || [])
     .filter(c => c.name.toLowerCase().includes(term))
     .sort((a, b) => (a[sortKey.value] || "").localeCompare(b[sortKey.value] || ""))
 })
@@ -40,12 +41,12 @@ function closeDialog() {
 
 function deleteContact(id) {
   "use server"
-  props.contacts = props.contacts.filter(c => c.id !== id)
+  contacts.value = contacts.value.filter(c => c.id !== id)
 }
 
 function deleteSelected() {
   "use server"
-  props.contacts = props.contacts.filter(c => !selectedIds.value.includes(c.id))
+  contacts.value = contacts.value.filter(c => !selectedIds.value.includes(c.id))
 }
 </script>
 
@@ -58,7 +59,7 @@ function deleteSelected() {
       <option value="email">Email</option>
     </select>
     <button @click="clearSearch">Clear</button>
-    <p>{{ filtered.length }} of {{ props.contacts.length }} contacts</p>
+    <p>{{ filtered.length }} of {{ contacts.length }} contacts</p>
     <p v-if="selectedCount > 0">{{ selectedCount }} selected</p>
     <ul>
       <li v-for="contact in filtered" :key="contact.id">

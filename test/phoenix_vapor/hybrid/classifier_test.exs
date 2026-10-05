@@ -136,18 +136,27 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
       refute body =~ "use server"
     end
 
-    test "classifies server action via prop write (no directive)" do
+    test "classifies server action via model write (no directive)" do
       result =
         Classifier.classify(%ScriptSetup{
-          refs: %{},
-          computeds: %{},
           functions: %{
-            "banUser" => "users = users.map(u => u.id === id ? {...u, banned: true} : u)"
+            "banUser" =>
+              "users.value = users.value.map(u => u.id === id ? {...u, banned: true} : u)"
           },
-          props: ["users"]
+          models: %{"users" => "users"}
         })
 
       assert {:server_action, _body} = result.handlers["banUser"]
+    end
+
+    test "a server action may return early" do
+      result =
+        Classifier.classify(%ScriptSetup{
+          functions: %{"save" => ~s|"use server"\nif (!id) return\nusers.value = []|},
+          models: %{"users" => "users"}
+        })
+
+      assert {:server_action, "if (!id) return\nusers.value = []"} = result.handlers["save"]
     end
 
     test "classifies client handler" do
@@ -207,16 +216,24 @@ defmodule PhoenixVapor.Hybrid.ClassifierTest do
       refute "currentUser" in result.client_props
     end
 
-    test "function calling update expression on prop" do
+    test "function calling update expression on a model" do
       result =
         Classifier.classify(%ScriptSetup{
-          refs: %{},
-          computeds: %{},
+          functions: %{"increment" => "count.value++"},
+          models: %{"count" => "count"}
+        })
+
+      assert {:server_action, "count.value++"} = result.handlers["increment"]
+    end
+
+    test "a write to something other than a model is a client handler" do
+      result =
+        Classifier.classify(%ScriptSetup{
           functions: %{"increment" => "count++"},
           props: ["count"]
         })
 
-      assert {:server_action, "count++"} = result.handlers["increment"]
+      assert result.handlers["increment"] == :client_handler
     end
 
     test "empty script setup" do

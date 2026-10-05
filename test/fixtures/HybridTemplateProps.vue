@@ -7,7 +7,6 @@ const count = ref(0)
 
 function save(count) {
   "use server"
-  props.saved = props.owner ? count : props.saved
 }
 </script>
 

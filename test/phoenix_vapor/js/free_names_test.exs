@@ -34,4 +34,12 @@ defmodule PhoenixVapor.JS.FreeNamesTest do
     assert names("props.tone + size") == ~w(props size)
     assert names("(props) => props.tone", props: true) == []
   end
+
+  test "occurrences are each free use of a name, with where it starts" do
+    source = "function clear(users) { users = [] }\nusers = users.filter(f)"
+    {:ok, ast} = OXC.parse(source, "e.js")
+
+    # The parameter's write is bound; the second line's two uses aren't.
+    assert FreeNames.occurrences(ast) == [{"users", 37}, {"users", 45}, {"f", 58}]
+  end
 end
