@@ -28,7 +28,10 @@ defmodule PhoenixVapor.Hybrid do
   # stubs, and its client module.
   @spec build(SFC.t(), keyword(), Macro.Env.t()) :: Macro.t()
   def build(%SFC{} = sfc, opts, caller) do
-    {constant, per_render} = Computeds.compile(sfc.setup)
+    %{constant: constant, per_render: per_render, left_out: left_out} =
+      Computeds.compile(sfc.setup)
+
+    Enum.each(left_out, &warn_left_out(&1, sfc.file))
 
     # The browser's first render uses the refs' initial values, and the
     # computeds of only those, so they're evaluated once here, and package
@@ -45,7 +48,8 @@ defmodule PhoenixVapor.Hybrid do
             target: :browser,
             module: caller.module,
             session: session,
-            known: known
+            known: known,
+            browser_only: Enum.map(left_out, &elem(&1, 0))
           )
 
         {split, files, values}
@@ -88,6 +92,14 @@ defmodule PhoenixVapor.Hybrid do
       @doc "Returns how the component's bindings and handlers were split between server and client."
       def __hybrid_classification__, do: @__hybrid_classification__
     end
+  end
+
+  defp warn_left_out({name, missing}, file) do
+    IO.warn(
+      "computed `#{name}` reads #{Enum.map_join(missing, ", ", &"`#{&1}`")}, which only the " <>
+        "browser has, so the server leaves it, and what reads it, out of the first paint",
+      file: Path.relative_to_cwd(file)
+    )
   end
 
   # A computed that fails with the refs' initial values is left to the

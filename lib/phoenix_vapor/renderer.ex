@@ -140,10 +140,17 @@ defmodule PhoenixVapor.Renderer do
     end
   end
 
+  # A condition the server can't evaluate renders no branch: treating it as
+  # false would show the `v-else`, which the browser may not.
   defp eval_slot(%{kind: :if, branches: branches}, assigns) do
-    Enum.find_value(branches, "", fn %{condition: condition, block: block} ->
-      if condition == nil or Value.truthy?(Expr.eval(condition, assigns)),
-        do: render_block(block, assigns)
+    Enum.reduce_while(branches, "", fn
+      %{condition: {:unrendered, _source}}, none ->
+        {:halt, none}
+
+      %{condition: condition, block: block}, none ->
+        if condition == nil or Value.truthy?(Expr.eval(condition, assigns)),
+          do: {:halt, render_block(block, assigns)},
+          else: {:cont, none}
     end)
   end
 

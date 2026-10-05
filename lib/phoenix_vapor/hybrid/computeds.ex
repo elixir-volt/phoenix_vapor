@@ -15,25 +15,52 @@ defmodule PhoenixVapor.Hybrid.Computeds do
 
   @type computed :: {String.t(), Expr.compiled()}
 
-  @doc """
-  The computeds, compiled and ordered so that each comes after the ones it
-  reads, split into those that read no props, directly or through another
-  computed, and those that do.
+  @typedoc """
+  The computeds by how the server gets them: `:constant` read only refs, so
+  they're evaluated once while compiling; `:per_render` read props too;
+  `:left_out` read something only the browser has, such as a composable's
+  result or an import, so the server leaves them, and what reads them, out of
+  its render. Each left-out computed comes with the names it lacks.
   """
-  @spec compile(ScriptSetup.t()) :: {constant :: [computed()], per_render :: [computed()]}
-  def compile(%ScriptSetup{computeds: computeds, props: props}) do
-    compiled = Map.new(computeds, fn {name, body} -> {name, compile_body(body)} end)
-    ordered = order(compiled)
+  @type plan :: %{
+          constant: [computed()],
+          per_render: [computed()],
+          left_out: [{String.t(), [String.t()]}]
+        }
 
-    # In order, a computed reading a prop or such a computed is per render.
-    per_render =
-      Enum.reduce(ordered, MapSet.new(["props" | props]), fn {name, expr}, dynamic ->
-        if Enum.any?(Expr.assign_keys(expr), &MapSet.member?(dynamic, &1)),
-          do: MapSet.put(dynamic, name),
-          else: dynamic
+  @doc """
+  Compiles the computeds, ordered so that each comes after the ones it reads,
+  and decides how the server gets each one; see `t:plan/0`.
+  """
+  @spec compile(ScriptSetup.t()) :: plan()
+  def compile(%ScriptSetup{computeds: computeds, props: props, refs: refs}) do
+    compiled = Map.new(computeds, fn {name, body} -> {name, compile_body(body)} end)
+    server = MapSet.new(Map.keys(refs) ++ props ++ ["props" | Expr.globals()])
+    dynamic = MapSet.new(["props" | props])
+
+    # In order, so a computed is decided after the ones it reads.
+    {plan, _server, _dynamic} =
+      compiled
+      |> order()
+      |> Enum.reduce({%{constant: [], per_render: [], left_out: []}, server, dynamic}, fn
+        {name, expr}, {plan, server, dynamic} ->
+          keys = Expr.assign_keys(expr)
+
+          cond do
+            (missing = Enum.reject(keys, &MapSet.member?(server, &1))) != [] ->
+              {%{plan | left_out: [{name, missing} | plan.left_out]}, server, dynamic}
+
+            Enum.any?(keys, &MapSet.member?(dynamic, &1)) ->
+              plan = %{plan | per_render: [{name, expr} | plan.per_render]}
+              {plan, MapSet.put(server, name), MapSet.put(dynamic, name)}
+
+            true ->
+              {%{plan | constant: [{name, expr} | plan.constant]}, MapSet.put(server, name),
+               dynamic}
+          end
       end)
 
-    Enum.split_with(ordered, fn {name, _expr} -> not MapSet.member?(per_render, name) end)
+    Map.new(plan, fn {kind, list} -> {kind, Enum.reverse(list)} end)
   end
 
   # A block body runs as a function's.

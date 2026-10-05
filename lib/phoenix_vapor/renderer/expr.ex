@@ -176,6 +176,10 @@ defmodule PhoenixVapor.Renderer.Expr do
   defp global?(%{type: :identifier, name: name}), do: name in @globals
   defp global?(_node), do: false
 
+  @doc "The globals a Vue template may use, which the server has too."
+  @spec globals() :: [String.t()]
+  def globals, do: @globals
+
   defp eval_node(%{type: :parenthesized_expression, expression: node}, assigns),
     do: eval_node(node, assigns)
 

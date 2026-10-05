@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- A hybrid computed that read something only the browser has, such as a composable's result (`refDebounced`) or an import (`sortBy` from es-toolkit), failed every server render with `ExpressionError`. The server now decides this when compiling: it leaves such a computed, and what reads it, out of the first paint, with a warning naming what it lacks. An expression reading it isn't rendered, and a `v-if` chain whose condition reads it renders no branch, rather than its `v-else`.
 - The QuickBEAM runtime that ran macro calls while compiling was never stopped, and the one for package components leaked when compiling raised. One runtime per compile now serves both and stops in an `after`.
 - A hybrid component started a QuickBEAM runtime on every render to evaluate its computed values, and a computed that failed rendered as missing without a report. Computeds now evaluate as template expressions do: one that reads only refs is evaluated once while compiling, and package components can render with it; one that reads props is evaluated when rendering, on the LiveView process's runtime, with its last value reused while its inputs are unchanged. A computed's other computeds are evaluated first, so lists such as a filtered view of props render on the server. A failure is a compile-time warning, or an `ExpressionError` when rendering.
 - A template literal's text between expressions rendered empty: `` `a${x}b` `` gave `1`.

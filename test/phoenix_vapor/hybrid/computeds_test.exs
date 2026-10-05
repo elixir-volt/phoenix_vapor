@@ -18,14 +18,14 @@ defmodule PhoenixVapor.Hybrid.ComputedsTest do
          """)
 
   test "orders computeds after what they read, and splits off those that read props" do
-    {constant, per_render} = Computeds.compile(@setup)
+    %{constant: constant, per_render: per_render, left_out: []} = Computeds.compile(@setup)
 
     assert Enum.map(constant, &elem(&1, 0)) == ["count"]
     assert Enum.map(per_render, &elem(&1, 0)) == ["visible", "summary"]
   end
 
   test "evaluates computeds with refs read as .value" do
-    {constant, per_render} = Computeds.compile(@setup)
+    %{constant: constant, per_render: per_render} = Computeds.compile(@setup)
     refs = %{search: "a", selected: [1, 2]}
 
     {values, _assigns} = Computeds.evaluate(constant, refs, refs)
@@ -41,11 +41,37 @@ defmodule PhoenixVapor.Hybrid.ComputedsTest do
   end
 
   test "a computed that fails raises, rather than rendering as missing" do
-    {_constant, per_render} = Computeds.compile(@setup)
+    %{per_render: per_render} = Computeds.compile(@setup)
 
     assert_raise PhoenixVapor.ExpressionError, fn ->
       assigns = %{contacts: nil, props: %{"contacts" => nil}}
       Computeds.evaluate(per_render, %{search: "", selected: []}, assigns, memo: true)
     end
+  end
+
+  test "leaves out computeds that read what only the browser has, and those built on them" do
+    setup =
+      ScriptSetup.parse("""
+      import { ref, computed } from "vue"
+      import { sortBy } from "es-toolkit"
+      import { refDebounced } from "@vueuse/core"
+      const props = defineProps(["contacts"])
+      const search = ref("")
+      const debounced = refDebounced(search, 150)
+      const matching = computed(() => props.contacts.filter(c => c.name.includes(debounced.value)))
+      const sorted = computed(() => sortBy(props.contacts, ["name"]))
+      const shown = computed(() => matching.value.length)
+      const total = computed(() => Math.max(props.contacts.length, 0))
+      """)
+
+    plan = Computeds.compile(setup)
+
+    assert plan.left_out == [
+             {"matching", ["debounced"]},
+             {"shown", ["matching"]},
+             {"sorted", ["sortBy"]}
+           ]
+
+    assert Enum.map(plan.per_render, &elem(&1, 0)) == ["total"]
   end
 end
