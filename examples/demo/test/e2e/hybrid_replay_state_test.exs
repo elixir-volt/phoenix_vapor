@@ -57,4 +57,22 @@ defmodule VaporDemo.E2E.HybridReplayStateTest do
     |> evaluate(@expose)
     |> assert_has(~s|body[data-states="2"]|)
   end
+
+  test "a component that mounts during a recording reports its refs then", %{conn: conn} do
+    conn
+    |> visit("/playground/hybrid")
+    |> assert_has(".phx-connected")
+    |> assert_has("[data-v-app]")
+    |> evaluate(@collect)
+    # Recording started before this component, or before the bridge loaded:
+    # only the attribute on <html> says so.
+    |> evaluate(~s|document.documentElement.dataset.phxReplay = JSON.stringify({state: {}})|)
+    |> evaluate(
+      ~s|liveSocket.execJS(document.body, JSON.stringify([["navigate", {href: "/contacts"}]]))|
+    )
+    |> assert_has("h1", text: "Contacts")
+    |> evaluate(@expose)
+    |> assert_has(~s|body[data-key="phoenix_vapor:pv-HybridContacts"]|)
+    |> assert_has(~s|body[data-changes="deleteTarget,search,selectedIds,sortKey"]|)
+  end
 end

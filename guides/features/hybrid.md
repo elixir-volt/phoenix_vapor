@@ -113,9 +113,9 @@ A session replayer such as [PhoenixReplay](https://github.com/elixir-volt/phoeni
 
 A hybrid component's refs live in the browser, so the server never sees them change. They're recorded through PhoenixReplay's client-state events on `window`, so PhoenixVapor depends on PhoenixReplay neither in Elixir nor in JavaScript:
 
-- When recording starts with client state, `phx_replay:start`, each hybrid component reports all of its refs as a `phx_replay:state` event, and then, as they change, only the refs that changed. A component that mounts during a recording reports its refs then. Before `phx_replay:start`, and after `phx_replay:stop`, nothing is dispatched.
+- When recording starts with client state, `phx_replay:start`, each hybrid component reports all of its refs as a `phx_replay:state` event, and then, as they change, only the refs that changed. A component that mounts during a recording, or whose bridge loads after it started, reports its refs then; it reads the `data-phx-replay` attribute PhoenixReplay sets on `<html>` while recording. Before `phx_replay:start`, and after `phx_replay:stop`, nothing is dispatched.
 - The state key is `phoenix_vapor:` and the component's wrapper id, such as `phoenix_vapor:pv-Contacts`, which stays the same across reconnects.
-- Only plain data is reported: strings, numbers, booleans, `null`, arrays and plain objects. A template ref to an element or a component is left out.
+- Only plain data is reported: strings, numbers, booleans, `null`, arrays and plain objects. A ref holding anything else, such as a template ref to an element, or `undefined`, is reported as `null`, so the replay doesn't keep an earlier value.
 
 Each hybrid LiveView also defines `replay_render/1`, which the replay calls instead of `render/1`: the same template without the client hook and `phx-update="ignore"`, with the refs recorded under the component's key in `@phoenix_replay_state` in place of their initial values, and the computeds evaluated with them. `render/1` never uses recorded refs.
 

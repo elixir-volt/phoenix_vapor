@@ -70,94 +70,95 @@ function plain(value: unknown, seen: Set<object>): unknown {
   return result
 }
 
-// A component's refs as plain data, by name.
-function snapshot(refs: Refs): Record<string, unknown> {
-  const values: Record<string, unknown> = {}
-
-  for (const [name, ref] of Object.entries(refs)) {
-    const value = plain(ref.value, new Set())
-    if (value !== undefined) values[name] = value
-  }
-
-  return values
-}
+// A ref's value as plain data; a value that isn't, or `undefined`, is
+// `null`, so the replay doesn't keep showing an earlier value.
+const plainValue = (value: unknown): unknown => plain(value, new Set()) ?? null
 
 // A session replayer, such as PhoenixReplay, records state that lives only in
 // the browser through window events, so PhoenixVapor needs no dependency on
 // it: `phx_replay:start` and `phx_replay:stop` say when a session is recorded,
 // with `{state: null}` when client state isn't, and `phx_replay:state`
 // reports `{key, changes}`, a shallow delta merged into what's recorded under
-// `key`. Recording may start before or after a component mounts.
+// `key`. While recording, `<html>` carries `data-phx-replay` with the start's
+// detail as JSON, for code that loads or mounts after the start.
 const START_EVENT = "phx_replay:start"
 const STOP_EVENT = "phx_replay:stop"
 const STATE_EVENT = "phx_replay:state"
 
 type Reporter = { start(): void; stop(): void }
 
-let recording = false
 const reporters = new Set<Reporter>()
+
+// Whether client state is being recorded, from the attribute on `<html>`.
+function recordingState(): boolean {
+  const recording = document.documentElement.dataset.phxReplay
+  if (!recording) return false
+
+  try {
+    return (JSON.parse(recording) as { state?: unknown }).state != null
+  } catch {
+    return false
+  }
+}
 
 if (typeof window !== "undefined") {
   window.addEventListener(START_EVENT, (event) => {
     const detail = (event as CustomEvent<{ state?: unknown } | null>).detail
     if (detail?.state == null) return
-
-    recording = true
     for (const reporter of reporters) reporter.start()
   })
 
   window.addEventListener(STOP_EVENT, () => {
-    recording = false
     for (const reporter of reporters) reporter.stop()
   })
 }
 
 /**
- * Reports a component's refs under `key` while a session is recorded: all of
- * them when recording starts, or when the component mounts during one, then
- * only the refs that changed.
+ * Reports a component's refs under `key` while client state is recorded:
+ * all of them when recording starts, or when the component mounts during
+ * one, then each ref that changes. Each ref has its own watcher, so a change
+ * copies only that ref.
  */
 function reportRefs(hook: HookContext, key: string): (refs: Refs, watch: Watch) => void {
-  const report = (changes: Record<string, unknown>) => {
-    if (Object.keys(changes).length > 0)
-      window.dispatchEvent(new CustomEvent(STATE_EVENT, { detail: { key, changes } }))
-  }
+  const report = (changes: Record<string, unknown>) =>
+    window.dispatchEvent(new CustomEvent(STATE_EVENT, { detail: { key, changes } }))
 
   return (refs, watch) => {
-    let stopWatching: (() => void) | undefined
-    let last: Record<string, string> = {}
+    let stops: Array<() => void> = []
 
     const reporter: Reporter = {
       start() {
-        stopWatching?.()
-        const values = snapshot(refs)
-        last = Object.fromEntries(Object.entries(values).map(([n, v]) => [n, JSON.stringify(v)]))
+        reporter.stop()
+
+        const values: Record<string, unknown> = {}
+        const last: Record<string, string> = {}
+
+        for (const [name, ref] of Object.entries(refs)) {
+          values[name] = plainValue(ref.value)
+          last[name] = JSON.stringify(values[name])
+
+          const changed = () => {
+            const value = plainValue(ref.value)
+            const json = JSON.stringify(value)
+            if (json === last[name]) return
+
+            last[name] = json
+            report({ [name]: value })
+          }
+
+          stops.push(watch(() => ref.value, changed, { deep: true, immediate: false }))
+        }
+
         report(values)
-
-        stopWatching = watch(
-          () => snapshot(refs),
-          (next) => {
-            const changes: Record<string, unknown> = {}
-
-            for (const [name, value] of Object.entries(next as Record<string, unknown>)) {
-              const json = JSON.stringify(value)
-              if (last[name] !== json) changes[name] = value
-              last[name] = json
-            }
-
-            report(changes)
-          },
-          { deep: true, immediate: false }
-        )
       },
       stop() {
-        stopWatching?.()
-        stopWatching = undefined
+        for (const stop of stops) stop()
+        stops = []
       }
     }
 
     reporters.add(reporter)
-    if (recording) reporter.start()
+    if (recordingState()) reporter.start()
 
     hook.stopReporting = () => {
       reporter.stop()

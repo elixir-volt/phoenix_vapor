@@ -96,7 +96,7 @@ Initial render: server sends statics + dynamics, with the props JSON as the wrap
 
 ### Session Replay
 
-A replayer such as PhoenixReplay renders a recorded view from its recorded assigns alone; the QuickBEAM runtimes of Reactive mode and the full runtime live in `socket.private`, out of the recording. A hybrid component's refs live in the browser: `browser/hybrid-bridge.ts` reports them as `phx_replay:state` window events between `phx_replay:start` and `phx_replay:stop`, all of them on start and then only the changed ones, under `phoenix_vapor:<wrapper id>`. The generated `replay_render/1` (`Hybrid.ServerCodegen.build_rendered/3` in `:replay` mode) reads them from `@phoenix_replay_state`, renders without the client hook, and maps a changed `:phoenix_replay_state` or prop to the refs and computeds the template reads, for tracked re-renders. See the Hybrid guide.
+A replayer such as PhoenixReplay renders a recorded view from its recorded assigns alone; the QuickBEAM runtimes of Reactive mode and the full runtime live in `socket.private`, out of the recording. A hybrid component's refs live in the browser: `browser/hybrid-bridge.ts` reports them as `phx_replay:state` window events between `phx_replay:start` and `phx_replay:stop` (or while `<html data-phx-replay>` says a recording is running), all of them on start and then each one that changes, through a watcher per ref, under `phoenix_vapor:<wrapper id>`. The generated `replay_render/1` (`Hybrid.ServerCodegen.build_rendered/3` in `:replay` mode) reads them from `@phoenix_replay_state`, renders without the client hook, and maps a changed `:phoenix_replay_state` or prop to the refs and computeds the template reads, for tracked re-renders. See the Hybrid guide.
 
 ### Custom Elixir Code
 
