@@ -75,4 +75,40 @@ defmodule PhoenixVapor.ScriptSetupTest do
       assert %ScriptSetup{refs: %{}, functions: %{}, props: []} = ScriptSetup.parse("const = ")
     end
   end
+
+  describe "client bindings" do
+    test "are names bound by calls the compiler can't run, destructured too" do
+      setup =
+        ScriptSetup.parse("""
+        import { ref, computed, reactive } from "vue"
+        import { refDebounced, useClipboard } from "@vueuse/core"
+        import { badge } from "./variants" with { type: "macro" }
+        const props = defineProps(["a"])
+        const search = ref("")
+        const debounced = refDebounced(search, 150)
+        const { copy, copied } = useClipboard()
+        const state = reactive({ open: false })
+        const classes = badge({ tone: "a" })
+        const doubled = computed(() => 2)
+        const roles = ["a"]
+        """)
+
+      assert setup.client_bindings == ["debounced", "copy", "copied", "state"]
+    end
+
+    test "make a file hybrid even without a ref()" do
+      sfc = %PhoenixVapor.Compiler.SFC{
+        file: "x.vue",
+        source: "",
+        setup: ScriptSetup.parse(~s|const { copied } = useClipboard()|)
+      }
+
+      assert PhoenixVapor.Compiler.SFC.client_state?(sfc)
+
+      refute PhoenixVapor.Compiler.SFC.client_state?(%{
+               sfc
+               | setup: ScriptSetup.parse("const a = 1")
+             })
+    end
+  end
 end
