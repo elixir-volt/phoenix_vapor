@@ -23,6 +23,7 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
           consts: [{String.t(), map(), String.t()}],
           callables: [String.t()],
           client_bindings: [String.t()],
+          offsets: %{String.t() => non_neg_integer()},
           props: [String.t()]
         }
 
@@ -34,6 +35,7 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
             consts: [],
             callables: [],
             client_bindings: [],
+            offsets: %{},
             props: []
 
   @doc """
@@ -70,6 +72,7 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
           consts: consts(ast, source),
           callables: callables(ast),
           client_bindings: client_bindings(ast, imports),
+          offsets: offsets(ast),
           props: props(source)
         }
 
@@ -125,6 +128,15 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
 
       {specifier.local.name, %{source: source, imported: imported, attributes: attributes}}
     end
+  end
+
+  # Where each top-level declaration starts in the script, for diagnostics.
+  defp offsets(%{body: body}) do
+    for %{type: :variable_declaration, declarations: declarations, start: start} <- body,
+        %{id: id} <- declarations,
+        name <- binding_names(id),
+        into: %{},
+        do: {name, start}
   end
 
   # `const name = callee(arg)`: the first argument's source by name.

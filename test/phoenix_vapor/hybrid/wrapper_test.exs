@@ -10,6 +10,7 @@ defmodule PhoenixVapor.Hybrid.WrapperTest do
       split: @split,
       client_props: ["title"],
       recorded: [],
+      client: [],
       values: %{},
       constant: [],
       computeds: [],

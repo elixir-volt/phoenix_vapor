@@ -13,7 +13,11 @@ defmodule PhoenixVapor.Hybrid.Computeds do
   alias PhoenixVapor.Compiler.ScriptSetup
   alias PhoenixVapor.Renderer.{Expr, Names}
 
-  @type computed :: {String.t(), Expr.compiled() | {:elixir, module(), atom()}}
+  @typedoc """
+  A computed's name, and its compiled body or its Elixir counterpart, with the
+  assign keys the counterpart reads.
+  """
+  @type computed :: {String.t(), Expr.compiled() | {:elixir, module(), atom(), [String.t()]}}
 
   @typedoc """
   The computeds by how the server gets them: `:constant` read only refs, so
@@ -32,9 +36,18 @@ defmodule PhoenixVapor.Hybrid.Computeds do
   @doc """
   Compiles the computeds, ordered so that each comes after the ones it reads,
   and decides how the server gets each one; see `t:plan/0`.
+
+    * `:twins` — Elixir counterparts by computed name, `{module, function,
+      reads}`
+    * `:known` — other names the server has, such as constants
+    * `:rewrite` — rewrites a body's AST, such as pointing calls to script
+      functions at their Elixir counterparts
   """
-  @spec compile(ScriptSetup.t(), %{String.t() => {module(), atom()}}) :: plan()
-  def compile(%ScriptSetup{computeds: computeds, props: props, refs: refs}, twins \\ %{}) do
+  @spec compile(ScriptSetup.t(), keyword()) :: plan()
+  def compile(%ScriptSetup{computeds: computeds, props: props, refs: refs}, opts \\ []) do
+    twins = Keyword.get(opts, :twins, %{})
+    rewrite = Keyword.get(opts, :rewrite, & &1)
+
     compiled =
       Map.new(computeds, fn {name, body} ->
         # Declared names get their atoms while compiling; rendering only
@@ -42,12 +55,13 @@ defmodule PhoenixVapor.Hybrid.Computeds do
         Names.atom!(name)
 
         case twins do
-          %{^name => {module, function}} -> {name, {:elixir, module, function}}
-          _no_twin -> {name, compile_body(body)}
+          %{^name => {module, function, reads}} -> {name, {:elixir, module, function, reads}}
+          _no_twin -> {name, body |> compile_body() |> rewrite_calls(rewrite)}
         end
       end)
 
-    server = MapSet.new(Map.keys(refs) ++ props ++ ["props" | Expr.globals()])
+    known = Keyword.get(opts, :known, [])
+    server = MapSet.new(Map.keys(refs) ++ props ++ known ++ ["props" | Expr.globals()])
     dynamic = MapSet.new(["props" | props])
 
     # In order, so a computed is decided after the ones it reads.
@@ -57,7 +71,7 @@ defmodule PhoenixVapor.Hybrid.Computeds do
       |> Enum.reduce({%{constant: [], per_render: [], left_out: []}, server, dynamic}, fn
         # An Elixir counterpart computes it on every render, from whatever
         # the server has.
-        {name, {:elixir, _module, _function} = twin}, {plan, server, dynamic} ->
+        {name, {:elixir, _module, _function, _reads} = twin}, {plan, server, dynamic} ->
           plan = %{plan | per_render: [{name, twin} | plan.per_render]}
           {plan, MapSet.put(server, name), MapSet.put(dynamic, name)}
 
@@ -82,6 +96,13 @@ defmodule PhoenixVapor.Hybrid.Computeds do
     |> Map.new(fn {kind, list} -> {kind, Enum.reverse(list)} end)
     |> Map.put(:reads, Map.new(compiled, fn {name, expr} -> {name, reads(expr)} end))
   end
+
+  # Calls to script functions with Elixir counterparts run those instead.
+  defp rewrite_calls({tag, source, node, _keys}, rewrite)
+       when tag in [:expr, :js] and is_map(node),
+       do: Expr.from_node(source, rewrite.(node))
+
+  defp rewrite_calls(expr, _rewrite), do: expr
 
   # A block body runs as a function's.
   defp compile_body(body) do
@@ -136,25 +157,38 @@ defmodule PhoenixVapor.Hybrid.Computeds do
   def evaluate(computeds, values, assigns, opts \\ []) do
     memo? = Keyword.get(opts, :memo, false)
 
-    Enum.reduce(computeds, {values, assigns}, fn {name, expr}, {values, assigns} ->
-      value =
-        case expr do
-          {:elixir, module, function} -> apply(module, function, [assigns])
-          expr when memo? -> memoized(name, expr, scope(assigns, values))
-          expr -> eval(expr, scope(assigns, values), opts)
-        end
+    Enum.reduce(computeds, {values, assigns}, fn
+      # A counterpart reading state the render doesn't have, such as a
+      # composable's value before the browser reports it, isn't called: its
+      # computed is absent too.
+      {name, {:elixir, module, function, reads}}, {values, assigns} ->
+        if Enum.any?(reads, &absent?(assigns, &1)),
+          do: {values, Map.update!(assigns, :__absent__, &MapSet.put(&1, name))},
+          else: put(values, assigns, name, apply(module, function, [assigns]))
 
-      key = Names.existing(name)
-      {Map.put(values, key, value), Map.put(assigns, key, value)}
+      {name, expr}, {values, assigns} when memo? ->
+        put(values, assigns, name, memoized(name, expr, scope(assigns, values)))
+
+      {name, expr}, {values, assigns} ->
+        put(values, assigns, name, eval(expr, scope(assigns, values), opts))
     end)
+  end
+
+  defp absent?(%{__absent__: absent}, name), do: MapSet.member?(absent, name)
+  defp absent?(_assigns, _name), do: false
+
+  defp put(values, assigns, name, value) do
+    key = Names.existing(name)
+    {Map.put(values, key, value), Map.put(assigns, key, value)}
   end
 
   @doc """
   The names a computed reads, or `:any` for an Elixir counterpart, which may
   read any assign.
   """
-  @spec reads(Expr.compiled() | {:elixir, module(), atom()}) :: [String.t()] | :any
-  def reads({:elixir, _module, _function}), do: :any
+  @spec reads(Expr.compiled() | {:elixir, module(), atom(), [String.t()]}) ::
+          [String.t()] | :any
+  def reads({:elixir, _module, _function, _reads}), do: :any
   def reads(expr), do: Expr.assign_keys(expr)
 
   defp eval(expr, scope, opts), do: Expr.eval(expr, scope, Keyword.take(opts, [:runtime]))

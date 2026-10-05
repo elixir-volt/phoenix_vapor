@@ -112,10 +112,12 @@ A page can mount the same component several times; each mount has its own props 
 A hybrid component is ordinary Vue code, so it uses composables, such as [VueUse](https://vueuse.org)'s, and libraries, such as [es-toolkit](https://es-toolkit.dev). The server renders the first paint without running the component's JavaScript, so it has only what it can know when compiling:
 
 - the refs' initial values, and computeds that read only those;
+- the component's constants, such as `const PAGE_SIZE = 20` or `const roles = ["owner", "admin"]`, evaluated once while compiling;
 - the props, and computeds that read them, evaluated when rendering;
+- script functions with an [Elixir counterpart](templates.md#script-functions-on-the-server), when a computed calls them;
 - JavaScript's globals, such as `Math`.
 
-A name bound by any other call, such as `const sortKey = useLocalStorage("sort", "name")` or `const { copy, copied } = useClipboard()`, is state only the browser has, and makes the file hybrid even without a `ref()`. Its value on the server is `undefined`.
+A name bound by any other call, such as `const sortKey = useLocalStorage("sort", "name")` or `const { copy, copied } = useClipboard()`, is state only the browser has, and makes the file hybrid even without a `ref()`. The server's render doesn't have its value, so an expression reading it isn't rendered, and a `v-if` chain whose condition reads it renders no branch: `v-if="sortKey === 'name'"` shows neither its branch nor its `v-else` until the browser mounts. A session replay that recorded the value renders it.
 
 A computed that reads such a name, or an import such as `sortBy`, or a computed built on either, is left out of the server's render, with a compile-time warning naming what it reads that the server lacks:
 
@@ -154,7 +156,7 @@ end
 </script>
 ```
 
-The server calls `filtered/1` on every render, and in a session replay with the recorded state. It reads `search` rather than `debouncedSearch`, which only the browser has. The two versions can drift apart: if they disagree, the list changes when the browser mounts, which is visible but not an error. A computed named after a LiveView callback, such as `render` or `mount`, can't have a counterpart; rename the computed.
+The server calls `filtered/1` on every render, and in a session replay with the recorded state. It reads `search` rather than `debouncedSearch`, which only the browser has. A counterpart that matches on composable state, such as `%{sortKey: key}`, isn't called until the render has that state, in a replay that recorded it, and what reads its computed waits with it. The two versions can drift apart: if they disagree, the list changes when the browser mounts, which is visible but not an error. A computed named after a LiveView callback, such as `render` or `mount`, can't have a counterpart; rename the computed.
 
 ### Callbacks in the template
 

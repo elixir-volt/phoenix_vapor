@@ -18,6 +18,7 @@ defmodule PhoenixVapor.Hybrid.ServerCodegenTest do
       split: split,
       client_props: client_props,
       recorded: [],
+      client: [],
       values: %{},
       constant: [],
       computeds: [],

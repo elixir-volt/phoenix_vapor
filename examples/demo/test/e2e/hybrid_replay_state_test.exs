@@ -70,6 +70,27 @@ defmodule VaporDemo.E2E.HybridReplayStateTest do
     |> assert_has(~s|body[data-states="2"]|)
   end
 
+  test "a change waiting for the next flush goes out when the page is hidden", %{conn: conn} do
+    conn
+    |> visit("/contacts")
+    |> assert_has(".phx-connected")
+    |> assert_has("[data-v-app]")
+    |> evaluate(@collect)
+    |> evaluate(
+      ~s|window.dispatchEvent(new CustomEvent("phx_replay:start", {detail: {state: {flush: 60000}}}))|
+    )
+    |> type("bo")
+    |> evaluate(@expose)
+    # The change waits for the flush interval.
+    |> assert_has(~s|body[data-states="1"]|)
+    |> evaluate("""
+    Object.defineProperty(document, "hidden", { value: true, configurable: true })
+    document.dispatchEvent(new Event("visibilitychange"))
+    """)
+    |> evaluate(@expose)
+    |> assert_has(~s|body[data-states="2"][data-changes="search"][data-search="bo"]|)
+  end
+
   test "a component that mounts during a recording reports its state then", %{conn: conn} do
     conn
     |> visit("/playground/hybrid")

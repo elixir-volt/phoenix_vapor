@@ -60,6 +60,24 @@ defmodule PhoenixVapor.Compiler.SFC do
     Path.expand(file, Path.dirname(caller.file))
   end
 
+  @doc """
+  The line in the file where `<script setup>` declares `name`, or 1 when it
+  doesn't.
+  """
+  @spec setup_line(t(), String.t()) :: pos_integer()
+  def setup_line(%__MODULE__{setup: setup, descriptor: %{script_setup: %{loc: loc}}}, name) do
+    case setup.offsets do
+      %{^name => offset} ->
+        loc.start_line +
+          (setup.source |> binary_part(0, offset) |> String.split("\n") |> length()) - 1
+
+      _other ->
+        1
+    end
+  end
+
+  def setup_line(_sfc, _name), do: 1
+
   @doc "The template, raising when the file has no `<template>` block."
   @spec template!(t()) :: String.t()
   def template!(%__MODULE__{template: nil, file: file}) do

@@ -65,6 +65,37 @@ defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest do
       assert html =~ "<li>Ada</li><li>Bob</li><li>Cy</li>"
     end
 
+    test "constants and script functions with counterparts are known to the server",
+         %{twin_warnings: warnings} do
+      refute warnings =~ "computed `firstPage`"
+      refute warnings =~ "computed `firstInitial`"
+
+      html = __MODULE__.TwinsLive.render(%{contacts: @contacts, __changed__: nil}) |> html()
+
+      assert html =~ "first page: Bob, Ada, of 2"
+      assert html =~ "initial: B"
+    end
+
+    test "a counterpart reading composable state waits for its value, as what reads it does" do
+      html = __MODULE__.TwinsLive.render(%{contacts: @contacts, __changed__: nil}) |> html()
+
+      # sortKey comes from useLocalStorage: the live render doesn't have it,
+      # so sorted/1 isn't called and the v-if chain renders no branch.
+      refute html =~ "<ol><li>"
+      refute html =~ "by name"
+      refute html =~ "by something else"
+
+      state = %{"phoenix_vapor:pv-HybridComposablesTwins" => %{"sortKey" => "name"}}
+
+      replayed =
+        %{contacts: @contacts, phoenix_replay_state: state, __changed__: nil}
+        |> __MODULE__.TwinsLive.replay_render()
+        |> html()
+
+      assert replayed =~ "<ol><li>Ada</li><li>Bob</li><li>Cy</li></ol>"
+      assert replayed =~ "by name"
+    end
+
     test "a replay computes them from the recorded refs" do
       state = %{"phoenix_vapor:pv-HybridComposablesTwins" => %{"search" => "y"}}
 

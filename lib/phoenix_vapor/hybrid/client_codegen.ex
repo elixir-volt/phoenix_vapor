@@ -93,7 +93,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
 
   defp preamble(classification) do
     """
-    import { createApp as __createApp, h as __h, inject as __inject, reactive as __reactive, toValue as __toValue, watch as __watch } from 'vue';
+    import { createApp as __createApp, h as __h, inject as __inject, reactive as __reactive, unref as __unref, watch as __watch } from 'vue';
 
     export function __getClientState() {
       return #{Jason.encode!(client_refs(classification))};
@@ -114,7 +114,7 @@ defmodule PhoenixVapor.Hybrid.ClientCodegen do
       // so applyProps re-renders. createApp(component, props) would copy them.
       const app = __createApp({ render: () => __h(__component, state) });
       // While a session is recorded, the bridge reports the refs setup registers.
-      const record = (sources) => bridge.record?.(sources, __watch, __toValue);
+      const record = (sources) => bridge.record?.(sources, __watch, __unref);
       app.provide("__pv", { bridge, props: state, record });
       app.mount(el);
 

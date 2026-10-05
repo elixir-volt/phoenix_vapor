@@ -416,9 +416,13 @@ defmodule PhoenixVapor.Compiler do
   end
 
   # Points calls to `functions` at their Elixir counterparts.
-  defp elixir_calls(node, _functions, nil), do: node
+  @doc false
+  # Points calls in `node` to `functions` at the Elixir functions of the same
+  # name in snake_case, with the same arity, that `elixir` holds for `module`.
+  @spec elixir_calls(map(), [String.t()], {module(), map()} | nil) :: map()
+  def elixir_calls(node, _functions, nil), do: node
 
-  defp elixir_calls(node, functions, {module, elixir}) do
+  def elixir_calls(node, functions, {module, elixir}) do
     rewrite(node, fn
       %{type: :call_expression, callee: %{type: :identifier, name: name}, arguments: args} = call ->
         server = Macro.underscore(name)
