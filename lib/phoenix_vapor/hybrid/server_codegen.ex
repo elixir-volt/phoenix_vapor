@@ -157,9 +157,10 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
     # In order, so a computed reading another computed sees its change.
     names =
       Enum.reduce(spec.constant ++ spec.computeds, names, fn {name, expr}, names ->
-        if Enum.any?(PhoenixVapor.Renderer.Expr.assign_keys(expr), &(&1 in names)),
-          do: MapSet.put(names, name),
-          else: names
+        case PhoenixVapor.Hybrid.Computeds.reads(expr) do
+          :any -> MapSet.put(names, name)
+          keys -> if Enum.any?(keys, &(&1 in names)), do: MapSet.put(names, name), else: names
+        end
       end)
 
     %{assigns | __changed__: Map.new(names, &{&1, true})}

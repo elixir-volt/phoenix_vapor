@@ -12,22 +12,26 @@ defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest do
   defp html(rendered), do: rendered |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
 
   setup_all do
-    warnings =
-      capture_io(:stderr, fn ->
-        Code.compile_quoted(
-          quote do
-            defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest.ContactsLive do
-              use Phoenix.LiveView
+    %{
+      warnings: compile(:ContactsLive, "HybridComposables.vue"),
+      twin_warnings: compile(:TwinsLive, "HybridComposablesTwins.vue")
+    }
+  end
 
-              use PhoenixVapor,
-                file: unquote(Fixtures.path("HybridComposables.vue")),
-                client_output: nil
-            end
+  # Compiles a hybrid LiveView from a fixture, returning the warnings.
+  defp compile(name, fixture) do
+    module = Module.concat(__MODULE__, name)
+
+    capture_io(:stderr, fn ->
+      Code.compile_quoted(
+        quote do
+          defmodule unquote(module) do
+            use Phoenix.LiveView
+            use PhoenixVapor, file: unquote(Fixtures.path(fixture)), client_output: nil
           end
-        )
-      end)
-
-    %{warnings: warnings}
+        end
+      )
+    end)
   end
 
   test "warns about each computed the server can't evaluate, naming what it lacks",
@@ -47,5 +51,48 @@ defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest do
     refute html =~ "match"
     # Nor does a v-for over one.
     refute html =~ "<li>"
+  end
+
+  describe "with Elixir counterparts" do
+    test "the server computes them in Elixir, and renders what reads them",
+         %{twin_warnings: warnings} do
+      refute warnings =~ "computed `matching`"
+      refute warnings =~ "computed `names`"
+
+      html = __MODULE__.TwinsLive.render(%{contacts: @contacts, __changed__: nil}) |> html()
+
+      assert html =~ "3 match"
+      assert html =~ "<li>Ada</li><li>Bob</li><li>Cy</li>"
+    end
+
+    test "a replay computes them from the recorded refs" do
+      state = %{"phoenix_vapor:pv-HybridComposablesTwins" => %{"search" => "y"}}
+
+      html =
+        %{contacts: @contacts, phoenix_replay_state: state, __changed__: nil}
+        |> __MODULE__.TwinsLive.replay_render()
+        |> html()
+
+      assert html =~ "1 match"
+    end
+  end
+
+  test "a computed named after a LiveView callback can't have an Elixir counterpart" do
+    error =
+      assert_raise CompileError, fn ->
+        Code.compile_quoted(
+          quote do
+            defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest.ReservedLive do
+              use Phoenix.LiveView
+
+              use PhoenixVapor,
+                file: unquote(Fixtures.path("HybridReservedTwin.vue")),
+                client_output: nil
+            end
+          end
+        )
+      end
+
+    assert Exception.message(error) =~ "`render` is a LiveView callback"
   end
 end

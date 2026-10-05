@@ -29,7 +29,7 @@ defmodule PhoenixVapor.Hybrid do
   @spec build(SFC.t(), keyword(), Macro.Env.t()) :: Macro.t()
   def build(%SFC{} = sfc, opts, caller) do
     %{constant: constant, per_render: per_render, left_out: left_out} =
-      Computeds.compile(sfc.setup)
+      Computeds.compile(sfc.setup, twins(sfc, caller.module))
 
     Enum.each(left_out, &warn_left_out(&1, sfc.file))
 
@@ -91,6 +91,40 @@ defmodule PhoenixVapor.Hybrid do
 
       @doc "Returns how the component's bindings and handlers were split between server and client."
       def __hybrid_classification__, do: @__hybrid_classification__
+    end
+  end
+
+  # A LiveView's callbacks, which a computed's Elixir counterpart can't be.
+  @callbacks ~w(mount render replay_render handle_event handle_info handle_params handle_call
+                handle_cast handle_async terminate code_change)
+
+  # Computeds whose `<script lang="elixir">` counterpart, the function of the
+  # same name in snake_case taking the assigns, computes them on the server.
+  defp twins(%SFC{setup: setup} = sfc, module) do
+    functions = SFC.elixir_functions(sfc)
+
+    for {name, _body} <- setup.computeds,
+        function = Macro.underscore(name),
+        Map.has_key?(functions, function),
+        into: %{} do
+      if function in @callbacks do
+        raise CompileError,
+          file: sfc.file,
+          line: 1,
+          description:
+            "computed `#{name}` can't have an Elixir counterpart: `#{function}` is a LiveView " <>
+              "callback. Rename the computed."
+      end
+
+      unless MapSet.member?(functions[function], 1) do
+        raise CompileError,
+          file: sfc.file,
+          line: 1,
+          description:
+            "the Elixir counterpart of computed `#{name}` takes the assigns: define #{function}/1"
+      end
+
+      {name, {module, String.to_existing_atom(function)}}
     end
   end
 

@@ -59,15 +59,17 @@ defmodule PhoenixVapor.Compiler.ScriptSetup do
   def parse(source) do
     case OXC.parse(source, "setup.ts") do
       {:ok, ast} ->
+        imports = imports(ast)
+
         %__MODULE__{
           source: source,
-          imports: imports(ast),
+          imports: imports,
           refs: calls(ast, source, "ref"),
           computeds: computeds(ast, source),
           functions: functions(ast, source),
           consts: consts(ast, source),
           callables: callables(ast),
-          client_bindings: client_bindings(ast, imports(ast)),
+          client_bindings: client_bindings(ast, imports),
           props: props(source)
         }
 
