@@ -45,6 +45,8 @@ defmodule PhoenixVapor.MixProject do
         "ex_dna",
         "reach.check --dead-code --smells --strict --baseline .reach-baseline.json",
         "dialyzer",
+        # ExDoc is a dev dependency; lint runs in the test environment.
+        "cmd env MIX_ENV=dev mix docs --warnings-as-errors",
         "volt.js.check --type-aware --type-check"
       ],
       # tsgolint and the e2e tests' Vue come from node_modules; the e2e tests
@@ -95,7 +97,8 @@ defmodule PhoenixVapor.MixProject do
         Internals: ["ARCHITECTURE.md", "docs/hybrid-architecture.md"],
         Comparisons: ~r/docs\/comparisons\//
       ],
-      skip_undefined_reference_warnings_on: ["ARCHITECTURE.md"]
+      # Both name internal modules on purpose: where they live, and what moved.
+      skip_undefined_reference_warnings_on: ["ARCHITECTURE.md", "CHANGELOG.md"]
     ]
   end
 

@@ -1,13 +1,13 @@
 defmodule PhoenixVapor.Hybrid.Classifier do
-  @moduledoc """
-  Classifies bindings from a parsed `<script setup>` into server-owned,
-  client-owned, and mixed categories using AST-based dataflow analysis.
+  @moduledoc false
 
-  Given a `PhoenixVapor.Compiler.ScriptSetup`, determines:
-  - Which props the client needs (for serialization)
-  - Which functions are server actions vs client handlers
-  - Which computeds are pure-client vs mixed (depend on server props)
-  """
+  # Classifies bindings from a parsed `<script setup>` into server-owned,
+  # client-owned, and mixed categories using AST-based dataflow analysis.
+  #
+  # Given a `PhoenixVapor.Compiler.ScriptSetup`, determines:
+  # - Which props the client needs (for serialization)
+  # - Which functions are server actions vs client handlers
+  # - Which computeds are pure-client vs mixed (depend on server props)
 
   alias PhoenixVapor.Compiler.ScriptSetup
   alias PhoenixVapor.JS.FreeNames

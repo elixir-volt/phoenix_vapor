@@ -3,8 +3,8 @@ defmodule PhoenixVapor.Template do
   A Vue template compiled for rendering on the server: static HTML and the
   dynamic slots between it, the shape of `%Phoenix.LiveView.Rendered{}`.
 
-  A template comes from `Vize.split_template/2` through
-  `PhoenixVapor.Compiler.Split.compile/2`. Its expressions are parsed, and every
+  A template comes from `Vize.split_template/2`, compiled by PhoenixVapor's
+  compiler. Its expressions are parsed, and every
   slot's `:position` is `{line, column}` in `:file`. Blocks inside it, such as
   a `v-if` branch, are templates too.
   """
