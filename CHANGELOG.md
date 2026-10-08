@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- A package component whose props read state, such as a Reka `TabsRoot` with `v-model="tab"` or a `DialogRoot` with `:open="target !== null"`, folds once for each combination of the values TypeScript gives their expressions, up to 64, and rendering picks the markup for the values they have. A session replay now shows the tab, dialog or switch as it was. A type that isn't a set of literal values, such as `string`, keeps the fold with the initial values, with a warning that names the expression and its type; type the ref as its values, such as `ref<"general" | "members">("general")`, to fold it for each.
+- A component of your own that passes a prop or model to a package component, such as a `<Select v-model="role">` around Reka's `SelectRoot`, folds it once for each value of the expression its parent passes.
+
+### Fixed
+
+- A ref read only by a folded package component's props, such as `tab` in `<TabsRoot v-model="tab">`, wasn't recorded for a session replay, nor did change tracking count it.
+- A component's `defineModel` binding read nothing on the server: a `<Switch v-model="on">` whose template passes its `checked` model to Reka's `SwitchRoot` left the switch out of the first paint, with a warning, until the browser mounted. A model is now a prop on the server, read by the name it's bound to.
+
 ## 0.6.1 - 2026-10-09
 
 Checked against PhoenixReplay 0.6.2, recording real sessions of the demo and replaying them in its player.
