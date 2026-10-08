@@ -14,7 +14,7 @@ jobs:
     uses: elixir-vibe/actions/.github/workflows/elixir-ci.yml@v1
     with:
       # The tests render Reka UI and Vue from node_modules.
-      min-command: mix npm.install && mix compile --warnings-as-errors && mix test
+      min-command: mix npm.install --frozen && mix compile --warnings-as-errors && mix test
 
   # The demo app: its lint, and its browser tests against the library at
   # this commit, which it uses as a path dependency.
@@ -23,7 +23,7 @@ jobs:
     with:
       working-directory: examples/demo
       latest-command: >-
-        mix npm.install &&
+        mix npm.install --frozen &&
         npx playwright install --with-deps chromium &&
         mix ci
       run-min: false

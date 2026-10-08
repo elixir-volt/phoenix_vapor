@@ -51,7 +51,14 @@ defmodule PhoenixVapor.MixProject do
       ],
       # tsgolint and the e2e tests' Vue come from node_modules; the e2e tests
       # also need the Reka bundle.
-      ci: ["npm.install", "lint", "phoenix_vapor.bundle --name reka-dialog", "test --include e2e"],
+      # npm packages as npm.lock records them, rather than the newest each
+      # range allows.
+      ci: [
+        "npm.install --frozen",
+        "lint",
+        "phoenix_vapor.bundle --name reka-dialog",
+        "test --include e2e"
+      ],
       # A separate process, so compiling for vendoring leaves Hex's own tasks loaded.
       "hex.build": ["cmd mix volt.priv.vendor priv/ts", "hex.build"],
       "hex.publish": ["cmd mix volt.priv.vendor priv/ts", "hex.publish"]
