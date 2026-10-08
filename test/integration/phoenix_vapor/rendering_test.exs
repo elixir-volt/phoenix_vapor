@@ -347,6 +347,58 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       assert html =~ ~s[value="hello"]
       assert html =~ ~s[phx-change="search_changed"]
     end
+
+    # As Vue's server renderer does: the option whose value is the select's.
+    test "on a select, selects the option by its value, its bound value or its text" do
+      html = fn template, assigns ->
+        template
+        |> PhoenixVapor.render(assigns)
+        |> Phoenix.HTML.Safe.to_iodata()
+        |> IO.iodata_to_binary()
+      end
+
+      assert html.(
+               ~s[<select v-model="c"><option value="a">A</option><option value="b">B</option></select>],
+               %{c: "b"}
+             ) =~
+               ~s[<option value="a">A</option><option value="b" selected>B</option>]
+
+      assert html.(
+               ~s[<select v-model="c"><optgroup label="g"><option>Ann</option></optgroup></select>],
+               %{c: "Ann"}
+             ) =~
+               "<option selected>Ann</option>"
+
+      # A bound number matches loosely, as Vue's looseEqual does.
+      options =
+        ~s[<select v-model="id"><option v-for="o in opts" :key="o.id" :value="o.id">{{ o.name }}</option></select>]
+
+      opts = [%{id: 1, name: "One"}, %{id: 2, name: "Two"}]
+
+      assert html.(options, %{id: "2", opts: opts}) =~
+               ~s[<option value="1">One</option><option value="2" selected>Two</option>]
+
+      assert html.(
+               ~s[<select v-model="picked" multiple><option value="a">A</option><option value="b">B</option><option value="c">C</option></select>],
+               %{picked: ["a", "c"]}
+             ) =~
+               ~s[<option value="a" selected>A</option><option value="b">B</option><option value="c" selected>C</option>]
+    end
+  end
+
+  describe "Vue's reserved attributes" do
+    test "ref and key don't render, as in Vue" do
+      rendered =
+        PhoenixVapor.render(
+          ~s[<div><input ref="search" key="k" class="a"><p v-for="i in items" :key="i" ref="rows">{{ i }}</p></div>],
+          %{items: [1]}
+        )
+
+      html = rendered |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
+      refute html =~ "ref="
+      refute html =~ "key="
+      assert html =~ ~s[<input class="a">]
+    end
   end
 
   describe "v-else-if" do

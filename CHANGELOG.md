@@ -13,6 +13,8 @@ Checked against PhoenixReplay 0.6.1, recording real sessions of the demo and rep
 
 - A replay of a hybrid component in PhoenixReplay's player showed the first moment of the session at every step. The player renders each moment with `__changed__: nil` and diffs it with change tracking, which crashed the template renderer, and the frame restarted. `__changed__: nil` now renders every slot, as in LiveView.
 - A replay on a server that didn't compile the component itself, such as a release, failed for recorded client state whose name appears nowhere in Elixir code, such as `useClipboard`'s `copied`: the name's atom, made while compiling, didn't exist there. The render spec now carries every declared name's atom.
+- A `<select v-model>` rendered no option selected, so its first paint showed the first option until the browser mounted. The option whose value, bound `:value` or text is the select's is now `selected`, or each one among them for `<select multiple>`, as Vue's server renderer does.
+- A static `ref` or `key` rendered as an attribute, such as `ref="search"` on an input. Vue reserves both and never renders them, nor now does PhoenixVapor.
 - A server action reached the recording before the client state it was sent from, when that state was still waiting for the next report: a project name typed just before Save was recorded after the save. The state now goes out first.
 
 ## 0.6.0 - 2026-10-06
