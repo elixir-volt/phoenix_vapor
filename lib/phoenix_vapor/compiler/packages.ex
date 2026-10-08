@@ -47,9 +47,39 @@ defmodule PhoenixVapor.Compiler.Packages do
          {:ok, html} <- render(runtime, tree),
          :ok <- check_content(mode, html, tree),
          {:ok, template} <- template(html, Enum.reverse(holes), file) do
-      {:ok, %{kind: :fragment, template: template, position: slot.position}}
+      {:ok,
+       %{
+         kind: :fragment,
+         template: template,
+         reads: reads(slot, packages),
+         position: slot.position
+       }}
     end
   end
+
+  # The prop expressions of the folded components, which decide their markup
+  # though rendering no longer evaluates them, so change tracking and session
+  # replays still count them: the component's own, and those of package
+  # components rendered with it, inside its content or our `v-for` and `v-if`
+  # around them. Its other content stays in the template.
+  defp reads(%{kind: :component} = slot, packages) do
+    if packages.(slot.name) do
+      props = for %{value: value} <- slot.props, folded_expr?(value), do: value
+      props ++ Enum.flat_map(Template.blocks(slot), &block_reads(&1, packages))
+    else
+      []
+    end
+  end
+
+  defp reads(%{kind: kind} = slot, packages) when kind in [:for, :if],
+    do: Enum.flat_map(Template.blocks(slot), &block_reads(&1, packages))
+
+  defp reads(_slot, _packages), do: []
+
+  defp block_reads(%{slots: slots}, packages), do: Enum.flat_map(slots, &reads(&1, packages))
+
+  defp folded_expr?({tag, _source, _node, _keys}) when tag in [:expr, :js, :lookup], do: true
+  defp folded_expr?(_value), do: false
 
   defp check_content(:all, _html, _tree), do: :ok
 

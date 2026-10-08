@@ -81,8 +81,8 @@ defmodule PhoenixVapor.Renderer do
   @spec assign_keys(Template.t()) :: [String.t()]
   def assign_keys(%Template{} = template) do
     template
-    |> Template.exprs()
-    |> Enum.flat_map(fn {expr, _slot} -> Expr.assign_keys(expr) end)
+    |> exprs()
+    |> Enum.flat_map(&Expr.assign_keys/1)
     |> Enum.uniq()
   end
 
@@ -92,18 +92,23 @@ defmodule PhoenixVapor.Renderer do
   @spec reads(Template.t()) :: [String.t()]
   def reads(%Template{} = template) do
     template
-    |> Template.exprs()
+    |> exprs()
     |> Enum.flat_map(fn
-      {{tag, _source, node, _keys}, _slot} when tag in [:expr, :js] and is_map(node) ->
+      {tag, _source, node, _keys} when tag in [:expr, :js] and is_map(node) ->
         for name <- PhoenixVapor.JS.FreeNames.of(node, props: true) do
           with "props." <> prop <- name, do: prop
         end
 
-      {expr, _slot} ->
+      expr ->
         Expr.assign_keys(expr)
     end)
     |> Enum.uniq()
   end
+
+  # The template's expressions and those of the package components folded
+  # into it, whose markup depends on them.
+  defp exprs(template),
+    do: Enum.map(Template.exprs(template), &elem(&1, 0)) ++ Template.folded(template)
 
   # ── Slot evaluation ──
 

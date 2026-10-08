@@ -69,7 +69,12 @@ defmodule PhoenixVapor.Template do
     slots =
       Enum.map(slots, fn slot ->
         {slot, nil} = map_blocks(slot, nil, &{put_keys(&1), &2})
-        keys = slot |> slot_exprs() |> Enum.flat_map(&Expr.assign_keys/1) |> Enum.uniq()
+
+        keys =
+          (slot_exprs(slot) ++ slot_folded(slot))
+          |> Enum.flat_map(&Expr.assign_keys/1)
+          |> Enum.uniq()
+
         Map.put(slot, :keys, keys -- bound_names(slot))
       end)
 
@@ -91,6 +96,16 @@ defmodule PhoenixVapor.Template do
 
     Enum.reverse(exprs)
   end
+
+  @doc """
+  The prop expressions of the package components folded into a template, in
+  it and the blocks inside it. Rendering doesn't evaluate them, but they
+  decide the folded markup.
+  """
+  @spec folded(t() | map()) :: [term()]
+  def folded(%{slots: slots}), do: Enum.flat_map(slots, &slot_folded/1)
+
+  defp slot_folded(slot), do: Map.get(slot, :reads, []) ++ Enum.flat_map(blocks(slot), &folded/1)
 
   @doc "The expressions in one slot, including the blocks inside it."
   @spec slot_exprs(map()) :: [term()]
