@@ -206,7 +206,7 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
                "<TabsRoot> from \"reka-ui\" can't render on the server: it has markup and behavior of its own, which work only in hybrid mode"
     end
 
-    test "with a prop known only when rendering are a compile error" do
+    test "with a prop known only when rendering, and not a set of values, are a compile error" do
       error =
         assert_raise CompileError, fn ->
           defmodule PackageComponentLive do
@@ -216,7 +216,18 @@ defmodule PhoenixVapor.Integration.ComponentsTest do
         end
 
       assert Exception.message(error) =~
-               ~s(<DialogRoot> from "reka-ui" can't render on the server: the prop `open` is only known when rendering)
+               ~s(<TooltipProvider> from "reka-ui" can't render on the server: the prop `delay-duration` is only known when rendering)
+    end
+
+    defmodule PackageValuesLive do
+      use Phoenix.LiveView
+      use PhoenixVapor, file: Fixtures.path("components/PackageValues.vue")
+    end
+
+    test "with a prop whose type is a set of values fold for each value" do
+      for open <- [true, false] do
+        assert PackageValuesLive.render(%{open: open}) |> html() == "<p>Hi</p>"
+      end
     end
   end
 end

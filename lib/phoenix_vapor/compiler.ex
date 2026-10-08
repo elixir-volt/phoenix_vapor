@@ -45,6 +45,9 @@ defmodule PhoenixVapor.Compiler do
       caller closes, so values it evaluated are shared
     * `:known` — values names have at compile time, for the `:browser`
       target; by default, the refs' initial values
+    * `:constants` — names in `:known` whose values never change, such as a
+      hybrid component's constants. A package component whose props read
+      anything else folds once for each value they can take.
     * `:browser_only` — names only the browser has, such as a hybrid
       component's computeds the server can't evaluate. An expression reading
       one isn't rendered on the server, and a `v-if` chain whose condition
@@ -104,7 +107,7 @@ defmodule PhoenixVapor.Compiler do
           true -> %{}
         end
 
-      template_opts = Keyword.take(opts, [:elixir, :root_attrs, :browser_only])
+      template_opts = Keyword.take(opts, [:elixir, :root_attrs, :browser_only, :constants])
       compile_template(sfc, nil, known, %{state | js: session}, template_opts)
     end
 
@@ -225,6 +228,10 @@ defmodule PhoenixVapor.Compiler do
       setup: source.setup,
       static_props: static_props,
       known: known,
+      # Names whose values never change: constants, and props passed as them.
+      fixed:
+        Keyword.get(opts, :constants, []) ++
+          if(static_props, do: Map.keys(static_props.static), else: []),
       elixir: opts[:elixir]
     }
 
@@ -279,17 +286,115 @@ defmodule PhoenixVapor.Compiler do
   defp resolve_blocks(slot, ctx, state),
     do: Template.map_blocks(slot, state, &resolve_template(&1, ctx, &2))
 
-  # Vue's server renderer and the file's packages load once per file.
+  # Vue's server renderer and the file's packages load once per file. A
+  # component whose props read state folds once for each combination of the
+  # values their types allow, and rendering picks the one the state has; one
+  # whose state isn't a finite set of values folds with the known values,
+  # which in hybrid mode are the refs' initial ones.
   defp fold(slot, package, ctx, state) do
     load = &Packages.load(&1, package_sources(ctx), ctx.file)
-    runtime = Session.runtime(state.js)
+    packages = &package(ctx, &1)
 
-    with :ok <- Session.once(state.js, {:packages, ctx.file}, load),
-         {:ok, fragment} <-
-           Packages.fold(slot, &package(ctx, &1), ctx.known, runtime, ctx.file, state.fold) do
-      resolve_slot(fragment, ctx, state)
+    with :ok <- Session.once(state.js, {:packages, ctx.file}, load) do
+      inputs = Packages.inputs(slot, packages, ctx.fixed, state.fold)
+
+      case combinations(inputs, slot, ctx, state) do
+        :none ->
+          fold_once(slot, package, ctx, state, nil)
+
+        {:ok, combinations} ->
+          fold_each(slot, package, inputs, combinations, ctx, state)
+
+        {:fallback, message} ->
+          fold_once(slot, package, ctx, state, message)
+      end
     else
       {:error, reason} -> unfoldable(slot, package, reason, ctx, state)
+    end
+  end
+
+  # Why it folds only once is reported when it does.
+  defp fold_once(slot, package, ctx, state, fallback) do
+    case fold_with(slot, ctx.known, ctx, state) do
+      {:ok, fragment} ->
+        state =
+          if fallback,
+            do: diagnose(state, :unrendered, ctx.file, slot.position, fallback),
+            else: state
+
+        resolve_slot(fragment, ctx, state)
+
+      {:error, reason} ->
+        unfoldable(slot, package, reason, ctx, state)
+    end
+  end
+
+  defp fold_each(slot, package, inputs, combinations, ctx, state) do
+    exprs = Enum.map(inputs, & &1.expr)
+
+    combinations
+    |> Enum.reduce_while({:ok, %{}}, fn values, {:ok, table} ->
+      case fold_with(slot, Packages.input_values(ctx.known, exprs, values), ctx, state) do
+        {:ok, fragment} ->
+          {:cont, {:ok, Map.put(table, values, fragment.template)}}
+
+        {:error, reason} ->
+          with_values = Enum.map_join(Enum.zip(inputs, values), ", ", &input_value/1)
+          {:halt, {:error, "with #{with_values}, #{reason}"}}
+      end
+    end)
+    |> case do
+      {:ok, table} ->
+        fragments = %{kind: :fragments, inputs: exprs, table: table, position: slot.position}
+        resolve_slot(fragments, ctx, state)
+
+      {:error, reason} ->
+        unfoldable(slot, package, reason, ctx, state)
+    end
+  end
+
+  defp fold_with(slot, known, ctx, state) do
+    runtime = Session.runtime(state.js)
+    Packages.fold(slot, &package(ctx, &1), known, runtime, ctx.file, state.fold)
+  end
+
+  defp input_value({%{expr: expr}, value}), do: "`#{elem(expr, 1)}` #{inspect(value)}"
+
+  # The combinations of the values the inputs' types allow, from TypeScript,
+  # or why the component folds once.
+  defp combinations([], _slot, _ctx, _state), do: :none
+
+  defp combinations(inputs, slot, ctx, state) do
+    sources = Enum.map(inputs, &elem(&1.expr, 1))
+
+    case PropTypes.expression_values(state.js, ctx.file, ctx.setup.source, sources) do
+      {:ok, types} ->
+        typed = Enum.zip(inputs, types)
+        domains = Map.new(Enum.with_index(types), fn {type, index} -> {index, type["values"]} end)
+
+        case Macros.combinations(Enum.to_list(0..(length(inputs) - 1)), domains) do
+          {:ok, combinations} ->
+            {:ok, combinations}
+
+          {:error, {:infinite, index}} ->
+            {input, %{"type" => type}} = Enum.at(typed, index)
+
+            {:fallback,
+             "<#{input.component}> folds with the initial value of `#{input.prop}`: " <>
+               "`#{elem(input.expr, 1)}` is #{type}; declare its type as a union of " <>
+               "literals, such as ref<\"a\" | \"b\">(...), to fold it for each value"}
+
+          {:error, {:too_many, count}} ->
+            {:fallback,
+             "<#{slot.name}> folds with the initial values of its props: " <>
+               Enum.map_join(sources, ", ", &"`#{&1}`") <>
+               " can take #{count} combinations of values, more than #{Macros.max_combinations()}"}
+        end
+
+      {:error, reason} ->
+        {:fallback,
+         "<#{slot.name}> folds with the initial values of its props, " <>
+           "as their types can't be read: #{reason}"}
     end
   end
 

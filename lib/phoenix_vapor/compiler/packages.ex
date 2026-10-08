@@ -40,8 +40,7 @@ defmodule PhoenixVapor.Compiler.Packages do
   @spec fold(map(), (String.t() -> package() | nil), map(), pid(), Path.t(), :all | :content) ::
           {:ok, map()} | {:error, String.t()}
   def fold(slot, packages, known, runtime, file, mode \\ :all) do
-    # Each component is checked on its own when only content may render.
-    packages = if mode == :content, do: &if(&1 == slot.name, do: packages.(&1)), else: packages
+    packages = scope(slot, packages, mode)
 
     with {:ok, tree, holes} <- tree(slot, packages, known, []),
          {:ok, html} <- render(runtime, tree),
@@ -80,6 +79,70 @@ defmodule PhoenixVapor.Compiler.Packages do
 
   defp folded_expr?({tag, _source, _node, _keys}) when tag in [:expr, :js, :lookup], do: true
   defp folded_expr?(_value), do: false
+
+  # Each component is checked on its own when only content may render.
+  defp scope(slot, packages, :content), do: &if(&1 == slot.name, do: packages.(&1))
+  defp scope(_slot, packages, :all), do: packages
+
+  @doc """
+  The prop expressions that decide what a package component folds into, its
+  own and those of the package components folded with it, that read a name
+  other than `fixed`, names whose values never change, with the component and
+  prop each is first passed to. Folding once for each
+  combination of their values, given in `known` as `input_values/2` puts
+  them, renders the component as it is for any of them. An expression that
+  reads a name a `v-for` around a component binds isn't one: that component
+  folds on its own.
+  """
+  @spec inputs(map(), (String.t() -> package() | nil), [String.t()], :all | :content) :: [
+          %{component: String.t(), prop: String.t(), expr: term()}
+        ]
+  def inputs(slot, packages, fixed, mode) do
+    slot
+    |> inputs(scope(slot, packages, mode), [])
+    |> Enum.reject(fn %{expr: {_tag, _source, _node, keys}} ->
+      Enum.all?(keys, &(&1 in fixed))
+    end)
+    |> Enum.uniq_by(&elem(&1.expr, 1))
+  end
+
+  defp inputs(%{kind: :component} = slot, packages, bound) do
+    if packages.(slot.name) do
+      props =
+        for %{name: prop, value: {tag, _source, _node, keys} = value} <- slot.props,
+            prop != nil and tag in [:expr, :js, :lookup],
+            not Enum.any?(keys, &(&1 in bound)),
+            do: %{component: slot.name, prop: prop, expr: value}
+
+      props ++ Enum.flat_map(Template.blocks(slot), &block_inputs(&1, packages, bound))
+    else
+      []
+    end
+  end
+
+  defp inputs(%{kind: :for} = slot, packages, bound) do
+    bound =
+      bound ++ for(name <- [slot.value, slot[:key], slot[:index]], is_binary(name), do: name)
+
+    Enum.flat_map(Template.blocks(slot), &block_inputs(&1, packages, bound))
+  end
+
+  defp inputs(%{kind: :if} = slot, packages, bound),
+    do: Enum.flat_map(Template.blocks(slot), &block_inputs(&1, packages, bound))
+
+  defp inputs(_slot, _packages, _bound), do: []
+
+  defp block_inputs(%{slots: slots}, packages, bound),
+    do: Enum.flat_map(slots, &inputs(&1, packages, bound))
+
+  @doc "`known` with `inputs` taking `values`, for `fold/6`."
+  @spec input_values(map(), [term()], [term()]) :: map()
+  def input_values(known, inputs, values) do
+    inputs
+    |> Enum.zip(values)
+    |> Map.new(fn {input, value} -> {{:input, elem(input, 1)}, value} end)
+    |> Map.merge(known)
+  end
 
   defp check_content(:all, _html, _tree), do: :ok
 
@@ -242,6 +305,10 @@ defmodule PhoenixVapor.Compiler.Packages do
   defp prop_value(_spread_or_dynamic_name, _known), do: :unknown
 
   defp known_value({:value, value}, _known), do: {:ok, value}
+
+  # An input of this fold, with the value it has in this one.
+  defp known_value({_tag, source, _node, _keys}, known) when is_map_key(known, {:input, source}),
+    do: {:ok, Map.fetch!(known, {:input, source})}
 
   defp known_value(
          {:expr, _source,

@@ -32,6 +32,7 @@ defmodule PhoenixVapor.Compiler.Macros do
   # a declared prop that is neither wasn't passed, so it's `undefined`.
   @type context :: %{
           optional(:known) => %{String.t() => term()},
+          optional(:fixed) => [String.t()],
           optional(:elixir) => {module(), map()} | nil,
           file: Path.t(),
           setup: ScriptSetup.t(),
@@ -176,7 +177,7 @@ defmodule PhoenixVapor.Compiler.Macros do
       |> Enum.uniq()
 
     with {:ok, domains} <- PropTypes.literal_values(env.session, env.file, env.script, props),
-         {:ok, combinations} <- combinations(props, domains) do
+         {:ok, combinations} <- props |> combinations(domains) |> combinations_reason() do
       Enum.reduce_while(combinations, {:ok, %{}}, fn values, {:ok, table} ->
         case evaluate(runtime, source, with_props(env, props, values)) do
           {:ok, value} -> {:cont, {:ok, Map.put(table, values, value)}}
@@ -193,22 +194,43 @@ defmodule PhoenixVapor.Compiler.Macros do
   defp prop_name("props." <> prop), do: prop
   defp prop_name(name), do: name
 
-  defp combinations(props, domains) do
-    case Enum.find(props, &(domains[&1] == nil)) do
+  @doc """
+  Every combination of the values `keys` can take, as lists in the order of
+  `keys`, when each has a finite set in `domains` and there are at most
+  #{@max_combinations} of them.
+  """
+  @spec combinations([key], %{key => [term()] | nil}) ::
+          {:ok, [[term()]]} | {:error, {:infinite, key} | {:too_many, pos_integer()}}
+        when key: term()
+  def combinations(keys, domains) do
+    case Enum.find(keys, &(domains[&1] == nil)) do
       nil ->
-        combinations =
-          Enum.reduce(Enum.reverse(props), [[]], &for(v <- domains[&1], c <- &2, do: [v | c]))
+        count = Enum.reduce(keys, 1, &(length(domains[&1]) * &2))
 
-        if length(combinations) <= @max_combinations,
-          do: {:ok, combinations},
-          else:
-            {:error,
-             "its props can take #{length(combinations)} combinations of values, more than #{@max_combinations}"}
+        if count <= @max_combinations,
+          do:
+            {:ok,
+             Enum.reduce(Enum.reverse(keys), [[]], &for(v <- domains[&1], c <- &2, do: [v | c]))},
+          else: {:error, {:too_many, count}}
 
-      prop ->
-        {:error, "the type of `#{prop}` isn't a set of literal values"}
+      key ->
+        {:error, {:infinite, key}}
     end
   end
+
+  @doc "The most combinations `combinations/2` returns."
+  @spec max_combinations() :: pos_integer()
+  def max_combinations, do: @max_combinations
+
+  defp combinations_reason({:ok, combinations}), do: {:ok, combinations}
+
+  defp combinations_reason({:error, {:too_many, count}}),
+    do:
+      {:error,
+       "its props can take #{count} combinations of values, more than #{@max_combinations}"}
+
+  defp combinations_reason({:error, {:infinite, prop}}),
+    do: {:error, "the type of `#{prop}` isn't a set of literal values"}
 
   # The environment with `props` known to have `values`; a nil value is a prop
   # that wasn't passed, so it's `undefined`.

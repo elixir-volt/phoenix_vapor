@@ -120,6 +120,24 @@ defmodule PhoenixVapor.Renderer do
   defp eval_slot(%{kind: :fragment, template: template}, assigns),
     do: render_block(template, assigns)
 
+  # One rendered at compile time for each value of the expressions its props
+  # read, looked up by their values.
+  defp eval_slot(%{kind: :fragments, inputs: inputs, table: table}, assigns) do
+    values = Enum.map(inputs, &(&1 |> Expr.eval(assigns) |> Expr.literal()))
+
+    case Map.fetch(table, values) do
+      {:ok, template} ->
+        render_block(template, assigns)
+
+      :error ->
+        raise PhoenixVapor.ExpressionError,
+          expression: Enum.map_join(inputs, ", ", &elem(&1, 1)),
+          reason:
+            "#{Enum.map_join(Enum.zip(inputs, values), ", ", fn {input, value} -> "`#{elem(input, 1)}` is #{inspect(value)}" end)}, " <>
+              "which its type doesn't allow"
+    end
+  end
+
   defp eval_slot(%{kind: :html, value: value}, assigns),
     do: value |> Expr.eval(assigns) |> Value.display()
 

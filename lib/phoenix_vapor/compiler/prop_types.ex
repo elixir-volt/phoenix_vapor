@@ -36,12 +36,28 @@ defmodule PhoenixVapor.Compiler.PropTypes do
   """
   @spec literal_values(Session.t(), Path.t(), String.t(), [String.t()]) ::
           {:ok, %{String.t() => [term()] | nil}} | {:error, String.t()}
-  def literal_values(session, file, script, props) do
+  def literal_values(session, file, script, props),
+    do: call(session, file, "__pv_literal_values", [script, props])
+
+  @doc """
+  The values each of `expressions`, template expressions of the component
+  `script` sets up, can take, in order: `%{"values" => values, "type" =>
+  type}`, where values is nil for an expression whose type isn't a finite set
+  of literals, and type is how TypeScript writes it. The expressions read the
+  script's bindings as the template does, refs and models unwrapped, and the
+  props `defineProps<T>()` declares.
+  """
+  @spec expression_values(Session.t(), Path.t(), String.t(), [String.t()]) ::
+          {:ok, [%{String.t() => term()}]} | {:error, String.t()}
+  def expression_values(session, file, script, expressions),
+    do: call(session, file, "__pv_expression_values", [script, expressions])
+
+  defp call(session, file, function, [script, names]) do
     with {:ok, main} <- typescript(file),
          :ok <- Session.once(session, {:typescript, main}, &load(&1, main, file)) do
-      args = [file <> ".ts", script, props, Path.dirname(main)]
+      args = [file <> ".ts", script, names, Path.dirname(main)]
 
-      case QuickBEAM.call(Session.runtime(session), "__pv_literal_values", args) do
+      case QuickBEAM.call(Session.runtime(session), function, args) do
         {:ok, values} -> {:ok, values}
         {:error, error} -> {:error, PhoenixVapor.JS.error_message(error)}
       end

@@ -21,7 +21,7 @@ defmodule PhoenixVapor.Renderer.Expr do
   # A macro call computed at compile time for each value its props can take,
   # looked up by their values.
   def eval({:lookup, source, keys, table}, assigns) do
-    values = Enum.map(keys, &(assigns |> get_assign(&1) |> Value.to_elixir() |> lookup_value()))
+    values = Enum.map(keys, &(assigns |> get_assign(&1) |> literal()))
 
     case Map.fetch(table, values) do
       {:ok, value} ->
@@ -327,12 +327,21 @@ defmodule PhoenixVapor.Renderer.Expr do
     end
   end
 
-  # Literal types are strings, numbers and booleans; an assign may hold an
-  # atom for a string.
-  defp lookup_value(value) when is_atom(value) and not is_boolean(value) and value != nil,
-    do: Atom.to_string(value)
+  @doc """
+  A value as one of a literal type's, which a table computed at compile time
+  for each value is keyed by: strings, numbers, booleans and nil. An atom is
+  its string, as an assign may hold one for a string, and `undefined` is nil.
+  """
+  @spec literal(term()) :: term()
+  def literal(value) do
+    case Value.to_elixir(value) do
+      value when is_atom(value) and not is_boolean(value) and value != nil ->
+        Atom.to_string(value)
 
-  defp lookup_value(value), do: value
+      value ->
+        value
+    end
+  end
 
   defp get_assign(assigns, name) do
     case name do

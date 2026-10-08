@@ -65,6 +65,7 @@ defmodule PhoenixVapor.Hybrid do
             module: caller.module,
             session: session,
             known: known,
+            constants: Enum.map(Map.keys(constants), &Atom.to_string/1),
             browser_only: Enum.map(plan.left_out, &elem(&1, 0))
           )
 

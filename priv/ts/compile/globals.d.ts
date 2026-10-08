@@ -1,7 +1,7 @@
 // Placeholders PhoenixVapor fills in with `Volt.Priv.render!/4` before bundling
 // or evaluating a template, and the globals those templates share.
 import type { FoldNode } from "./packages.ts"
-import type { literalValues } from "./prop-types.ts"
+import type { expressionValues, literalValues } from "./prop-types.ts"
 
 declare global {
   const $imports: unknown
@@ -21,6 +21,9 @@ declare global {
 
   /** The values props can take, from `prop-types.ts`. */
   var __pv_literal_values: typeof literalValues
+
+  /** The values template expressions can take, from `prop-types.ts`. */
+  var __pv_expression_values: typeof expressionValues
 
   /** QuickBEAM's bridge to the handlers the runtime was started with. */
   const Beam: { callSync(handler: string, ...args: unknown[]): unknown }
