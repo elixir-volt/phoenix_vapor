@@ -22,6 +22,16 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
     use PhoenixVapor, file: Fixtures.path("FoldedSwitch.vue"), client_output: nil
   end
 
+  defmodule ChildLive do
+    use Phoenix.LiveView
+    use PhoenixVapor, file: Fixtures.path("FoldedChild.vue"), client_output: nil
+  end
+
+  defmodule PassedLive do
+    use Phoenix.LiveView
+    use PhoenixVapor, file: Fixtures.path("FoldedPassed.vue"), client_output: nil
+  end
+
   defp html(rendered), do: rendered |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
 
   # A replayer's render of one moment, with the client state recorded then.
@@ -66,6 +76,17 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
     test "one for each value of a type TypeScript infers" do
       assert {[fragments], []} = compile("FoldedSwitch")
       assert variants(fragments) == {["notify"], [[false], [true]]}
+    end
+
+    test "one for each value of the parent's expression a child component's prop reads" do
+      assert {[], []} = compile("FoldedPassed")
+
+      {template, _files, []} =
+        Compiler.compile(SFC.read!(Fixtures.path("FoldedPassed.vue")), target: :browser)
+
+      assert [%{kind: :component, component: %{template: child}}] = template.slots
+      assert [fragments] = fragments(child)
+      assert variants(fragments) == {["model"], [["a"], ["b"]]}
     end
 
     test "nested package components take part in the same combinations" do
@@ -135,6 +156,22 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
 
       assert replay(SwitchLive, "FoldedSwitch", %{}, %{"notify" => false}) =~
                ~s(aria-checked="false")
+    end
+
+    test "follows a model a child component passes to a folded component" do
+      assert ChildLive.__hybrid_client_js__() =~ "record({ alerts })"
+
+      for {alerts, checked} <- [{true, "true"}, {false, "false"}] do
+        html = replay(ChildLive, "FoldedChild", %{}, %{"alerts" => alerts})
+        assert html =~ ~r/<button[^>]*id="alerts"[^>]*aria-checked="#{checked}"/
+      end
+    end
+
+    test "follows a ref the parent passes a child component as its model" do
+      for tab <- ["a", "b"] do
+        html = replay(PassedLive, "FoldedPassed", %{}, %{"choice" => tab})
+        assert html =~ ~r/<button[^>]*trigger-#{tab}"[^>]*aria-selected="true"/
+      end
     end
 
     test "without recorded state renders the initial values" do

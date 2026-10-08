@@ -33,6 +33,7 @@ defmodule PhoenixVapor.Compiler.Macros do
   @type context :: %{
           optional(:known) => %{String.t() => term()},
           optional(:fixed) => [String.t()],
+          optional(:passed) => map() | nil,
           optional(:elixir) => {module(), map()} | nil,
           file: Path.t(),
           setup: ScriptSetup.t(),

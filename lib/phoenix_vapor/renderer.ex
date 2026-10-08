@@ -133,8 +133,9 @@ defmodule PhoenixVapor.Renderer do
         raise PhoenixVapor.ExpressionError,
           expression: Enum.map_join(inputs, ", ", &elem(&1, 1)),
           reason:
-            "#{Enum.map_join(Enum.zip(inputs, values), ", ", fn {input, value} -> "`#{elem(input, 1)}` is #{inspect(value)}" end)}, " <>
-              "which its type doesn't allow"
+            Enum.map_join(Enum.zip(inputs, values), ", ", fn {input, value} ->
+              "`#{elem(input, 1)}` is #{inspect(value)}"
+            end) <> ", which its type doesn't allow"
     end
   end
 
@@ -251,8 +252,9 @@ defmodule PhoenixVapor.Renderer do
   end
 
   # A component imported from a `.vue` file renders its compiled template with
-  # its declared props as assigns. Everything else it's passed falls through to
-  # its root element, and its slot content renders with the parent's assigns.
+  # its declared props as assigns, and its models by the names they're bound
+  # to. Everything else it's passed falls through to its root element, and its
+  # slot content renders with the parent's assigns.
   defp eval_slot(%{kind: :component, component: component} = slot, assigns) do
     {props, attrs} =
       slot.props
@@ -262,8 +264,10 @@ defmodule PhoenixVapor.Renderer do
     props = Map.new(props, fn {key, value} -> {Names.camelize(key), value} end)
     declared = Map.new(component.props, &{&1, Map.get(props, &1)})
 
+    models = for {binding, model} <- Map.get(component, :models, %{}), do: {binding, props[model]}
+
     child_assigns =
-      declared
+      (Enum.to_list(declared) ++ models)
       |> Enum.reduce(%{}, fn {name, value}, acc -> put_assign(acc, name, value) end)
       |> Map.put("props", declared)
       |> Map.put(:__vapor_attrs__, attrs ++ listeners(slot.events, component.events))
