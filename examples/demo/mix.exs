@@ -80,8 +80,8 @@ defmodule VaporDemo.MixProject do
         "phoenix_vapor.bundle --entry assets/js/bundles/reka-dialog.js",
         "assets.build"
       ],
-      "assets.build": ["volt.build --tailwind"],
-      "assets.deploy": ["volt.build --tailwind", "phx.digest"],
+      "assets.build": ["compile", "volt.build --tailwind"],
+      "assets.deploy": ["compile", "volt.build --tailwind", "phx.digest"],
       # What CI runs, after installing Playwright's browser.
       ci: [
         "npm.install --frozen",

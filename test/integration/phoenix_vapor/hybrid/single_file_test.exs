@@ -60,6 +60,36 @@ defmodule PhoenixVapor.Integration.Hybrid.SingleFileTest do
     end
   end
 
+  describe "the client module" do
+    @tag :tmp_dir
+    test "a LiveView recompiles while its client module is missing", %{tmp_dir: tmp_dir} do
+      [{module, _binary}] =
+        Code.compile_quoted(
+          quote do
+            defmodule PhoenixVapor.Integration.Hybrid.SingleFileTest.WrittenLive do
+              use Phoenix.LiveView
+
+              use PhoenixVapor,
+                file: unquote(Fixtures.path("HybridSingleFile.vue")),
+                client_output: unquote(tmp_dir)
+            end
+          end
+        )
+
+      path = Path.join(tmp_dir, "HybridSingleFile.hybrid.js")
+      assert File.exists?(path)
+      refute module.__mix_recompile__?()
+
+      # As after a fresh checkout beside a build a cache restored.
+      File.rm!(path)
+      assert module.__mix_recompile__?()
+    end
+
+    test "one that writes no client module doesn't" do
+      refute function_exported?(FruitsLive, :__mix_recompile__?, 0)
+    end
+  end
+
   describe "client JS still generated" do
     test "client JS is valid" do
       js = FruitsLive.__hybrid_client_js__()
