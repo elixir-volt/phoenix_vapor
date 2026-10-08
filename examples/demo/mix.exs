@@ -62,7 +62,7 @@ defmodule VaporDemo.MixProject do
       {:phoenix_vapor, path: "../.."},
       {:quickbeam, "~> 0.11.2"},
       {:volt, "~> 0.21.0"},
-      {:phoenix_replay, "~> 0.6.1"}
+      {:phoenix_replay, "~> 0.6.2"}
     ]
   end
 

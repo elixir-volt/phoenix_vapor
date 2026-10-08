@@ -77,10 +77,8 @@ the selection. What it doesn't carry:
   dialog on Contacts and its tabs, select and switches on Settings: the replay
   shows them as they start.
 - An optimistic change to a model the server then declined, such as a Tally
-  save below zero: the replay shows the server's value throughout.
-- The demo's own layout, the navigation and flash messages, which its
-  LiveViews apply with the `layout:` option; the replay frame renders the
-  view alone.
+  save below zero: the replay shows the server's value throughout, and the
+  flash that says so.
 
 PhoenixReplay records form controls that have an `id` on its own. The demo's
 inputs don't, as their values are refs a component already reports.

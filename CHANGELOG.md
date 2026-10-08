@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Checked against PhoenixReplay 0.6.1, recording real sessions of the demo and replaying them in its player.
+Checked against PhoenixReplay 0.6.2, recording real sessions of the demo and replaying them in its player.
 
 ### Changed
 
