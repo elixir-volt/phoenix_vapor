@@ -59,6 +59,32 @@ assets/js/bundles/              the Reka UI bundle the full runtime page renders
 assets/js/hybrid/               generated when compiling: the hybrid components' browser halves
 ```
 
+## Session replay
+
+Every page is recorded with [PhoenixReplay](https://hexdocs.pm/phoenix_replay):
+use the app, leave the page, and replay the session at
+[localhost:4000/dev/replay](http://localhost:4000/dev/replay), a development
+route. The setup is PhoenixReplay's own: `PhoenixReplay.Recorder` on the
+`:demo` live session in `router.ex`, the dashboard behind `:dev_routes`,
+`PhoenixReplay.Plug`, and `replayRecorder(liveSocket)` in `assets/js/app.ts`.
+
+The hybrid components need nothing more. While a session is recorded, each
+reports the client state its server render reads, and the replay renders with
+it, so on Contacts the replayed list follows the search, the sort order and
+the selection. What it doesn't carry:
+
+- The state of package components rendered while compiling, such as Reka's
+  dialog on Contacts and its tabs, select and switches on Settings: the replay
+  shows them as they start.
+- An optimistic change to a model the server then declined, such as a Tally
+  save below zero: the replay shows the server's value throughout.
+- The demo's own layout, the navigation and flash messages, which its
+  LiveViews apply with the `layout:` option; the replay frame renders the
+  view alone.
+
+PhoenixReplay records form controls that have an `id` on its own. The demo's
+inputs don't, as their values are refs a component already reports.
+
 ## Tests
 
 The tests drive a real browser with Playwright, which `package.json`
