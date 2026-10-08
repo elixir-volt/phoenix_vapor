@@ -31,13 +31,15 @@ defmodule VaporDemo.E2E.HybridReplayStateTest do
     # Nor for a recording without client state.
     |> ReplayRecorder.start(nil)
     |> ReplayRecorder.reports(&assert(&1 == []))
-    # On start, all of the state the server render reads.
+    # On start, all of the state the server render reads, the delete
+    # dialog's target too, which only the folded dialog's props read.
     |> ReplayRecorder.start(%{flush: 50})
     |> ReplayRecorder.reports(fn reports ->
       assert [%{"key" => @key, "changes" => changes}] = reports
 
       assert changes == %{
                "copied" => false,
+               "deleteTarget" => nil,
                "search" => "a",
                "selectedIds" => [],
                "sortKey" => "name"
@@ -81,7 +83,7 @@ defmodule VaporDemo.E2E.HybridReplayStateTest do
     |> assert_has("h1", text: "Contacts")
     |> ReplayRecorder.reports(fn reports ->
       assert %{"key" => @key, "changes" => changes} = List.last(reports)
-      assert Map.keys(changes) == ~w(copied search selectedIds sortKey)
+      assert Map.keys(changes) == ~w(copied deleteTarget search selectedIds sortKey)
     end)
   end
 end

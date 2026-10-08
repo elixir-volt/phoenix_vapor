@@ -16,11 +16,13 @@ type Member = { id: number; name: string; email: string; role: string; active: b
 const project = defineModel<{ name: string; plan: string }>("project", { required: true })
 const members = defineModel<Member[]>("members", { required: true })
 
-const tab = ref("general")
+// Typed as their values, so the server folds the tabs and the filter once
+// for each, and a session replay shows the recorded one.
+const tab = ref<"general" | "members" | "notifications">("general")
 const name = ref(project.value.name)
 const emailAlerts = ref(true)
 const weeklyDigest = ref(false)
-const roleFilter = ref("all")
+const roleFilter = ref<"all" | "owner" | "admin" | "member">("all")
 const removeTarget = ref<Member | null>(null)
 
 const roles = [
