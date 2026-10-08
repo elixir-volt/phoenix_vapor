@@ -3,7 +3,9 @@ defmodule PhoenixVapor.Renderer.Names do
 
   # Atoms for names the developer declared in templates and `<script setup>`,
   # created while compiling them. Rendering never creates atoms: it looks names
-  # up with `existing/1`.
+  # up with `existing/1`. An atom created while compiling exists only in the
+  # compiling VM, so generated code carries the atoms it looks up as literals,
+  # which exist wherever the module is loaded.
 
   @spec atom!(String.t()) :: atom()
   def atom!(name) when is_binary(name), do: String.to_atom(name)

@@ -34,10 +34,12 @@ defmodule PhoenixVapor.Renderer do
         attrs -> Map.put(assigns, :__vapor_attrs__, attrs)
       end
 
+    # `__changed__: nil`, or none, means every slot renders, as in LiveView:
+    # a session replayer renders a recorded moment that way.
     dynamic = fn track_changes? ->
       changed =
         case assigns do
-          %{__changed__: changed} when track_changes? ->
+          %{__changed__: %{} = changed} when track_changes? ->
             MapSet.new(Map.keys(changed), &to_string/1)
 
           _ ->
@@ -147,6 +149,26 @@ defmodule PhoenixVapor.Renderer do
 
   defp eval_slot(%{kind: :model, tag: "textarea", value: value}, assigns),
     do: value |> Expr.eval(assigns) |> Value.display() |> Attrs.escape()
+
+  # An `<option>` inside a `<select v-model>` is selected when its value is
+  # the select's, or among them for `<select multiple>`, compared as Vue's
+  # `looseEqual` does for plain values.
+  defp eval_slot(%{kind: :model, tag: "option"} = slot, assigns) do
+    selected = Expr.eval(slot.value, assigns)
+
+    option =
+      case slot do
+        %{option_value: nil} -> slot.static_value
+        %{option_value: value} -> Expr.eval(value, assigns)
+      end
+
+    selected? =
+      if is_list(selected),
+        do: Enum.any?(selected, &Value.loose_equal?(&1, option)),
+        else: Value.loose_equal?(selected, option)
+
+    Attrs.render("selected", [selected?])
+  end
 
   defp eval_slot(%{kind: :model} = slot, assigns) do
     value = Expr.eval(slot.value, assigns)
@@ -419,6 +441,7 @@ defmodule PhoenixVapor.Renderer do
        when type in ["checkbox", "radio"], do: "checked"
 
   defp attribute_name(%{kind: :model, tag: "input"}), do: "value"
+  defp attribute_name(%{kind: :model, tag: "option"}), do: "selected"
   defp attribute_name(%{kind: :root_attrs}), do: ""
   defp attribute_name(_slot), do: nil
 end

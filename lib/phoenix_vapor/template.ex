@@ -106,7 +106,8 @@ defmodule PhoenixVapor.Template do
 
   # The fields of each slot kind that hold expressions. A `v-for`'s `:value`
   # and `:key` are the names it binds, not expressions.
-  defp expr_fields(kind) when kind in [:text, :html, :spread, :model], do: [:value]
+  defp expr_fields(:model), do: [:value, :option_value]
+  defp expr_fields(kind) when kind in [:text, :html, :spread], do: [:value]
   defp expr_fields(:attr), do: [:value, :name_value, :show]
   defp expr_fields(:for), do: [:source, :key_prop]
   defp expr_fields(:slot), do: [:name_value]

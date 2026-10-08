@@ -1,5 +1,5 @@
 [
-  import_deps: [:phoenix],
+  import_deps: [:phoenix, :phoenix_replay],
   plugins: [Phoenix.LiveView.HTMLFormatter, Volt.Formatter],
   inputs: [
     "*.{heex,ex,exs}",

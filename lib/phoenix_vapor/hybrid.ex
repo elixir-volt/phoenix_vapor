@@ -91,7 +91,9 @@ defmodule PhoenixVapor.Hybrid do
     event_asts = ServerCodegen.gen_handle_events(classification)
 
     client_output_dir = Keyword.get(opts, :client_output, default_client_output())
-    client_js = generate_client_js(sfc, classification, recorded, client_output_dir)
+
+    {client_js, client_path} =
+      generate_client_js(sfc, classification, recorded, client_output_dir)
 
     escaped_classification = Macro.escape(classification)
     escaped_client_js = Macro.escape(client_js)
@@ -113,6 +115,21 @@ defmodule PhoenixVapor.Hybrid do
 
       @doc "Returns how the component's bindings and handlers were split between server and client."
       def __hybrid_classification__, do: @__hybrid_classification__
+
+      unquote(recompile_ast(client_path))
+    end
+  end
+
+  # The client module is written while compiling, so a build that is up to
+  # date, such as one a CI cache restores beside a fresh checkout, never
+  # writes it again. Mix recompiles a module whose `__mix_recompile__?/0`
+  # says so.
+  defp recompile_ast(nil), do: nil
+
+  defp recompile_ast(path) do
+    quote do
+      @doc "Whether Mix recompiles this LiveView: while its client module is missing."
+      def __mix_recompile__?, do: not File.exists?(unquote(path))
     end
   end
 
@@ -171,9 +188,6 @@ defmodule PhoenixVapor.Hybrid do
     |> Enum.reduce(MapSet.new(), &read(&1, &2, reads))
     |> MapSet.intersection(client)
     |> Enum.sort()
-    # Declared names get their atoms while compiling; a replay only looks
-    # them up.
-    |> tap(&Enum.each(&1, fn name -> PhoenixVapor.Renderer.Names.atom!(name) end))
   end
 
   defp read(name, seen, reads) do
@@ -348,15 +362,14 @@ defmodule PhoenixVapor.Hybrid do
     codegen_opts = [source_dir: Path.dirname(full_path), output_dir: output_dir, record: recorded]
 
     case ClientCodegen.generate(sfc.source, classification, codegen_opts) do
-      {:ok, js} ->
-        if output_dir do
-          basename = Path.basename(full_path, ".vue")
-          output_path = Path.join(output_dir, "#{basename}.hybrid.js")
-          File.mkdir_p!(output_dir)
-          File.write!(output_path, js)
-        end
+      {:ok, js} when is_binary(output_dir) ->
+        output_path = Path.join(output_dir, Path.basename(full_path, ".vue") <> ".hybrid.js")
+        File.mkdir_p!(output_dir)
+        File.write!(output_path, js)
+        {js, Path.expand(output_path)}
 
-        js
+      {:ok, js} ->
+        {js, nil}
 
       {:error, errors} ->
         raise "Failed to compile client JS for #{full_path}: #{inspect(errors)}"

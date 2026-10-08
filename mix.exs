@@ -1,7 +1,7 @@
 defmodule PhoenixVapor.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "0.6.1"
   @source_url "https://github.com/elixir-volt/phoenix_vapor"
 
   def project do
@@ -51,7 +51,14 @@ defmodule PhoenixVapor.MixProject do
       ],
       # tsgolint and the e2e tests' Vue come from node_modules; the e2e tests
       # also need the Reka bundle.
-      ci: ["npm.install", "lint", "phoenix_vapor.bundle --name reka-dialog", "test --include e2e"],
+      # npm packages as npm.lock records them, rather than the newest each
+      # range allows.
+      ci: [
+        "npm.install --frozen",
+        "lint",
+        "phoenix_vapor.bundle --name reka-dialog",
+        "test --include e2e"
+      ],
       # A separate process, so compiling for vendoring leaves Hex's own tasks loaded.
       "hex.build": ["cmd mix volt.priv.vendor priv/ts", "hex.build"],
       "hex.publish": ["cmd mix volt.priv.vendor priv/ts", "hex.publish"]
@@ -105,7 +112,7 @@ defmodule PhoenixVapor.MixProject do
   defp deps do
     [
       {:phoenix_live_view, "~> 1.2"},
-      {:vize, "~> 0.17.0"},
+      {:vize, "~> 0.17.2"},
       {:oxc, "~> 0.18.1"},
       {:jason, "~> 1.4"},
       {:quickbeam, "~> 0.11.2"},

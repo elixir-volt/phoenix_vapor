@@ -16,7 +16,13 @@ defmodule PhoenixVapor.E2E.HybridBridgeTest do
 
     const applied: unknown[] = []
     const replies: { resolve: (reply: unknown) => void; reject: (error: Error) => void }[] = []
-    let bridge: { action(event: string, payload: object): void }
+    // What reached the replayer and the server, in order.
+    const log: unknown[] = []
+    window.addEventListener("phx_replay:state", (event) => log.push(["state", (event as CustomEvent).detail.changes]))
+    let bridge: {
+      action(event: string, payload: object): void
+      record(sources: object, watch: unknown, unref: unknown): void
+    }
 
     const component = {
       __mount(_el: HTMLElement, mounted: typeof bridge) {
@@ -31,7 +37,10 @@ defmodule PhoenixVapor.E2E.HybridBridgeTest do
 
     const context = Object.assign(Object.create(hook), {
       el,
-      pushEvent: () => new Promise((resolve, reject) => replies.push({ resolve, reject })),
+      pushEvent: (event: string) => {
+        log.push(["push", event])
+        return new Promise((resolve, reject) => replies.push({ resolve, reject }))
+      },
       pushEventTo() {},
       handleEvent() {}
     })
@@ -43,8 +52,22 @@ defmodule PhoenixVapor.E2E.HybridBridgeTest do
       hook.updated.call(context)
     }
 
+    // A ref the component registers for recording, and Vue's watch, which
+    // the test triggers by hand.
+    const name = { value: "Acme" }
+    const watchers: (() => void)[] = []
+    const record = () =>
+      bridge.record({ name }, (_getter: unknown, changed: () => void) => {
+        watchers.push(changed)
+        return () => {}
+      }, (source: { value: unknown }) => source.value)
+    const type = (value: string) => {
+      name.value = value
+      for (const changed of watchers) changed()
+    }
+
     Object.assign(globalThis, {
-      t: { action: (event: string) => bridge.action(event, {}), serverSends, replies, applied }
+      t: { action: (event: string) => bridge.action(event, {}), serverSends, replies, applied, log, record, type }
     })
     """)
 
@@ -58,6 +81,11 @@ defmodule PhoenixVapor.E2E.HybridBridgeTest do
         write_manifest: false
       )
 
+    # QuickBEAM has a document but no window; the bridge only listens to it
+    # and dispatches on it.
+    {:ok, _} = QuickBEAM.eval(rt, "globalThis.window = new EventTarget()")
+    # Nor element datasets: <html> says no recording is running.
+    {:ok, _} = QuickBEAM.eval(rt, "document.documentElement.dataset = {}")
     {:ok, _} = QuickBEAM.eval(rt, File.read!(Path.join(tmp_dir, "bundle.js")))
     %{rt: rt}
   end
@@ -95,6 +123,21 @@ defmodule PhoenixVapor.E2E.HybridBridgeTest do
     )
 
     assert run(rt, "return t.applied") == [%{"saved" => 0}]
+  end
+
+  test "while recorded, state waiting for the next flush goes out before the action", %{rt: rt} do
+    run(rt, """
+    t.record()
+    window.dispatchEvent(new CustomEvent("phx_replay:start", { detail: { state: { flush: 60000 } } }))
+    t.type("Acme Labs")
+    t.action("saveName")
+    """)
+
+    assert run(rt, "return t.log") == [
+             ["state", %{"name" => "Acme"}],
+             ["state", %{"name" => "Acme Labs"}],
+             ["push", "saveName"]
+           ]
   end
 
   test "with no action in flight, the server's props apply at once", %{rt: rt} do

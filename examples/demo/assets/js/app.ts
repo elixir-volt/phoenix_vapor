@@ -4,6 +4,7 @@ import { LiveSocket } from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import { patchLiveSocket } from "phoenix_vapor"
 import { getHybridHooks } from "phoenix_vapor/hybrid"
+import { replayMetadata, replayParams, replayRecorder } from "phoenix_replay"
 
 // The browser halves of the hybrid components, which PhoenixVapor generates
 // while compiling.
@@ -21,7 +22,9 @@ const csrfToken = document.querySelector<HTMLMetaElement>("meta[name='csrf-token
 
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: { _csrf_token: csrfToken },
+  // The viewport, user agent and tab, for session replay.
+  params: () => ({ _csrf_token: csrfToken, ...replayParams() }),
+  metadata: replayMetadata,
   hooks: getHybridHooks({ Contacts, ProjectSettings, Tally })
 })
 
@@ -34,4 +37,7 @@ window.addEventListener("phx:page-loading-start", () => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", () => topbar.hide())
 
 liveSocket.connect()
+// Records what only the browser has: form input, and the hybrid components'
+// client state, which they report themselves.
+replayRecorder(liveSocket)
 window.liveSocket = liveSocket

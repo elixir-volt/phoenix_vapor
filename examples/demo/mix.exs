@@ -61,7 +61,8 @@ defmodule VaporDemo.MixProject do
       {:bandit, ">= 1.12.5 and < 2.0.0"},
       {:phoenix_vapor, path: "../.."},
       {:quickbeam, "~> 0.11.2"},
-      {:volt, "~> 0.21.0"}
+      {:volt, "~> 0.21.0"},
+      {:phoenix_replay, "~> 0.6.2"}
     ]
   end
 
@@ -79,11 +80,11 @@ defmodule VaporDemo.MixProject do
         "phoenix_vapor.bundle --entry assets/js/bundles/reka-dialog.js",
         "assets.build"
       ],
-      "assets.build": ["volt.build --tailwind"],
-      "assets.deploy": ["volt.build --tailwind", "phx.digest"],
+      "assets.build": ["compile", "volt.build --tailwind"],
+      "assets.deploy": ["compile", "volt.build --tailwind", "phx.digest"],
       # What CI runs, after installing Playwright's browser.
       ci: [
-        "npm.install",
+        "npm.install --frozen",
         "phoenix_vapor.bundle --entry assets/js/bundles/reka-dialog.js",
         "assets.build",
         "lint",

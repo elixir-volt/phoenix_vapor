@@ -31,6 +31,9 @@
       ],
       "phoenix_vapor/hybrid": [
         "../../priv/ts/browser/hybrid-bridge.ts"
+      ],
+      "phoenix_replay": [
+        "./deps/phoenix_replay/priv/static/phoenix_replay.js"
       ]
     },
     "allowJs": true

@@ -29,3 +29,12 @@ config :phoenix_test, playwright: [assets_dir: "."]
 
 # Counts reactive patches in the browser, for the end-to-end tests.
 config :vapor_demo, vapor_debug: true
+
+# Session replay records nothing in tests but the replay test, which turns it
+# on, into tmp/.
+config :phoenix_replay,
+  sample_rate: 0.0,
+  storage: {PhoenixReplay.Storage.File, path: "tmp/replay_recordings"}
+
+# The session replay dashboard, for the test that replays a recording.
+config :vapor_demo, dev_routes: true
