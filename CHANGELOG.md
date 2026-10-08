@@ -6,6 +6,7 @@ Checked against PhoenixReplay 0.6.2, recording real sessions of the demo and rep
 
 ### Changed
 
+- Require vize 0.17.2, whose template split leaves Vue's reserved `ref` and `key` out and gives each `<option>` of a `<select v-model>` a slot, so the selected one renders `selected`.
 - While a session is recorded, a hybrid component reports a changed value once it has been still for the replayer's debounce, as PhoenixReplay records a form control, and at least once per flush interval while it keeps changing. A typed word is one step on the timeline, and an input PhoenixReplay records itself agrees with the component's report. Before, a report went out once per flush interval and could catch a word halfway typed.
 - `replay_render/1` no longer translates `__changed__` for tracked replay renders: PhoenixReplay renders a replay in full at every step.
 
