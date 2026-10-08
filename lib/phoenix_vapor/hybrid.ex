@@ -171,9 +171,6 @@ defmodule PhoenixVapor.Hybrid do
     |> Enum.reduce(MapSet.new(), &read(&1, &2, reads))
     |> MapSet.intersection(client)
     |> Enum.sort()
-    # Declared names get their atoms while compiling; a replay only looks
-    # them up.
-    |> tap(&Enum.each(&1, fn name -> PhoenixVapor.Renderer.Names.atom!(name) end))
   end
 
   defp read(name, seen, reads) do

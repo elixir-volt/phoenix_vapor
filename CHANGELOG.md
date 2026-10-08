@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+Checked against PhoenixReplay 0.6.1, recording real sessions of the demo and replaying them in its player.
+
+### Changed
+
+- While a session is recorded, a hybrid component reports a changed value once it has been still for the replayer's debounce, as PhoenixReplay records a form control, and at least once per flush interval while it keeps changing. A typed word is one step on the timeline, and an input PhoenixReplay records itself agrees with the component's report. Before, a report went out once per flush interval and could catch a word halfway typed.
+- `replay_render/1` no longer translates `__changed__` for tracked replay renders: PhoenixReplay renders a replay in full at every step.
+
+### Fixed
+
+- A replay of a hybrid component in PhoenixReplay's player showed the first moment of the session at every step. The player renders each moment with `__changed__: nil` and diffs it with change tracking, which crashed the template renderer, and the frame restarted. `__changed__: nil` now renders every slot, as in LiveView.
+- A replay on a server that didn't compile the component itself, such as a release, failed for recorded client state whose name appears nowhere in Elixir code, such as `useClipboard`'s `copied`: the name's atom, made while compiling, didn't exist there. The render spec now carries every declared name's atom.
+- A server action reached the recording before the client state it was sent from, when that state was still waiting for the next report: a project name typed just before Save was recorded after the save. The state now goes out first.
+
 ## 0.6.0 - 2026-10-06
 
 ### Upgrading from 0.5

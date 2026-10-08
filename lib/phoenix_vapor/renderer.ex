@@ -34,10 +34,12 @@ defmodule PhoenixVapor.Renderer do
         attrs -> Map.put(assigns, :__vapor_attrs__, attrs)
       end
 
+    # `__changed__: nil`, or none, means every slot renders, as in LiveView:
+    # a session replayer renders a recorded moment that way.
     dynamic = fn track_changes? ->
       changed =
         case assigns do
-          %{__changed__: changed} when track_changes? ->
+          %{__changed__: %{} = changed} when track_changes? ->
             MapSet.new(Map.keys(changed), &to_string/1)
 
           _ ->

@@ -151,6 +151,45 @@ defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest do
   end
 
   describe "recording" do
+    @tag :tmp_dir
+    test "a replay renders recorded state on a server that didn't compile the component",
+         %{tmp_dir: tmp_dir} do
+      # A replay looks each recorded name's atom up, never creating one, so
+      # the module itself must carry it: a server running a release didn't
+      # compile the component, and an atom made while compiling doesn't
+      # exist there.
+      [{module, binary}] =
+        Code.compile_quoted(
+          quote do
+            defmodule PhoenixVapor.Integration.Hybrid.ComposablesTest.RecordedOnlyLive do
+              use Phoenix.LiveView
+
+              use PhoenixVapor,
+                file: unquote(Fixtures.path("HybridRecordedOnly.vue")),
+                client_output: nil
+            end
+          end
+        )
+
+      assert module.__hybrid_client_js__() =~ "record({ clipboardWasCopied })"
+      File.write!(Path.join(tmp_dir, "#{module}.beam"), binary)
+
+      script = """
+      state = %{"phoenix_vapor:pv-HybridRecordedOnly" => %{"clipboardWasCopied" => true}}
+
+      %{count: 2, phoenix_replay_state: state, __changed__: nil}
+      |> #{inspect(module)}.replay_render()
+      |> Phoenix.HTML.Safe.to_iodata()
+      |> IO.iodata_to_binary()
+      |> IO.write()
+      """
+
+      paths = Enum.flat_map([tmp_dir | :code.get_path()], &["-pa", to_string(&1)])
+      {html, 0} = System.cmd("elixir", paths ++ ["-e", script], stderr_to_stdout: true)
+
+      assert html =~ "<p>Copied 4</p>"
+    end
+
     test "registers only the client state the render reads, through computeds too" do
       js = __MODULE__.ContactsLive.__hybrid_client_js__()
 

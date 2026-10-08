@@ -49,6 +49,29 @@ defmodule PhoenixVapor.Integration.ReplayTest do
   # Each step's recorded assigns, as the replayer assigns them.
   defp replay(render, steps), do: Enum.map(steps, &html(render.(Map.put(&1, :__changed__, nil))))
 
+  # What LiveView's diff engine does with a render it already sent: asks every
+  # nested template for its slots with change tracking on.
+  defp tracked(%Phoenix.LiveView.Rendered{dynamic: dynamic}),
+    do: Enum.map(dynamic.(true), &tracked/1)
+
+  defp tracked(slot), do: slot
+
+  test "a replayer's render, without change tracking, renders every slot in a tracked diff" do
+    # PhoenixReplay renders each moment with `__changed__: nil`, and its frame
+    # diffs the result against the moment before.
+    for rendered <- [
+          SigilLive.render(%{count: 1, __changed__: nil}),
+          HybridLive.replay_render(%{
+            users: [%{"id" => 1, "name" => "Ann"}],
+            title: "T",
+            __changed__: nil
+          })
+        ] do
+      slots = rendered |> tracked() |> List.flatten()
+      refute Enum.any?(slots, &is_nil/1)
+    end
+  end
+
   test "server templates follow the recorded assigns" do
     assert replay(&SigilLive.render/1, [%{count: 0}, %{count: 1}, %{count: 2}]) ==
              ["<p>Count: 0</p>", "<p>Count: 1</p>", "<p>Count: 2</p>"]
@@ -112,40 +135,6 @@ defmodule PhoenixVapor.Integration.ReplayTest do
       refute replayed =~ "phx-hook"
       refute replayed =~ ~s(phx-update="ignore")
       assert live =~ ~s(phx-hook="PhoenixVaporHybrid")
-    end
-
-    # What a tracked render sends: the dynamic parts LiveView diffs, with an
-    # unchanged slot as nothing.
-    defp sent(%Phoenix.LiveView.Rendered{} = rendered),
-      do: rendered.dynamic.(true) |> Enum.map_join("|", &sent/1)
-
-    defp sent(nil), do: ""
-    defp sent(list) when is_list(list), do: Enum.map_join(list, "|", &sent/1)
-    defp sent(%Phoenix.LiveView.Comprehension{} = comprehension), do: inspect(comprehension)
-    defp sent(value), do: to_string(value)
-
-    test "a tracked render sends what a reported ref changed, as a seek does" do
-      assigns = %{title: "Team", users: @users, phoenix_replay_state: state(%{"search" => "Ad"})}
-
-      sent =
-        assigns
-        |> Map.put(:__changed__, %{phoenix_replay_state: true})
-        |> HybridLive.replay_render()
-        |> sent()
-
-      # The input's value and the result count; the title didn't change.
-      assert sent =~ ~s(value="Ad")
-      assert sent |> String.split("|") |> List.last() == "1"
-      refute sent =~ "Team"
-    end
-
-    test "a tracked render sends the computeds a changed prop feeds" do
-      assigns = %{title: "Team", users: tl(@users)}
-
-      sent =
-        assigns |> Map.put(:__changed__, %{users: true}) |> HybridLive.replay_render() |> sent()
-
-      assert sent |> String.split("|") |> List.last() == "1"
     end
 
     test "render/1 ignores recorded refs; only a replay applies them" do

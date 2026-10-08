@@ -50,8 +50,8 @@ defmodule PhoenixVapor.Hybrid.Computeds do
 
     compiled =
       Map.new(computeds, fn {name, body} ->
-        # Declared names get their atoms while compiling; rendering only
-        # looks them up.
+        # Evaluating while compiling looks names up; the render spec
+        # carries their atoms for rendering.
         Names.atom!(name)
 
         case twins do

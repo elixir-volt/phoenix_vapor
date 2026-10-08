@@ -106,7 +106,9 @@ const START_EVENT = "phx_replay:start"
 const STOP_EVENT = "phx_replay:stop"
 const STATE_EVENT = "phx_replay:state"
 
-type Settings = { flush?: number }
+// A replayer's client-state settings: how long a changed value must stay
+// still before it's reported, and the longest a report may wait.
+type Settings = { debounce?: number; flush?: number }
 type Reporter = { start(settings: Settings): void; stop(): void; flush(): void }
 
 const reporters = new Set<Reporter>()
@@ -156,9 +158,10 @@ if (typeof window !== "undefined") {
 /**
  * Reports a component's client state under `key` while it's recorded: all
  * of it when recording starts, or when the component mounts during one, then
- * the latest value of each source that changed, at most once per the
- * replayer's flush interval, so state that changes at frame rate, such as a
- * pointer position, costs one report per flush.
+ * the latest value of each source that changed, once it has been still for
+ * the replayer's debounce, as the replayer records a form control, and at
+ * least once per flush interval while it keeps changing. State that changes
+ * at frame rate, such as a pointer position, costs one report per flush.
  */
 function reportRefs(
   hook: HookContext,
@@ -171,9 +174,13 @@ function reportRefs(
     let stops: Array<() => void> = []
     let pending: Record<string, unknown> = {}
     let timer: ReturnType<typeof setTimeout> | undefined
+    let deadline: ReturnType<typeof setTimeout> | undefined
 
     const flush = () => {
+      clearTimeout(timer)
+      clearTimeout(deadline)
       timer = undefined
+      deadline = undefined
       const changes = pending
       pending = {}
       if (Object.keys(changes).length > 0) report(changes)
@@ -201,7 +208,14 @@ function reportRefs(
 
             last[name] = json
             pending[name] = value
-            timer ??= setTimeout(flush, settings.flush ?? 0)
+            // As the replayer records a form control: once it has been still
+            // for the debounce, so a typed word is one report, timed with the
+            // replayer's own record of the input; and at least once per
+            // flush interval while it keeps changing.
+            const flushInterval = settings.flush ?? 0
+            clearTimeout(timer)
+            timer = setTimeout(flush, Math.min(settings.debounce ?? flushInterval, flushInterval))
+            deadline ??= setTimeout(flush, flushInterval)
           }
 
           stops.push(watch(() => unref(source), changed, { deep: true, immediate: false }))
@@ -213,11 +227,12 @@ function reportRefs(
         for (const stop of stops) stop()
         stops = []
         clearTimeout(timer)
+        clearTimeout(deadline)
         timer = undefined
+        deadline = undefined
         pending = {}
       },
       flush() {
-        clearTimeout(timer)
         flush()
       }
     }
@@ -251,6 +266,12 @@ function applyProps(hook: HookContext) {
 // props read then are the server's answer: a change the server declined goes
 // away. A failed push settles too.
 function sendAction(hook: HookContext, event: string, payload: object) {
+  // While recorded, the state the action was sent from goes out first: a
+  // session replayer timestamps reports as they come, and a change still
+  // waiting for the next flush, such as the name typed before Save, would
+  // otherwise come after the action it led to.
+  for (const reporter of reporters) reporter.flush()
+
   hook.pending = (hook.pending ?? 0) + 1
 
   const settle = () => {

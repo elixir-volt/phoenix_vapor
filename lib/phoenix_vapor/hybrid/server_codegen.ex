@@ -34,8 +34,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   """
   def gen_render(split, classification, opts \\ []) do
     models = Map.get(classification, :models, [])
-    # Declared names get their atoms while compiling; rendering looks them up.
-    Enum.each(models, &Names.atom!/1)
 
     spec = %{
       split: split,
@@ -53,6 +51,13 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       client: Keyword.get(opts, :client, [])
     }
 
+    # Rendering finds each declared name's atom with `Names.existing/1`,
+    # never creating one. An atom made while compiling exists only in the
+    # compiling VM; one in the spec is a literal of the compiled module, so it
+    # exists wherever the module is loaded, such as a server replaying a
+    # recorded composable's value.
+    spec = Map.put(spec, :names, declared_names(spec, classification))
+
     quote do
       defp __pv_hybrid__, do: unquote(Macro.escape(spec))
 
@@ -60,9 +65,11 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
         do: PhoenixVapor.Hybrid.ServerCodegen.build_rendered(__pv_hybrid__(), var!(assigns))
 
       @doc """
-      Renders the component as a session replay shows it: with the refs the
-      client reported while recording, from `@phoenix_replay_state`, and
-      without the client hook, so the server's render is what's shown.
+      Renders the component as a session replay shows it: with the client
+      state reported while recording, from `@phoenix_replay_state`, and
+      without the client hook, so the server's render is what's shown. The
+      optional callback of `PhoenixReplay.Replay.View`, which renders it in
+      full at every step.
       """
       def replay_render(var!(assigns)),
         do:
@@ -85,9 +92,10 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   JSON instead of new statics.
 
   In `:replay` mode, for a session replayer, the wrapper has no hook and isn't
-  ignored, so the server's render shows, and the refs the client reported
-  while the session was recorded, under the component's state key in the
-  `:phoenix_replay_state` assign, take the place of their initial values.
+  ignored, so the server's render shows, and the client state reported while
+  the session was recorded, under the component's state key in the
+  `:phoenix_replay_state` assign, takes the place of the refs' initial
+  values. A replayer renders every step in full, with `__changed__: nil`.
   """
   def build_rendered(spec, assigns, mode \\ :live) do
     {values, computeds} = refs_for(mode, spec, assigns)
@@ -99,7 +107,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       |> seed_ref_values(values)
       |> seed_props_alias(spec.client_props)
       |> eval_computeds(computeds, models(values, spec, assigns))
-      |> translate_changed(mode, spec)
 
     # The wrapper div is the root tag; the component itself may render text,
     # comments, or several elements.
@@ -128,6 +135,14 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
       fingerprint: :erlang.phash2({__MODULE__, static}),
       root: true
     }
+  end
+
+  defp declared_names(spec, classification) do
+    computeds = for {name, _expr} <- spec.constant ++ spec.computeds, do: name
+
+    (Map.keys(classification.bindings) ++ spec.recorded ++ spec.client ++ spec.models ++ computeds)
+    |> Enum.uniq()
+    |> Enum.map(&Names.atom!/1)
   end
 
   @doc """
@@ -166,35 +181,6 @@ defmodule PhoenixVapor.Hybrid.ServerCodegen do
   end
 
   defp absent(_mode, spec, _assigns), do: MapSet.new(spec.client)
-
-  # A replay renders with change tracking, as a seek re-renders, but what
-  # changes is often not what the template reads: `:phoenix_replay_state`
-  # changes the refs, a prop changes `props`, and either changes the computeds
-  # that read them. A live render's refs never change on the server.
-  defp translate_changed(%{__changed__: changed} = assigns, :replay, spec) when is_map(changed) do
-    names = MapSet.new(Map.keys(changed), &to_string/1)
-
-    names =
-      if "phoenix_replay_state" in names,
-        do: MapSet.union(names, MapSet.new(spec.recorded)),
-        else: names
-
-    names =
-      if Enum.any?(spec.client_props, &(&1 in names)), do: MapSet.put(names, "props"), else: names
-
-    # In order, so a computed reading another computed sees its change.
-    names =
-      Enum.reduce(spec.constant ++ spec.computeds, names, fn {name, expr}, names ->
-        case PhoenixVapor.Hybrid.Computeds.reads(expr) do
-          :any -> MapSet.put(names, name)
-          keys -> if Enum.any?(keys, &(&1 in names)), do: MapSet.put(names, name), else: names
-        end
-      end)
-
-    %{assigns | __changed__: Map.new(names, &{&1, true})}
-  end
-
-  defp translate_changed(assigns, _mode, _spec), do: assigns
 
   defp wrapper_statics(nil, _mode), do: [~s(<div data-pv data-pv-props="), ~s(">), "</div>"]
 
