@@ -11,6 +11,7 @@ import { installShell } from "./shell"
 // while compiling.
 import * as Board from "./hybrid/Board.hybrid.js"
 import * as Issue from "./hybrid/Issue.hybrid.js"
+import * as Issues from "./hybrid/Issues.hybrid.js"
 
 declare global {
   interface Window {
@@ -25,7 +26,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // The viewport, user agent and tab, for session replay.
   params: () => ({ _csrf_token: csrfToken, ...replayParams() }),
   metadata: replayMetadata,
-  hooks: getHybridHooks({ Board, Issue })
+  hooks: getHybridHooks({ Board, Issue, Issues })
 })
 
 // The end-to-end tests count reactive patches; `data-vapor-debug` on the

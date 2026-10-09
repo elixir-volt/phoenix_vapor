@@ -156,7 +156,7 @@ end
           >List</a>
         </nav>
         <a
-          :href="`/${team.key}/new`"
+          href="/new"
           data-phx-link="redirect"
           data-phx-link-state="push"
           class="flex h-[30px] items-center gap-1.5 rounded-md bg-accent px-3 font-medium text-accent-fg hover:opacity-90"

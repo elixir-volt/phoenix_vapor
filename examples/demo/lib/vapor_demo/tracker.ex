@@ -104,34 +104,51 @@ defmodule VaporDemo.Tracker do
     end
   end
 
-  @doc "Creates an issue in a team's backlog, or the status given."
-  def create(team_key, attrs) do
-    update(fn state ->
-      me = hd(state.people)
-      number = state.issues |> Enum.filter(&(&1.team == team_key)) |> Enum.map(& &1.number) |> Enum.max(fn -> 100 end)
-      team = Enum.find(state.teams, &(&1.key == team_key))
+  @doc """
+  Creates an issue in a team's backlog from a title, and optionally a
+  description and priority. Returns `{:ok, issue}`, or `:error` for a blank
+  title or an unknown team.
+  """
+  def create(team_key, %{title: title} = attrs) do
+    title = String.trim(title)
+    priority = if attrs[:priority] in @priorities, do: attrs[:priority], else: "none"
 
+    if title == "" or team(team_key) == nil do
+      :error
+    else
       issue =
-        Map.merge(
-          %{
-            id: length(state.issues) + 1,
+        Agent.get_and_update(__MODULE__, fn state ->
+          me = hd(state.people)
+          team = Enum.find(state.teams, &(&1.key == team_key))
+
+          number =
+            state.issues
+            |> Enum.filter(&(&1.team == team_key))
+            |> Enum.map(& &1.number)
+            |> Enum.max(fn -> 0 end)
+            |> Kernel.+(1)
+
+          issue = %{
+            id: Enum.max_by(state.issues, & &1.id, fn -> %{id: 0} end).id + 1,
             team: team_key,
-            number: number + 1,
-            key: "#{team.prefix}-#{number + 1}",
-            description: "",
+            number: number,
+            key: "#{team.prefix}-#{number}",
+            title: title,
+            description: String.trim(attrs[:description] || ""),
             status: "backlog",
-            priority: "none",
+            priority: priority,
             assignee_id: nil,
             labels: [],
             updated_at: now()
-          },
-          attrs
-        )
+          }
 
-      state
-      |> Map.update!(:issues, &[issue | &1])
-      |> log(me, "created #{issue.key}")
-    end)
+          state = state |> Map.update!(:issues, &[issue | &1]) |> log(me, "created #{issue.key}")
+          {issue, state}
+        end)
+
+      Phoenix.PubSub.broadcast(VaporDemo.PubSub, @topic, :tracker_changed)
+      {:ok, issue}
+    end
   end
 
   @doc "Restores the seed, as the demo starts."

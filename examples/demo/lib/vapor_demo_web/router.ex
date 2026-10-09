@@ -22,6 +22,9 @@ defmodule VaporDemoWeb.Router do
     # Every page is recorded for session replay; see /dev/replay.
     live_session :tracker, on_mount: [PhoenixReplay.Recorder, VaporDemoWeb.Shell] do
       live "/:team/board", Board.BoardLive
+      live "/:team/issues", Issues.IssuesLive, :team
+      live "/my-issues", Issues.IssuesLive, :mine
+      live "/new", NewIssue.NewIssueLive
       live "/issue/:key", Issue.IssueLive
     end
   end
