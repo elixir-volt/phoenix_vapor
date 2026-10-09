@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { DialogRoot } from "reka-ui"
+import { TooltipProvider } from "reka-ui"
 
-defineProps<{ open: boolean }>()
+defineProps<{ delay: number }>()
 </script>
 
 <template>
-  <DialogRoot :open="open"><p>Hi</p></DialogRoot>
+  <TooltipProvider :delay-duration="delay"><p>Hi</p></TooltipProvider>
 </template>

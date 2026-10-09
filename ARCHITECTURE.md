@@ -26,7 +26,7 @@ Template expressions are evaluated against LiveView assigns:
 
 - Most expressions (`{{ count }}`, `item.name`, comparisons, arithmetic, ternaries) → Elixir, over the OXC AST, with JavaScript's semantics for truthiness, equality and coercion (`PhoenixVapor.Renderer.Value`)
 - What only JavaScript can evaluate (`.filter()` with a callback, `Math.max`) → QuickBEAM on every render, reported as a warning when compiling
-- Macro calls and package components → run once in QuickBEAM while compiling, so rendering them runs no JavaScript
+- Macro calls and package components → run once in QuickBEAM while compiling, or once for each value of what they read when TypeScript types it as a set of literals, so rendering them runs no JavaScript
 - Change tracking: on each render, a slot is re-evaluated only when an assign its expression reads is in `__changed__`
 
 ## Mode 1: `~VUE` Sigil
@@ -105,6 +105,10 @@ Initial render: server sends statics + dynamics, with the props JSON as the wrap
 
 PhoenixReplay (0.6) renders a recorded view from its recorded assigns alone; the QuickBEAM runtimes of Reactive mode and the full runtime live in `socket.private`, out of the recording. A hybrid component's client state lives in the browser. `Hybrid.build` works out which of it the server's render reads (the template, and the computeds and Elixir counterparts it reads), and setup registers those names; `browser/hybrid-bridge.ts` reports them as `phx_replay:state` window events between `phx_replay:start` and `phx_replay:stop` (or while `<html data-phx-replay>` says a recording is running), all of them on start and then the latest value of what changed, through a watcher per name, once it has been still for the replayer's `debounce` and at least once per `flush`, under `phoenix_vapor:<wrapper id>`; `sendAction` flushes them before a server action. The generated `replay_render/1` (`Hybrid.ServerCodegen.build_rendered/3` in `:replay` mode), the optional callback of `PhoenixReplay.Replay.View`, reads them from `@phoenix_replay_state` and renders without the client hook. PhoenixReplay renders it in full at every step, with `__changed__: nil`, which the renderer takes as every slot changed, as LiveView does, also when LiveView then diffs the result with change tracking. Rendering finds recorded names' atoms with `Names.existing/1`; the render spec lists every declared name's atom, so they're literals of the compiled module and exist on a server that never compiled the component. See the Hybrid guide.
 
+### Package Components per Value
+
+`Compiler.Packages.fold/6` renders a package component and the package components inside it with Vue's server renderer (`compile/packages.ts`, which appends what the render teleported and forces `forceMount` on `...Portal` components that declare it, as Reka's teleport only once mounted), into a `:fragment` slot whose template holds the SFC's own content as holes; the slot keeps the folded props' expressions as `:reads`, which change tracking, `Renderer.assign_keys/1`, `Renderer.reads/1` and so the recorded set count, though rendering doesn't evaluate them. `Packages.inputs/4` lists the expressions among them that read anything but the compile's `:constants`; `PropTypes.expression_values/3` types them with TypeScript's checker, appending them to the script in a function whose parameters are the script's bindings as `ShallowUnwrapRef` unwraps them, and the props. When each is a set of literals and there are at most 64 combinations (`Macros.combinations/2`), the compiler folds once per combination, with the values given to `fold/6` in `known`, into a `:fragments` slot, `%{inputs: [expr], table: %{[value] => template}}`; rendering evaluates the inputs, normalized by `Expr.literal/1`, and renders the template they key; an input reading absent state (`Expr.absent?/2`) renders nothing, and values outside the table render the `:initial` variant, the one for the values at compile time, with a logged warning. Otherwise it folds once with the initial values and reports why, at `:unrendered`. A child `.vue` component gets the parent's expressions for the props it's passed from state (`:passed`), and an input that reads such a prop or model whole takes the parent expression's values.
+
 ### Custom Elixir Code
 
 A hybrid module is a standard LiveView. The `use PhoenixVapor` macro generates `render/1` and fallback `handle_event/3` stubs (via `@before_compile`) — everything else is yours to define. User-defined `handle_event` clauses take precedence over generated fallbacks.
@@ -151,7 +155,7 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 - `PhoenixVapor.Compiler.SFC` — `.vue` file paths, the `<template>` block, `<script lang="elixir">`
 - `PhoenixVapor.Compiler.ScriptSetup` — what `<script setup>` declares
 - `PhoenixVapor.Compiler.Macros` — `with { type: "macro" }` calls run at compile time
-- `PhoenixVapor.Compiler.PropTypes` — prop types from TypeScript's checker, for macro calls
+- `PhoenixVapor.Compiler.PropTypes` — prop and expression types from TypeScript's checker, for macro calls and package components, in one QuickBEAM runtime per TypeScript install that compiles in the VM share; it re-reads a file once its mtime changes
 - `PhoenixVapor.Compiler.Packages` — package components rendered with Vue's server renderer at compile time
 
 ### Renderer
@@ -175,7 +179,7 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 ### JavaScript
 - `PhoenixVapor.JS` — QuickBEAM runtimes and contexts, `priv/ts` templates, and bundling with Volt
 - `PhoenixVapor.JS.EntryPlugin` — Volt plugin serving a generated entry module
-- `PhoenixVapor.JS.Session` — the one QuickBEAM runtime a compile uses
+- `PhoenixVapor.JS.Session` — the QuickBEAM runtime a compile uses for macros and package components
 - `PhoenixVapor.JS.FreeNames` — the names a JavaScript expression reads
 - `Mix.Tasks.PhoenixVapor.Bundle` — bundles a Vue component library for the full runtime
 
@@ -185,6 +189,6 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 - `browser/vapor-patch.ts` — slot analysis and DOM writes behind it (`phoenix_vapor/vapor-patch`)
 - `browser/hybrid-bridge.ts` — LiveView hook for hybrid components (`phoenix_vapor/hybrid`)
 - `compile/packages.ts` — renders package components with `vue/server-renderer`, for `PhoenixVapor.Compiler.Packages`
-- `compile/prop-types.ts` — prop types from TypeScript's checker, for `PhoenixVapor.Compiler.PropTypes`
+- `compile/prop-types.ts` — prop and template expression types from TypeScript's checker, for `PhoenixVapor.Compiler.PropTypes`
 - `compile/macros/entry.ts`, `compile/macros/call.ts` — load macro modules and evaluate a call
 - `compile/globals.d.ts` — the placeholders and globals those share

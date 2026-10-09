@@ -760,6 +760,21 @@ defmodule PhoenixVapor.Integration.RenderingTest do
 
       assert render_to_html(rendered) == "<span>default</span>"
     end
+
+    test "optional chaining, in Elixir" do
+      template =
+        ~s(<span>{{ target?.name }}|{{ target?.a.b }}|{{ target?.["name"] ?? "none" }}</span>)
+
+      assert template |> PhoenixVapor.render(%{target: nil}) |> render_to_html() ==
+               "<span>||none</span>"
+
+      assert template
+             |> PhoenixVapor.render(%{target: %{"name" => "Ann", "a" => %{"b" => 1}}})
+             |> render_to_html() == "<span>Ann|1|Ann</span>"
+
+      {:ok, %{body: [%{expression: node}]}} = OXC.parse("target?.name", "x.ts")
+      assert PhoenixVapor.Renderer.Expr.elixir?(node)
+    end
   end
 
   describe "change tracking" do

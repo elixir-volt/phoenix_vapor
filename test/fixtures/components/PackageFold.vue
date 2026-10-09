@@ -8,7 +8,7 @@ import {
 
 defineProps<{ name: string; tags: string[] }>()
 
-const tab = ref("greeting")
+const tab = ref<"greeting" | "other">("greeting")
 const target = ref<string | null>(null)
 const confirming = computed(() => target.value !== null)
 </script>

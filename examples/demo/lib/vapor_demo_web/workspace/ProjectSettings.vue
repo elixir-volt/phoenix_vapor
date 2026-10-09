@@ -16,11 +16,13 @@ type Member = { id: number; name: string; email: string; role: string; active: b
 const project = defineModel<{ name: string; plan: string }>("project", { required: true })
 const members = defineModel<Member[]>("members", { required: true })
 
-const tab = ref("general")
+// Typed as their values, so the server folds the tabs and the filter once
+// for each, and a session replay shows the recorded one.
+const tab = ref<"general" | "members" | "notifications">("general")
 const name = ref(project.value.name)
 const emailAlerts = ref(true)
 const weeklyDigest = ref(false)
-const roleFilter = ref("all")
+const roleFilter = ref<"all" | "owner" | "admin" | "member">("all")
 const removeTarget = ref<Member | null>(null)
 
 const roles = [
@@ -29,6 +31,8 @@ const roles = [
   { value: "admin", label: "Admin" },
   { value: "member", label: "Member" },
 ]
+
+const roleLabels: Record<string, string> = Object.fromEntries(roles.map(r => [r.value, r.label]))
 
 const visibleMembers = computed(() =>
   roleFilter.value === "all" ? members.value : members.value.filter(m => m.role === roleFilter.value),
@@ -94,7 +98,7 @@ def role_tone(_role), do: "neutral"
       <TabsContent value="members">
         <Card title="Members" :description="`${visibleMembers.length} of ${members.length} members`">
           <div class="mb-3 flex justify-end">
-            <Select v-model="roleFilter" :options="roles" placeholder="Filter by role" />
+            <Select v-model="roleFilter" :options="roles" :label="roleLabels[roleFilter]" placeholder="Filter by role" />
           </div>
           <ul class="divide-y divide-zinc-100">
             <li v-for="member in visibleMembers" :key="member.id" class="flex items-center justify-between py-2">

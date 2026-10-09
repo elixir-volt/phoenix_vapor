@@ -69,7 +69,12 @@ defmodule PhoenixVapor.Template do
     slots =
       Enum.map(slots, fn slot ->
         {slot, nil} = map_blocks(slot, nil, &{put_keys(&1), &2})
-        keys = slot |> slot_exprs() |> Enum.flat_map(&Expr.assign_keys/1) |> Enum.uniq()
+
+        keys =
+          (slot_exprs(slot) ++ slot_folded(slot))
+          |> Enum.flat_map(&Expr.assign_keys/1)
+          |> Enum.uniq()
+
         Map.put(slot, :keys, keys -- bound_names(slot))
       end)
 
@@ -92,6 +97,16 @@ defmodule PhoenixVapor.Template do
     Enum.reverse(exprs)
   end
 
+  @doc """
+  The prop expressions of the package components folded into a template, in
+  it and the blocks inside it. Rendering doesn't evaluate them, but they
+  decide the folded markup.
+  """
+  @spec folded(t() | map()) :: [term()]
+  def folded(%{slots: slots}), do: Enum.flat_map(slots, &slot_folded/1)
+
+  defp slot_folded(slot), do: Map.get(slot, :reads, []) ++ Enum.flat_map(blocks(slot), &folded/1)
+
   @doc "The expressions in one slot, including the blocks inside it."
   @spec slot_exprs(map()) :: [term()]
   def slot_exprs(slot) do
@@ -112,11 +127,17 @@ defmodule PhoenixVapor.Template do
   defp expr_fields(:for), do: [:source, :key_prop]
   defp expr_fields(:slot), do: [:name_value]
   defp expr_fields(:root_attrs), do: [:show]
+  defp expr_fields(:fragments), do: [:inputs]
   defp expr_fields(_kind), do: []
 
   defp map_fields(slot, fields, acc, fun) do
     Enum.reduce(fields, {slot, acc}, fn field, {slot, acc} ->
       case slot do
+        # A fragment per value of its inputs is looked up by all of them.
+        %{^field => exprs} when is_list(exprs) ->
+          {exprs, acc} = Enum.map_reduce(exprs, acc, &fun.(&1, slot, &2))
+          {Map.put(slot, field, exprs), acc}
+
         %{^field => expr} when expr != nil ->
           {expr, acc} = fun.(expr, slot, acc)
           {Map.put(slot, field, expr), acc}
@@ -154,7 +175,9 @@ defmodule PhoenixVapor.Template do
   @doc """
   Maps the blocks directly inside a slot, threading an accumulator: a
   `v-if`'s branches, a `v-for`'s body, a component's slot content, a
-  `<slot>`'s fallback, and a fragment's template. Other slots have none.
+  `<slot>`'s fallback, a fragment's template, and the template for each
+  value of a fragment's inputs, in the order of their values. Other slots
+  have none.
   """
   @spec map_blocks(map(), acc, (block, acc -> {block, acc})) :: {map(), acc}
         when acc: term(), block: t() | map()
@@ -173,6 +196,19 @@ defmodule PhoenixVapor.Template do
   def map_blocks(%{kind: :slot, fallback: nil} = slot, acc, _fun), do: {slot, acc}
   def map_blocks(%{kind: :slot} = slot, acc, fun), do: map_block(slot, :fallback, acc, fun)
   def map_blocks(%{kind: :fragment} = slot, acc, fun), do: map_block(slot, :template, acc, fun)
+
+  def map_blocks(%{kind: :fragments, table: table} = slot, acc, fun) do
+    {table, acc} =
+      table
+      |> Enum.sort()
+      |> Enum.map_reduce(acc, fn {values, block}, acc ->
+        {block, acc} = fun.(block, acc)
+        {{values, block}, acc}
+      end)
+
+    {%{slot | table: Map.new(table)}, acc}
+  end
+
   def map_blocks(slot, acc, _fun), do: {slot, acc}
 
   defp map_block(container, field, acc, fun) do

@@ -45,6 +45,9 @@ defmodule PhoenixVapor.Compiler do
       caller closes, so values it evaluated are shared
     * `:known` — values names have at compile time, for the `:browser`
       target; by default, the refs' initial values
+    * `:constants` — names in `:known` whose values never change, such as a
+      hybrid component's constants. A package component whose props read
+      anything else folds once for each value they can take.
     * `:browser_only` — names only the browser has, such as a hybrid
       component's computeds the server can't evaluate. An expression reading
       one isn't rendered on the server, and a `v-if` chain whose condition
@@ -104,7 +107,7 @@ defmodule PhoenixVapor.Compiler do
           true -> %{}
         end
 
-      template_opts = Keyword.take(opts, [:elixir, :root_attrs, :browser_only])
+      template_opts = Keyword.take(opts, [:elixir, :root_attrs, :browser_only, :constants])
       compile_template(sfc, nil, known, %{state | js: session}, template_opts)
     end
 
@@ -112,7 +115,7 @@ defmodule PhoenixVapor.Compiler do
     # only while compiling: the caller's session, or one opened here.
     {compiled, state} =
       case opts[:session] do
-        nil -> Session.with_session(PropTypes.handlers(), compile)
+        nil -> Session.with_session(compile)
         session -> compile.(session)
       end
 
@@ -225,6 +228,9 @@ defmodule PhoenixVapor.Compiler do
       setup: source.setup,
       static_props: static_props,
       known: known,
+      # Names whose values never change, such as props passed as constants.
+      fixed: Keyword.get(opts, :constants, []),
+      passed: opts[:passed],
       elixir: opts[:elixir]
     }
 
@@ -279,17 +285,183 @@ defmodule PhoenixVapor.Compiler do
   defp resolve_blocks(slot, ctx, state),
     do: Template.map_blocks(slot, state, &resolve_template(&1, ctx, &2))
 
-  # Vue's server renderer and the file's packages load once per file.
+  # Vue's server renderer and the file's packages load once per file. A
+  # component whose props read state folds once for each combination of the
+  # values their types allow, and rendering picks the one the state has; one
+  # whose state isn't a finite set of values folds with the known values,
+  # which in hybrid mode are the refs' initial ones.
   defp fold(slot, package, ctx, state) do
     load = &Packages.load(&1, package_sources(ctx), ctx.file)
-    runtime = Session.runtime(state.js)
+    packages = &package(ctx, &1)
 
-    with :ok <- Session.once(state.js, {:packages, ctx.file}, load),
-         {:ok, fragment} <-
-           Packages.fold(slot, &package(ctx, &1), ctx.known, runtime, ctx.file, state.fold) do
-      resolve_slot(fragment, ctx, state)
+    with :ok <- Session.once(state.js, {:packages, ctx.file}, load) do
+      inputs = Packages.inputs(slot, packages, ctx.fixed, state.fold)
+
+      case combinations(inputs, slot, ctx) do
+        :none ->
+          fold_once(slot, package, ctx, state, nil)
+
+        {:ok, combinations} ->
+          fold_each(slot, package, inputs, combinations, ctx, state)
+
+        {:fallback, message} ->
+          fold_once(slot, package, ctx, state, message)
+      end
     else
       {:error, reason} -> unfoldable(slot, package, reason, ctx, state)
+    end
+  end
+
+  # Why it folds only once is reported when it does.
+  defp fold_once(slot, package, ctx, state, fallback) do
+    case fold_with(slot, ctx.known, ctx, state) do
+      {:ok, fragment} ->
+        state =
+          if fallback,
+            do: diagnose(state, :unrendered, ctx.file, slot.position, fallback),
+            else: state
+
+        resolve_slot(fragment, ctx, state)
+
+      {:error, reason} ->
+        unfoldable(slot, package, reason, ctx, state)
+    end
+  end
+
+  defp fold_each(slot, package, inputs, combinations, ctx, state) do
+    exprs = Enum.map(inputs, & &1.expr)
+
+    combinations
+    |> Enum.reduce_while({:ok, %{}}, fn values, {:ok, table} ->
+      case fold_with(slot, Packages.input_values(ctx.known, exprs, values), ctx, state) do
+        {:ok, fragment} ->
+          {:cont, {:ok, Map.put(table, values, fragment.template)}}
+
+        {:error, reason} ->
+          with_values = Enum.map_join(Enum.zip(inputs, values), ", ", &input_value/1)
+          {:halt, {:error, "with #{with_values}, #{reason}"}}
+      end
+    end)
+    |> case do
+      {:ok, table} ->
+        table =
+          Map.new(table, fn {values, template} ->
+            {Enum.map(values, &Expr.literal/1), template}
+          end)
+
+        fragments = %{
+          kind: :fragments,
+          inputs: exprs,
+          table: table,
+          initial: initial(exprs, table, ctx.known),
+          position: slot.position
+        }
+
+        resolve_slot(fragments, ctx, state)
+
+      {:error, reason} ->
+        unfoldable(slot, package, reason, ctx, state)
+    end
+  end
+
+  # The variant for the inputs' values at compile time, which in hybrid mode
+  # are the refs' initial ones, or nil when they read anything else.
+  defp initial(inputs, table, known) do
+    if Enum.all?(inputs, fn {_tag, _source, _node, keys} ->
+         Enum.all?(keys, &is_map_key(known, &1))
+       end) do
+      values = Enum.map(inputs, &(&1 |> Expr.eval(known) |> Expr.literal()))
+      if Map.has_key?(table, values), do: values
+    end
+  rescue
+    _error in PhoenixVapor.ExpressionError -> nil
+  end
+
+  defp fold_with(slot, known, ctx, state) do
+    runtime = Session.runtime(state.js)
+    Packages.fold(slot, &package(ctx, &1), known, runtime, ctx.file, state.fold)
+  end
+
+  defp input_value({%{expr: expr}, value}), do: "`#{elem(expr, 1)}` #{inspect(value)}"
+
+  # The combinations of the values the inputs' types allow, from TypeScript,
+  # or why the component folds once.
+  defp combinations([], _slot, _ctx), do: :none
+
+  defp combinations(inputs, slot, ctx) do
+    sources = Enum.map(inputs, &elem(&1.expr, 1))
+
+    with {:ok, types} <-
+           PropTypes.expression_values(ctx.file, ctx.setup.source, sources),
+         {:ok, types} <- passed_types(inputs, types, ctx) do
+      typed = Enum.zip(inputs, types)
+      domains = Map.new(Enum.with_index(types), fn {type, index} -> {index, type["values"]} end)
+
+      case Macros.combinations(Enum.to_list(0..(length(inputs) - 1)), domains) do
+        {:ok, combinations} ->
+          {:ok, combinations}
+
+        {:error, {:infinite, index}} ->
+          {input, %{"type" => type}} = Enum.at(typed, index)
+
+          {:fallback,
+           "<#{input.component}> folds with the initial value of `#{input.prop}`: " <>
+             "`#{elem(input.expr, 1)}` is #{type}; declare its type as a union of " <>
+             "literals, such as ref<\"a\" | \"b\">(...), to fold it for each value"}
+
+        {:error, {:too_many, count}} ->
+          {:fallback,
+           "<#{slot.name}> folds with the initial values of its props: " <>
+             Enum.map_join(sources, ", ", &"`#{&1}`") <>
+             " can take #{count} combinations of values, more than #{Macros.max_combinations()}"}
+      end
+    else
+      {:error, reason} ->
+        {:fallback,
+         "<#{slot.name}> folds with the initial values of its props, " <>
+           "as their types can't be read: #{reason}"}
+    end
+  end
+
+  # An input that reads a prop or model the parent passes from its state,
+  # whole, takes the values the parent's expression can, when they're a set.
+  defp passed_types(_inputs, types, %{passed: nil}), do: {:ok, types}
+
+  defp passed_types(inputs, types, %{passed: passed} = ctx) do
+    sources = Enum.map(inputs, &passed_source(&1.expr, ctx.setup, passed.props))
+    parent = Enum.reject(sources, &is_nil/1)
+
+    with {:ok, parent_types} <-
+           PropTypes.expression_values(passed.file, passed.script, parent) do
+      by_source = Map.new(Enum.zip(parent, parent_types))
+
+      {:ok,
+       Enum.zip_with(sources, types, fn source, type ->
+         case by_source[source] do
+           %{"values" => values} = parent_type when values != nil -> parent_type
+           _none -> type
+         end
+       end)}
+    end
+  end
+
+  defp passed_source({_tag, _source, node, _keys}, setup, props) do
+    case node do
+      %{type: :identifier, name: name} when is_map_key(setup.models, name) ->
+        props[setup.models[name]]
+
+      %{type: :identifier, name: name} ->
+        if name in setup.props, do: props[name]
+
+      %{
+        type: :member_expression,
+        object: %{type: :identifier, name: "props"},
+        property: %{name: name}
+      } ->
+        props[name]
+
+      _other ->
+        nil
     end
   end
 
@@ -342,11 +514,13 @@ defmodule PhoenixVapor.Compiler do
           {slot, diagnose(state, :unrendered, ctx.file, slot.position, message)}
         else
           static_props = static_props(slot.props)
+          passed = passed(slot.props, ctx)
 
-          case state.cache[{path, static_props}] do
+          case state.cache[{path, static_props, passed}] do
             nil ->
-              {compiled, state} = compile_child(path, static_props, state)
-              state = %{state | cache: Map.put(state.cache, {path, static_props}, compiled)}
+              {compiled, state} = compile_child(path, static_props, passed, state)
+              key = {path, static_props, passed}
+              state = %{state | cache: Map.put(state.cache, key, compiled)}
               {Map.put(slot, :component, compiled), state}
 
             compiled ->
@@ -510,7 +684,22 @@ defmodule PhoenixVapor.Compiler do
     end)
   end
 
-  defp compile_child(path, static_props, state) do
+  # The props a parent passes a component from its state, as the parent's
+  # expressions, so a package component inside it folds once for each value
+  # the parent's types allow: a `<Select v-model="role">` folds its
+  # `SelectRoot` for each value of `role`, though its own model is a string.
+  defp passed(props, ctx) do
+    exprs =
+      for %{name: name, name_value: nil, value: {tag, source, _node, keys}} <- props,
+          name != nil and tag in [:expr, :js],
+          not Enum.all?(keys, &(&1 in ctx.fixed)),
+          into: %{},
+          do: {Names.camelize(name), source}
+
+    if exprs != %{}, do: %{file: ctx.file, script: ctx.setup.source, props: exprs}
+  end
+
+  defp compile_child(path, static_props, passed, state) do
     sfc = SFC.read!(path)
 
     parent_stack = state.stack
@@ -527,10 +716,21 @@ defmodule PhoenixVapor.Compiler do
 
     {compiled, state} =
       compile_template(%{sfc | template: sfc.template || ""}, static_props, known, state,
-        root_attrs: true
+        root_attrs: true,
+        constants: Map.keys(known),
+        passed: passed
       )
 
-    component = %{props: sfc.setup.props, template: compiled, events: state.events}
+    # A model is a prop too, which the template reads by the name it's bound to.
+    models = sfc.setup.models
+
+    component = %{
+      props: Enum.uniq(sfc.setup.props ++ Map.values(models)),
+      models: models,
+      template: compiled,
+      events: state.events
+    }
+
     {component, %{state | stack: parent_stack}}
   end
 

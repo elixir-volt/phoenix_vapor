@@ -21,7 +21,7 @@ defmodule PhoenixVapor.Renderer.Expr do
   # A macro call computed at compile time for each value its props can take,
   # looked up by their values.
   def eval({:lookup, source, keys, table}, assigns) do
-    values = Enum.map(keys, &(assigns |> get_assign(&1) |> Value.to_elixir() |> lookup_value()))
+    values = Enum.map(keys, &(assigns |> get_assign(&1) |> literal()))
 
     case Map.fetch(table, values) do
       {:ok, value} ->
@@ -133,6 +133,7 @@ defmodule PhoenixVapor.Renderer.Expr do
     :template_literal,
     :template_element,
     :member_expression,
+    :chain_expression,
     :conditional_expression,
     :logical_expression,
     :array_expression,
@@ -151,7 +152,7 @@ defmodule PhoenixVapor.Renderer.Expr do
 
   def elixir?(%{type: :property, computed: true}), do: false
 
-  def elixir?(%{type: :call_expression, callee: callee, arguments: args}) do
+  def elixir?(%{type: :call_expression, callee: callee, arguments: args} = node) do
     callable? =
       case callee do
         %{type: :member_expression, computed: false, object: object, property: %{name: method}} ->
@@ -167,7 +168,8 @@ defmodule PhoenixVapor.Renderer.Expr do
           false
       end
 
-    callable? and Enum.all?(args, &elixir?/1)
+    # An optional call, `f?.()`, is left to JavaScript.
+    callable? and not Map.get(node, :optional, false) and Enum.all?(args, &elixir?/1)
   end
 
   def elixir?(%{type: :member_expression, object: object, property: property} = node),
@@ -222,9 +224,20 @@ defmodule PhoenixVapor.Renderer.Expr do
     |> IO.iodata_to_binary()
   end
 
+  # An optional chain, `a?.b.c`, is `undefined` as a whole once a link marked
+  # `?.` finds its object `null` or `undefined`.
+  defp eval_node(%{type: :chain_expression, expression: expression}, assigns) do
+    eval_node(expression, assigns)
+  catch
+    :short_circuit -> :undefined
+  end
+
   defp eval_node(%{type: :member_expression, object: obj, property: prop} = node, assigns) do
     object_val = eval_node(obj, assigns)
     computed = Map.get(node, :computed, false)
+
+    if Map.get(node, :optional, false) and object_val in [nil, :undefined],
+      do: throw(:short_circuit)
 
     if computed do
       key = eval_node(prop, assigns)
@@ -327,12 +340,27 @@ defmodule PhoenixVapor.Renderer.Expr do
     end
   end
 
-  # Literal types are strings, numbers and booleans; an assign may hold an
-  # atom for a string.
-  defp lookup_value(value) when is_atom(value) and not is_boolean(value) and value != nil,
-    do: Atom.to_string(value)
+  @doc """
+  A value as one of a literal type's, which a table computed at compile time
+  for each value is keyed by: strings, numbers, booleans and nil. An atom is
+  its string, as an assign may hold one for a string, a whole float is its
+  integer, and `undefined` is nil.
+  """
+  @spec literal(term()) :: term()
+  def literal(value) do
+    case Value.to_elixir(value) do
+      # A whole number is one number in JavaScript, `1.0 === 1`.
+      value when is_float(value) ->
+        whole = trunc(value)
+        if whole == value, do: whole, else: value
 
-  defp lookup_value(value), do: value
+      value when is_atom(value) and not is_boolean(value) and value != nil ->
+        Atom.to_string(value)
+
+      value ->
+        value
+    end
+  end
 
   defp get_assign(assigns, name) do
     case name do

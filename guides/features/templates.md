@@ -59,11 +59,11 @@ import Card from "@/ui/Card.vue"
 A component from a package, such as a [Reka UI](https://reka-ui.com) primitive, gets its markup from its JavaScript. In a hybrid component, when everything it receives is known at compile time, Vue's [server renderer](https://vuejs.org/guide/scaling-up/ssr.html) runs it once in QuickBEAM while the template compiles, and its HTML becomes part of the template. Rendering then runs no JavaScript.
 
 ```vue
-<script setup>
+<script setup lang="ts">
 import { ref } from "vue"
 import { TooltipProvider, TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui"
 
-const tab = ref("general")
+const tab = ref<"general" | "members">("general")
 </script>
 
 <template>
@@ -71,8 +71,10 @@ const tab = ref("general")
     <TabsRoot v-model="tab">
       <TabsList>
         <TabsTrigger value="general">General</TabsTrigger>
+        <TabsTrigger value="members">Members</TabsTrigger>
       </TabsList>
       <TabsContent value="general"><p>{{ project.name }}</p></TabsContent>
+      <TabsContent value="members"><p>{{ members.length }} members</p></TabsContent>
     </TabsRoot>
   </TooltipProvider>
 </template>
@@ -81,6 +83,28 @@ const tab = ref("general")
 `TooltipProvider` renders only its content, and the Tabs render with Reka's markup and ARIA attributes. Package components inside one another render together, so parts such as `TabsList` get their parent's context. The template's own content inside them, such as `{{ project.name }}`, stays dynamic. So does a `v-for` or `v-if` of the template's own: a package part inside it, such as a `TooltipRoot` per row, renders once in its ancestors' context, and the loop repeats that markup.
 
 This is for [hybrid mode](hybrid.md), where the server renders the first paint and Vue takes over in the browser. Known values are static props, literals, [macro](#macros) results, the initial values of refs, which the browser renders first too, and expressions of those, such as `:open="selected !== null"` while `selected` starts as `null`.
+
+#### Once for each value
+
+A prop that reads state, such as `v-model="tab"`, changes while the page runs, and a [session replay](hybrid.md#session-replay) renders the state it recorded. So a package component folds once for each value its props' expressions can take, as TypeScript types them, and rendering picks the markup for the values they have: the tabs above fold once with `General` active and once with `Members`, and a replay shows the tab the user was on. TypeScript comes from the project's `node_modules`, as for macros.
+
+| Prop | Its type | Folds |
+| --- | --- | --- |
+| `v-model="tab"` | `ref<"general" \| "members">("general")` | once per tab |
+| `:open="selected !== null"` | `boolean`, whatever `selected` holds | twice |
+| `v-model="notify"` | `ref(false)`, inferred as `boolean` | twice |
+| `v-model="query"` | `ref("")`, a `string` | once, with `""` |
+
+The expressions of the package components rendered together, such as a `DialogRoot` inside the tabs, combine, up to 64 combinations. A type that isn't a set of literal values, such as `string`, or more combinations than that, fold once with the initial values, as before, with a compile-time warning that names the expression and its type:
+
+```
+warning: <TabsRoot> folds with the initial value of `modelValue`: `query` is string; declare its type
+as a union of literals, such as ref<"a" | "b">(...), to fold it for each value
+```
+
+Type the ref as the values it takes, `ref<"general" | "members">("general")`, to fold it for each. A component of your own that passes its props or models to a package component, such as a `<Select v-model="role">` wrapping Reka's `SelectRoot`, folds once for each value of the expression its parent passes, so the parent's `ref<"owner" | "admin">` decides, though the component's own model is a `string`. A value outside the type, such as a ref set to `"billing"` when its type says `"general" | "members"`, or one a session replay recorded before the type changed, renders the initial values' markup, with a logged warning. A prop that reads state only the browser has, such as `useLocalStorage<"a" | "b">("tab", "a")`, folds for each value too, which a replay renders; the first render leaves the component to the browser, as it doesn't have the value. A whole float such as `1.0` matches the literal `1`, as in JavaScript.
+
+The markup is what Vue's server renderer gives for those values. Teleported content, such as an open dialog's inside `DialogPortal`, renders in place rather than at the end of `<body>`, which suits a fixed-position overlay. Reka's portals teleport only once mounted, which never happens on the server, so a component named `...Portal` that accepts `forceMount` folds with `forceMount: true`, unless the template sets it. What a component works out only in the browser isn't part of it, such as the label a `SelectValue` reads from items that register when they mount: it shows its placeholder, unless you give it the label as its content, `<SelectValue>{{ label }}</SelectValue>`.
 
 In other modes nothing takes over in the browser, so frozen markup from a component with behavior, such as tabs whose triggers never switch, would look interactive and do nothing. There, a package component renders only when it renders just its content, as a provider such as `TooltipProvider` does, and any other is a compile error.
 

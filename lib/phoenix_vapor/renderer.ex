@@ -3,6 +3,8 @@ defmodule PhoenixVapor.Renderer do
 
   # Renders templates as `%Phoenix.LiveView.Rendered{}` structs.
 
+  require Logger
+
   alias PhoenixVapor.{ExpressionError, Template}
   alias PhoenixVapor.Compiler.Split
   alias PhoenixVapor.Renderer.{Attrs, Expr, Names, Value}
@@ -81,8 +83,8 @@ defmodule PhoenixVapor.Renderer do
   @spec assign_keys(Template.t()) :: [String.t()]
   def assign_keys(%Template{} = template) do
     template
-    |> Template.exprs()
-    |> Enum.flat_map(fn {expr, _slot} -> Expr.assign_keys(expr) end)
+    |> exprs()
+    |> Enum.flat_map(&Expr.assign_keys/1)
     |> Enum.uniq()
   end
 
@@ -92,18 +94,23 @@ defmodule PhoenixVapor.Renderer do
   @spec reads(Template.t()) :: [String.t()]
   def reads(%Template{} = template) do
     template
-    |> Template.exprs()
+    |> exprs()
     |> Enum.flat_map(fn
-      {{tag, _source, node, _keys}, _slot} when tag in [:expr, :js] and is_map(node) ->
+      {tag, _source, node, _keys} when tag in [:expr, :js] and is_map(node) ->
         for name <- PhoenixVapor.JS.FreeNames.of(node, props: true) do
           with "props." <> prop <- name, do: prop
         end
 
-      {expr, _slot} ->
+      expr ->
         Expr.assign_keys(expr)
     end)
     |> Enum.uniq()
   end
+
+  # The template's expressions and those of the package components folded
+  # into it, whose markup depends on them.
+  defp exprs(template),
+    do: Enum.map(Template.exprs(template), &elem(&1, 0)) ++ Template.folded(template)
 
   # ── Slot evaluation ──
 
@@ -114,6 +121,29 @@ defmodule PhoenixVapor.Renderer do
   # content inside it.
   defp eval_slot(%{kind: :fragment, template: template}, assigns),
     do: render_block(template, assigns)
+
+  # One rendered at compile time for each value of the expressions its props
+  # read, looked up by their values. One that reads state this render doesn't
+  # have, such as a composable's value before the browser reports it, renders
+  # nothing, as a `v-if` on it does, and the browser renders it when it mounts.
+  # A value its type doesn't allow, such as a replay's from before the type
+  # changed, renders the initial values' variant, if the compile had them,
+  # with a warning.
+  defp eval_slot(%{kind: :fragments, inputs: inputs, table: table} = slot, assigns) do
+    if Enum.any?(inputs, &Expr.absent?(&1, assigns)) do
+      ""
+    else
+      values = Enum.map(inputs, &(&1 |> Expr.eval(assigns) |> Expr.literal()))
+
+      case Map.fetch(table, values) do
+        {:ok, template} ->
+          render_block(template, assigns)
+
+        :error ->
+          unknown_values(slot, values, assigns)
+      end
+    end
+  end
 
   defp eval_slot(%{kind: :html, value: value}, assigns),
     do: value |> Expr.eval(assigns) |> Value.display()
@@ -228,8 +258,9 @@ defmodule PhoenixVapor.Renderer do
   end
 
   # A component imported from a `.vue` file renders its compiled template with
-  # its declared props as assigns. Everything else it's passed falls through to
-  # its root element, and its slot content renders with the parent's assigns.
+  # its declared props as assigns, and its models by the names they're bound
+  # to. Everything else it's passed falls through to its root element, and its
+  # slot content renders with the parent's assigns.
   defp eval_slot(%{kind: :component, component: component} = slot, assigns) do
     {props, attrs} =
       slot.props
@@ -239,8 +270,10 @@ defmodule PhoenixVapor.Renderer do
     props = Map.new(props, fn {key, value} -> {Names.camelize(key), value} end)
     declared = Map.new(component.props, &{&1, Map.get(props, &1)})
 
+    models = for {binding, model} <- Map.get(component, :models, %{}), do: {binding, props[model]}
+
     child_assigns =
-      declared
+      (Enum.to_list(declared) ++ models)
       |> Enum.reduce(%{}, fn {name, value}, acc -> put_assign(acc, name, value) end)
       |> Map.put("props", declared)
       |> Map.put(:__vapor_attrs__, attrs ++ listeners(slot.events, component.events))
@@ -444,4 +477,31 @@ defmodule PhoenixVapor.Renderer do
   defp attribute_name(%{kind: :model, tag: "option"}), do: "selected"
   defp attribute_name(%{kind: :root_attrs}), do: ""
   defp attribute_name(_slot), do: nil
+
+  # A folded component's inputs have values its type doesn't allow.
+  defp unknown_values(%{inputs: inputs, table: table} = slot, values, assigns) do
+    warn_once({inputs, values}, fn ->
+      Enum.map_join(Enum.zip(inputs, values), ", ", fn {input, value} ->
+        "`#{elem(input, 1)}` is #{inspect(value)}"
+      end) <>
+        ", which its type doesn't allow; a folded package component renders " <>
+        if(slot[:initial], do: "its initial values instead", else: "nothing instead")
+    end)
+
+    case slot[:initial] do
+      nil -> ""
+      initial -> render_block(Map.fetch!(table, initial), assigns)
+    end
+  end
+
+  # Once per process for the same inputs and values, as a replay seeking
+  # through a session renders them at every step.
+  defp warn_once(key, message) do
+    key = {__MODULE__, :warned, :erlang.phash2(key)}
+
+    unless Process.get(key) do
+      Process.put(key, true)
+      Logger.warning(message.())
+    end
+  end
 end

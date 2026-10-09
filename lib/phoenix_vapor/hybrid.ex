@@ -15,7 +15,7 @@ defmodule PhoenixVapor.Hybrid do
   """
 
   alias PhoenixVapor.{Compiler, Renderer}
-  alias PhoenixVapor.Compiler.{PropTypes, ScriptSetup, SFC}
+  alias PhoenixVapor.Compiler.{ScriptSetup, SFC}
   alias PhoenixVapor.Hybrid.{Classifier, ClientCodegen, Computeds, ServerCodegen}
   alias PhoenixVapor.JS.Session
   alias PhoenixVapor.Renderer.{Expr, Names}
@@ -37,7 +37,7 @@ defmodule PhoenixVapor.Hybrid do
     # component's constants, and the computeds of only those, so they're
     # evaluated once here, and package components render with them.
     {split, component_files, values, constants, plan} =
-      Session.with_session(PropTypes.handlers(), fn session ->
+      Session.with_session(fn session ->
         runtime = Session.runtime(session)
         constants = constants(sfc.setup, runtime)
 
@@ -65,6 +65,7 @@ defmodule PhoenixVapor.Hybrid do
             module: caller.module,
             session: session,
             known: known,
+            constants: Enum.map(Map.keys(constants), &Atom.to_string/1),
             browser_only: Enum.map(plan.left_out, &elem(&1, 0))
           )
 

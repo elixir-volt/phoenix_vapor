@@ -4,14 +4,16 @@ import {
   SelectContent, SelectViewport, SelectItem, SelectItemText,
 } from "reka-ui"
 
-defineProps<{ options: { value: string; label: string }[]; placeholder?: string }>()
+// `label` is the selected option's, which SelectValue otherwise reads from the
+// items once they mount in the browser, so the server's render shows it too.
+defineProps<{ options: { value: string; label: string }[]; placeholder?: string; label?: string }>()
 const model = defineModel<string>()
 </script>
 
 <template>
   <SelectRoot v-model="model">
     <SelectTrigger class="inline-flex h-9 min-w-40 items-center justify-between gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm">
-      <SelectValue :placeholder="placeholder" />
+      <SelectValue :placeholder="placeholder">{{ label ?? placeholder }}</SelectValue>
       <SelectIcon class="text-zinc-400">▾</SelectIcon>
     </SelectTrigger>
     <SelectPortal>
