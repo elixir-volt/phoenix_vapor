@@ -133,6 +133,7 @@ defmodule PhoenixVapor.Renderer.Expr do
     :template_literal,
     :template_element,
     :member_expression,
+    :chain_expression,
     :conditional_expression,
     :logical_expression,
     :array_expression,
@@ -151,7 +152,7 @@ defmodule PhoenixVapor.Renderer.Expr do
 
   def elixir?(%{type: :property, computed: true}), do: false
 
-  def elixir?(%{type: :call_expression, callee: callee, arguments: args}) do
+  def elixir?(%{type: :call_expression, callee: callee, arguments: args} = node) do
     callable? =
       case callee do
         %{type: :member_expression, computed: false, object: object, property: %{name: method}} ->
@@ -167,7 +168,8 @@ defmodule PhoenixVapor.Renderer.Expr do
           false
       end
 
-    callable? and Enum.all?(args, &elixir?/1)
+    # An optional call, `f?.()`, is left to JavaScript.
+    callable? and not Map.get(node, :optional, false) and Enum.all?(args, &elixir?/1)
   end
 
   def elixir?(%{type: :member_expression, object: object, property: property} = node),
@@ -222,9 +224,20 @@ defmodule PhoenixVapor.Renderer.Expr do
     |> IO.iodata_to_binary()
   end
 
+  # An optional chain, `a?.b.c`, is `undefined` as a whole once a link marked
+  # `?.` finds its object `null` or `undefined`.
+  defp eval_node(%{type: :chain_expression, expression: expression}, assigns) do
+    eval_node(expression, assigns)
+  catch
+    :short_circuit -> :undefined
+  end
+
   defp eval_node(%{type: :member_expression, object: obj, property: prop} = node, assigns) do
     object_val = eval_node(obj, assigns)
     computed = Map.get(node, :computed, false)
+
+    if Map.get(node, :optional, false) and object_val in [nil, :undefined],
+      do: throw(:short_circuit)
 
     if computed do
       key = eval_node(prop, assigns)
