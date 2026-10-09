@@ -32,6 +32,8 @@ const roles = [
   { value: "member", label: "Member" },
 ]
 
+const roleLabels: Record<string, string> = Object.fromEntries(roles.map(r => [r.value, r.label]))
+
 const visibleMembers = computed(() =>
   roleFilter.value === "all" ? members.value : members.value.filter(m => m.role === roleFilter.value),
 )
@@ -96,7 +98,7 @@ def role_tone(_role), do: "neutral"
       <TabsContent value="members">
         <Card title="Members" :description="`${visibleMembers.length} of ${members.length} members`">
           <div class="mb-3 flex justify-end">
-            <Select v-model="roleFilter" :options="roles" placeholder="Filter by role" />
+            <Select v-model="roleFilter" :options="roles" :label="roleLabels[roleFilter]" placeholder="Filter by role" />
           </div>
           <ul class="divide-y divide-zinc-100">
             <li v-for="member in visibleMembers" :key="member.id" class="flex items-center justify-between py-2">

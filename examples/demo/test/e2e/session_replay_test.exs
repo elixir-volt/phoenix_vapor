@@ -49,7 +49,7 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     |> assert_frame(&(&1 =~ ~s(role="dialog") and &1 =~ "Delete contact?"))
   end
 
-  test "the replay of a recorded session on /settings follows the tab, the filter and the switches",
+  test "the replay of a recorded session on /settings follows the tab, the filter, the dialog and the switches",
        %{conn: conn, started: started} do
     VaporDemo.Projects.reset()
 
@@ -67,6 +67,11 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     |> click("[role=option]", "Admin")
     |> assert_has("p", text: "2 of 5 members")
     |> reported(~s(roleFilter "admin"))
+    |> click(~s[li:has-text("Bob Smith") button], "Remove")
+    |> assert_has("[role=dialog]", text: "Bob Smith will lose access")
+    |> reported("removeTarget %{")
+    |> click_button("Cancel")
+    |> reported("removeTarget nil")
     |> click("[role=tab]", "Notifications")
     |> reported(~s(tab "notifications"))
     |> click("#weekly-digest")
@@ -82,7 +87,12 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: tab "members"))}")
     |> assert_frame(&(active_tab?(&1, "members") and &1 =~ "5 of 5 members"))
     |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: roleFilter "admin"))}")
-    |> assert_frame(&(active_tab?(&1, "members") and &1 =~ "2 of 5 members"))
+    |> assert_frame(
+      &(active_tab?(&1, "members") and &1 =~ "2 of 5 members" and
+          &1 =~ ~r/role="combobox"[^>]*>(<span[^>]*>)?Admin</ and not (&1 =~ ~s(role="dialog")))
+    )
+    |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: removeTarget %{))}")
+    |> assert_frame(&(&1 =~ ~s(role="dialog") and &1 =~ "Bob Smith will lose access"))
     |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: weeklyDigest true))}")
     |> assert_frame(
       &(active_tab?(&1, "notifications") and
