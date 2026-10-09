@@ -1,8 +1,8 @@
 # PhoenixVapor demo
 
-A small workspace app built with [PhoenixVapor](../../README.md), plus a
-gallery of its rendering modes. Everything is in memory; restarting the
-server resets it.
+A small issue tracker built with [PhoenixVapor](../../README.md), in the
+spirit of Linear: two teams, their boards and issues, kept in memory.
+Restarting the server, or "Reset demo" in the sidebar, puts it back.
 
 ```sh
 mix setup
@@ -10,78 +10,79 @@ mix phx.server
 ```
 
 Then open [localhost:4000](http://localhost:4000). `mix setup` installs the
-npm packages from `package.json`, bundles Reka UI for the full runtime page,
-and builds the assets.
+npm packages from `package.json` and builds the assets.
 
-## The workspace
+## The x-ray
 
-Two hybrid `.vue` components: Vue runs them in the browser, and the server
-renders their first paint and owns their data.
+Press X, or the X-ray button in the sidebar, to outline every part of the
+page by how it renders, and click a part to read its source:
 
-- **Contacts** (`lib/vapor_demo_web/workspace/Contacts.vue`): search,
-  sorting, selection and copying an email happen in the browser, with
-  es-toolkit's `groupBy` and `sortBy` and VueUse's `refDebounced`,
-  `useLocalStorage`, `useClipboard` and `onKeyStroke` (press `/` to search).
-  Deleting goes through a `"use server"` function to `VaporDemo.Contacts`,
-  which broadcasts the new list to every open page. Its
-  `<script lang="elixir">` computes the list in Elixir, since the server
-  can't run the composables: the search is a ref, which every render has,
-  and the sort order lives in localStorage, so it's read as optional,
-  `assigns[:sortKey]`. The first paint sorts by name, and a session replay
-  shows the recorded search and order.
-- **Settings** (`lib/vapor_demo_web/workspace/ProjectSettings.vue`): Reka UI
-  tabs, a select, switches and a dialog, built from the small UI kit in
-  `assets/js/ui/`. Renaming the project and removing a member go through
-  `VaporDemo.Projects`.
-
-Open either page in two tabs to watch a change in one reach the other.
-
-## The modes
-
-| Page | Mode | Source, in `lib/vapor_demo_web/` |
+| Outline | How it renders | Where |
 | --- | --- | --- |
-| `/modes/sigil` | `~VUE` in a LiveView, in place of HEEx | `modes/sigil_live.ex` |
-| `/modes/server` | A server-only `.vue` file with props | `modes/Team.vue` |
-| `/modes/reactive` | A LiveView that is one `.vue` file, its state on the server | `modes/ReactiveCounter.vue` |
-| `/modes/hybrid` | Browser state, a server action | `modes/Tally.vue` |
-| `/modes/full` | Vue renders a component library on the server | `modes/Dialog.vue` |
-| `/modes/compare` | The same template in HEEx and `~VUE` | `modes/compare_live.ex` |
+| Blue | On the server, with no JavaScript: a `~VUE` template or a server-only `.vue` file | the sidebar, the activity rail |
+| Green | Hybrid: the server renders the first paint and owns the data; Vue runs it in the browser | the board, the issue page, the list |
+| Amber | Folded: a Reka UI component rendered while compiling, once for each value of what it reads | the filter and property menus, the ⌘K palette |
+| Violet | Reactive: the `.vue` file's refs and computeds run on the server, in QuickBEAM | the new issue form |
 
-## Layout
+## The pages
 
-```
-lib/vapor_demo/                 Contacts and Projects, in-memory contexts with PubSub
-lib/vapor_demo_web/workspace/   the app's pages
-lib/vapor_demo_web/modes/       the modes gallery
-assets/js/app.ts                the LiveSocket, with the hybrid components' hooks
-assets/js/ui/                   Button, Badge, Card, Select and Switch
-assets/js/bundles/              the Reka UI bundle the full runtime page renders with
-assets/js/hybrid/               generated when compiling: the hybrid components' browser halves
-```
+All of it is in `lib/vapor_demo_web/`, one folder per page with its LiveView
+and its `.vue` file.
+
+- **Board** (`board/Board.vue`, hybrid). The filters and the drag are the
+  browser's; a move goes through a `"use server"` function, and every open
+  board follows over PubSub. The filter menus are `ui/FilterMenu.vue`, Reka's
+  DropdownMenu: their model is a plain string, but the board passes refs typed
+  as their values, such as `ref<"all" | "urgent" | "high" | "medium" | "low">`,
+  so each menu folds once per value. A `<script lang="elixir">` computes the
+  columns for the server's render.
+- **Issue** (`issue/Issue.vue`, hybrid). The title and description are edited
+  in place and saved through the server; status, priority and assignee are
+  `ui/PropertyMenu.vue` menus; comments show at once. The branch name is a
+  computed with an Elixir counterpart.
+- **Issues and My issues** (`issues/Issues.vue`, hybrid). Grouped by status,
+  sorted with a folded menu, and a selection moved at once through one server
+  action.
+- **New issue** (`new_issue/NewIssue.vue`, Reactive mode). The form's state
+  and the branch preview are computed on the server as you type; the value-only
+  updates are written straight to the DOM. Creating the issue is the
+  LiveView's own Elixir.
+- **The ⌘K palette** (`palette/Palette.vue`, hybrid). A LiveView of its own,
+  which the root layout renders beside the page, so it stays across
+  navigation. Reka's Dialog folds open and closed.
+- **The sidebar** (`shell.ex`) is a `~VUE` function component, and the
+  **activity rail** (`activity/Activity.vue`) a server-only `.vue` file the
+  layout renders as a function component.
+
+The data is `VaporDemo.Tracker`, an Agent seeded by
+`VaporDemo.Tracker.Seed` that broadcasts every change. The shared components
+are in `assets/js/ui/`: status and priority icons, avatars, the menus, and a
+`Button` whose classes come from `variants.ts`, a tailwind-variants macro
+evaluated while compiling.
 
 ## Session replay
 
 Every page is recorded with [PhoenixReplay](https://hexdocs.pm/phoenix_replay):
 use the app, leave the page, and replay the session at
 [localhost:4000/dev/replay](http://localhost:4000/dev/replay), a development
-route. The setup is PhoenixReplay's own: `PhoenixReplay.Recorder` on the
-`:demo` live session in `router.ex`, the dashboard behind `:dev_routes`,
-`PhoenixReplay.Plug`, and `replayRecorder(liveSocket)` in `assets/js/app.ts`.
+route, or from "Replays" in the sidebar. The setup is PhoenixReplay's own:
+`PhoenixReplay.Recorder` on the live session in `router.ex`, the dashboard
+behind `:dev_routes`, `PhoenixReplay.Plug`, and `replayRecorder(liveSocket)`
+in `assets/js/app.ts`.
 
-The hybrid components need nothing more. While a session is recorded, each
-reports the client state its server render reads, and the replay renders with
-it, so on Contacts the replayed list follows the search, the sort order and
-the selection. What it doesn't carry:
+The hybrid pages need nothing more. While a session is recorded, each reports
+the client state its server render reads, and the replay renders with it: the
+board follows its filters, as the menus folded once per value show them.
 
-- The state of package components rendered while compiling, such as Reka's
-  dialog on Contacts and its tabs, select and switches on Settings: the replay
-  shows them as they start.
-- An optimistic change to a model the server then declined, such as a Tally
-  save below zero: the replay shows the server's value throughout, and the
-  flash that says so.
+The theme is the server's, as in PhoenixReplay's example app:
+`VaporDemoWeb.Theme` keeps it in a cookie, the session and a `@theme` assign,
+and the root layout renders it on `<html>`. The dashboard's `frame_layout` is
+that root layout, so the replay renders it again at each moment and shows the
+theme the session had then.
 
-PhoenixReplay records form controls that have an `id` on its own. The demo's
-inputs don't, as their values are refs a component already reports.
+Each LiveView is a recording of its own: going from the board to an issue
+starts another. PhoenixReplay ties a tab's recordings together, and the
+player's Visit tab links the one before and after.
 
 ## Tests
 
@@ -99,6 +100,6 @@ scripts with Volt's formatter, linter and type checker; `assets/js/vue.d.ts`
 tells TypeScript what importing a `.vue` file gives. `mix ci` runs everything
 CI does.
 
-The test environment sets `data-vapor-debug` on the body, so reactive mode
-counts the updates it writes straight to the DOM, and the tests check that it
-does.
+The test environment sets `data-vapor-debug` on the body, so Reactive mode
+counts the updates it writes straight to the DOM, and leaves out the web
+fonts, so a page's load doesn't wait on the network.

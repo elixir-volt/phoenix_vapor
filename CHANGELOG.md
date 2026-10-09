@@ -16,6 +16,8 @@
 
 ### Fixed
 
+- `patchLiveSocket` wrote a value into the wrong element when it followed a block in the same parent, such as a `<span>{{ n }}</span>` after a `v-if` that renders a `<span>`: the patcher placed slots by parsing the statics, where a block is only its marker. `data-vapor-keys` now marks blocks `false`; a slot after the last block in its parent is found counting from the end, and one between two blocks is left to LiveView.
+- Package components folded apart repeated element ids, such as two Reka menus' `reka-dropdown-menu-trigger-v-0`: each fold renders in an app of its own, whose ids started over. Each render now numbers its ids.
 - A ref read only by a folded package component's props, such as `tab` in `<TabsRoot v-model="tab">`, wasn't recorded for a session replay, nor did change tracking count it.
 - A component's `defineModel` binding read nothing on the server: a `<Switch v-model="on">` whose template passes its `checked` model to Reka's `SwitchRoot` left the switch out of the first paint, with a warning, until the browser mounted. A model is now a prop on the server, read by the name it's bound to.
 

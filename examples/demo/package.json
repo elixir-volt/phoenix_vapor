@@ -2,7 +2,6 @@
   "dependencies": {
     "@vueuse/core": "^14.3.0",
     "@vueuse/shared": "^14.3.0",
-    "es-toolkit": "^1.52.0",
     "reka-ui": "^2.9.2",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^3.1.1",

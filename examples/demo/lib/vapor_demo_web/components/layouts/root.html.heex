@@ -1,17 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme={assigns[:theme] || "dark"}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="PhoenixVapor demo" suffix=" · PhoenixVapor demo">
+    <.live_title default="Tracker" suffix=" · PhoenixVapor demo">
       {assigns[:page_title]}
     </.live_title>
+    <%!-- Geist, from Google Fonts; the tests, which shouldn't wait on the
+         network, use the system's fonts. --%>
+    <%= if Application.get_env(:vapor_demo, :web_fonts, true) do %>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+      />
+    <% end %>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="module" src={~p"/assets/js/app.js"}>
     </script>
   </head>
   <body data-vapor-debug={Application.get_env(:vapor_demo, :vapor_debug, false)}>
     {@inner_content}
+    <%!-- The ⌘K palette, a LiveView of its own beside the page's, which the
+         root layout renders once, so it lives on across navigation. A
+         session replay renders this layout without a request, and no palette. --%>
+    {if conn = assigns[:conn], do: live_render(conn, VaporDemoWeb.Palette.PaletteLive)}
   </body>
 </html>

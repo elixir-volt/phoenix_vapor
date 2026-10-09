@@ -11,9 +11,8 @@ defmodule VaporDemo.Application do
       VaporDemoWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:vapor_demo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: VaporDemo.PubSub},
-      # The workspace's data, in memory for the demo.
-      VaporDemo.Contacts,
-      VaporDemo.Projects,
+      # The tracker's data, in memory for the demo.
+      VaporDemo.Tracker,
       VaporDemoWeb.Endpoint
     ]
 

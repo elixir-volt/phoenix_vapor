@@ -52,7 +52,7 @@ Templates need nothing else. Hybrid mode and direct DOM patching need a few line
 
 ## Documentation
 
-Guides, a cheatsheet, and the API reference are on [HexDocs](https://hexdocs.pm/phoenix_vapor). [`examples/demo`](https://github.com/elixir-volt/phoenix_vapor/tree/master/examples/demo) is a Phoenix app using every mode.
+Guides, a cheatsheet, and the API reference are on [HexDocs](https://hexdocs.pm/phoenix_vapor). [`examples/demo`](https://github.com/elixir-volt/phoenix_vapor/tree/master/examples/demo) is a small issue tracker built with it; press X there to see how each part of a page renders.
 
 ## Part of Elixir Volt
 

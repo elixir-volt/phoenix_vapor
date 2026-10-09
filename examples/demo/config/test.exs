@@ -27,8 +27,9 @@ config :phoenix,
 
 config :phoenix_test, playwright: [assets_dir: "."]
 
-# Counts reactive patches in the browser, for the end-to-end tests.
-config :vapor_demo, vapor_debug: true
+# Counts reactive patches in the browser, for the end-to-end tests, and
+# leaves out the web fonts, so a page's load doesn't wait on the network.
+config :vapor_demo, vapor_debug: true, web_fonts: false
 
 # Session replay records nothing in tests but the replay test, which turns it
 # on, into tmp/.
