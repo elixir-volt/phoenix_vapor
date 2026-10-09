@@ -140,18 +140,7 @@ defmodule PhoenixVapor.Renderer do
           render_block(template, assigns)
 
         :error ->
-          Logger.warning(
-            Enum.map_join(Enum.zip(inputs, values), ", ", fn {input, value} ->
-              "`#{elem(input, 1)}` is #{inspect(value)}"
-            end) <>
-              ", which its type doesn't allow; a folded package component renders " <>
-              if(slot[:initial], do: "its initial values instead", else: "nothing instead")
-          )
-
-          case slot[:initial] do
-            nil -> ""
-            initial -> render_block(Map.fetch!(table, initial), assigns)
-          end
+          unknown_values(slot, values, assigns)
       end
     end
   end
@@ -488,4 +477,31 @@ defmodule PhoenixVapor.Renderer do
   defp attribute_name(%{kind: :model, tag: "option"}), do: "selected"
   defp attribute_name(%{kind: :root_attrs}), do: ""
   defp attribute_name(_slot), do: nil
+
+  # A folded component's inputs have values its type doesn't allow.
+  defp unknown_values(%{inputs: inputs, table: table} = slot, values, assigns) do
+    warn_once({inputs, values}, fn ->
+      Enum.map_join(Enum.zip(inputs, values), ", ", fn {input, value} ->
+        "`#{elem(input, 1)}` is #{inspect(value)}"
+      end) <>
+        ", which its type doesn't allow; a folded package component renders " <>
+        if(slot[:initial], do: "its initial values instead", else: "nothing instead")
+    end)
+
+    case slot[:initial] do
+      nil -> ""
+      initial -> render_block(Map.fetch!(table, initial), assigns)
+    end
+  end
+
+  # Once per process for the same inputs and values, as a replay seeking
+  # through a session renders them at every step.
+  defp warn_once(key, message) do
+    key = {__MODULE__, :warned, :erlang.phash2(key)}
+
+    unless Process.get(key) do
+      Process.put(key, true)
+      Logger.warning(message.())
+    end
+  end
 end

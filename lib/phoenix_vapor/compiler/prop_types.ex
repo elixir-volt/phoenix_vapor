@@ -11,9 +11,11 @@ defmodule PhoenixVapor.Compiler.PropTypes do
   # editors use it, and runs in a QuickBEAM runtime of its own, one per
   # TypeScript install, which compiles in the same VM share: loading it takes
   # over a second, a check a few milliseconds. It reads the project's files
-  # through `handlers/0`, and keeps those it parsed until they change.
+  # through `handlers/0`, and keeps those it parsed until they change. See
+  # `PropTypes.Runtime` for how long it lives.
 
   alias NPM.Resolution.PackageResolver
+  alias PhoenixVapor.Compiler.PropTypes.Runtime
 
   @doc "The QuickBEAM handlers TypeScript reads files through."
   @spec handlers() :: %{String.t() => ([term()] -> term())}
@@ -61,61 +63,13 @@ defmodule PhoenixVapor.Compiler.PropTypes do
 
   defp call(file, function, [script, names]) do
     with {:ok, main} <- typescript(file),
-         {:ok, runtime} <- runtime(main, file) do
+         {:ok, runtime} <- Runtime.fetch(main, &load(&1, main, file)) do
       args = [file <> ".ts", script, names, Path.dirname(main)]
 
       case QuickBEAM.call(runtime, function, args) do
         {:ok, values} -> {:ok, values}
         {:error, error} -> {:error, PhoenixVapor.JS.error_message(error)}
       end
-    end
-  end
-
-  # The runtime for a TypeScript install, started with it loaded the first
-  # time a compile asks, under a lock, so compiles in parallel start one. A
-  # process of its own holds it, as the compile that started it ends.
-  defp runtime(main, file) do
-    key = {__MODULE__, main}
-
-    case :persistent_term.get(key, nil) do
-      pid when is_pid(pid) ->
-        if Process.alive?(pid), do: {:ok, pid}, else: start(key, main, file)
-
-      nil ->
-        start(key, main, file)
-    end
-  end
-
-  defp start(key, main, file) do
-    :global.trans({key, self()}, fn ->
-      case :persistent_term.get(key, nil) do
-        pid when is_pid(pid) and node(pid) == node() ->
-          if Process.alive?(pid), do: {:ok, pid}, else: start_runtime(key, main, file)
-
-        _none ->
-          start_runtime(key, main, file)
-      end
-    end)
-  end
-
-  defp start_runtime(key, main, file) do
-    caller = self()
-    ref = make_ref()
-
-    spawn(fn ->
-      {:ok, runtime} = QuickBEAM.start(handlers: handlers())
-      send(caller, {ref, runtime, load(runtime, main, file)})
-      Process.sleep(:infinity)
-    end)
-
-    receive do
-      {^ref, runtime, :ok} ->
-        :persistent_term.put(key, runtime)
-        {:ok, runtime}
-
-      {^ref, runtime, {:error, reason}} ->
-        QuickBEAM.stop(runtime)
-        {:error, reason}
     end
   end
 

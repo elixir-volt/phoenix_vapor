@@ -197,6 +197,14 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
         end)
 
       assert log =~ ~s(`tab` is "billing", which its type doesn't allow)
+
+      # A replay renders it at every step; it's logged once.
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          replay(TabsLive, "FoldedTabs", %{name: "Ada"}, %{"tab" => "billing"})
+        end)
+
+      refute log =~ "billing"
     end
 
     test "of a whole float matches the integer it equals" do
