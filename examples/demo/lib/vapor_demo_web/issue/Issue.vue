@@ -4,6 +4,7 @@ import PropertyMenu from "@/ui/PropertyMenu.vue"
 import StatusIcon from "@/ui/StatusIcon.vue"
 import PriorityIcon from "@/ui/PriorityIcon.vue"
 import Avatar from "@/ui/Avatar.vue"
+import Button from "@/ui/Button.vue"
 
 type Person = { id: number; name: string; initials: string; color: string }
 type Issue = {
@@ -220,11 +221,7 @@ end
             ></textarea>
             <div class="flex items-center justify-between">
               <span class="text-xs text-faint">⌘↵ to send</span>
-              <button
-                type="submit"
-                :disabled="commentDraft.trim() === ''"
-                class="h-7 rounded-md border border-edge bg-raised px-3 text-[12.5px] text-fg hover:bg-hover disabled:opacity-40"
-              >Comment</button>
+              <Button type="submit" size="sm" :disabled="commentDraft.trim() === ''">Comment</Button>
             </div>
           </form>
         </div>

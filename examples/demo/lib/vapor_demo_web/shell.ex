@@ -15,6 +15,10 @@ defmodule VaporDemoWeb.Shell do
 
   alias VaporDemo.Tracker
 
+  # The palette, which the root layout renders beside the page, gets the
+  # live session's hooks too, but no shell.
+  def on_mount(:default, _params, _session, %{router: nil} = socket), do: {:cont, socket}
+
   def on_mount(:default, _params, _session, socket) do
     if connected?(socket), do: Tracker.subscribe()
 
@@ -25,8 +29,11 @@ defmodule VaporDemoWeb.Shell do
         {:cont, assign(socket, shell: shell(URI.parse(url).path))}
       end)
       |> attach_hook(:shell_changes, :handle_info, fn
-        :tracker_changed, socket -> {:cont, assign(socket, shell: shell(socket.assigns.shell.path))}
-        _message, socket -> {:cont, socket}
+        :tracker_changed, socket ->
+          {:cont, assign(socket, shell: shell(socket.assigns.shell.path))}
+
+        _message, socket ->
+          {:cont, socket}
       end)
       |> attach_hook(:shell_reset, :handle_event, fn
         "reset_demo", _params, socket ->

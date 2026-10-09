@@ -118,6 +118,8 @@ function edit() {
         <div class="flex flex-wrap items-center gap-3 border-t border-line pt-5">
           <span class="text-xs text-faint">Branch</span>
           <code class="font-mono text-xs text-link">{{ branch }}</code>
+          <!-- A plain button, not a component: its disabled state is then a
+               value the server writes straight to the DOM. -->
           <button
             type="submit"
             :disabled="!ready"

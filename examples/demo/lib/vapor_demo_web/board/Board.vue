@@ -178,6 +178,7 @@ end
         <div
           v-for="column in columns"
           :key="column.status"
+          :data-status="column.status"
           class="flex min-w-0 flex-col gap-2 rounded-lg p-1 transition-colors"
           :class="over === column.status ? 'bg-raised' : ''"
           @dragover.prevent="over = column.status"
@@ -192,6 +193,7 @@ end
           <article
             v-for="issue in column.issues"
             :key="issue.id"
+            :data-issue="issue.key"
             draggable="true"
             class="flex cursor-grab flex-col gap-2 rounded-[9px] border border-line bg-panel px-3 py-2.5 hover:border-edge active:cursor-grabbing"
             :class="dragging === issue.id ? 'opacity-40' : ''"

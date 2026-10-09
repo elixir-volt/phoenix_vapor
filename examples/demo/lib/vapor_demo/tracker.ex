@@ -41,7 +41,8 @@ defmodule VaporDemo.Tracker do
   end
 
   @doc "The issue with a key such as `ENG-142`, or nil."
-  def issue(key), do: Agent.get(__MODULE__, fn state -> Enum.find(state.issues, &(&1.key == key)) end)
+  def issue(key),
+    do: Agent.get(__MODULE__, fn state -> Enum.find(state.issues, &(&1.key == key)) end)
 
   @doc "An issue's comments, oldest first."
   def comments(issue_id) do
@@ -183,7 +184,8 @@ defmodule VaporDemo.Tracker do
   end
 
   defp log(state, person, what) do
-    entry = %{id: System.unique_integer([:positive]), person_id: person.id, what: what, at: now()}
+    id = state.activity |> Enum.map(& &1.id) |> Enum.max(fn -> 0 end)
+    entry = %{id: id + 1, person_id: person.id, what: what, at: now()}
     Map.update!(state, :activity, &Enum.take([entry | &1], 50))
   end
 

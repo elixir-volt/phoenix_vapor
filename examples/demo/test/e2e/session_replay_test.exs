@@ -9,7 +9,7 @@ defmodule VaporDemo.E2E.SessionReplayTest do
   @tag timeout: 60_000
 
   setup do
-    VaporDemo.Contacts.reset()
+    VaporDemo.Tracker.reset()
 
     # Recording is off in tests; this one records.
     previous = Application.get_env(:phoenix_replay, :sample_rate)
@@ -19,90 +19,47 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     %{started: DateTime.utc_now()}
   end
 
-  test "the replay of a recorded session shows the typed search and the delete dialog",
+  test "the replay of a board session follows its filter and its moves",
        %{conn: conn, started: started} do
     conn
-    |> visit("/contacts")
+    |> visit("/engineering/board")
     |> assert_has(".phx-connected")
     |> assert_has("[data-v-app]")
-    |> type(~s(input[aria-label="Search contacts"]), "acme")
-    |> assert_has("p", text: "3 of 12 contacts")
-    |> reported(VaporDemoWeb.Workspace.ContactsLive, ~s(search "acme"))
-    # The dialog is in a DialogPortal, which folds inline.
-    |> click(~s(button[aria-label="Delete Dave Wilson"]))
-    |> assert_has("[role=dialog]", text: "Delete contact?")
-    |> reported(VaporDemoWeb.Workspace.ContactsLive, "deleteTarget %{")
-    |> click_button("Cancel")
+    # The filter is the browser's; each step waits for its report.
+    |> click("button", "Priority:")
+    |> click("[role=menuitemradio]", "Urgent")
+    |> assert_has("button", text: "Priority: Urgent")
+    |> reported(~s(pv-Board: priority "urgent"))
+    |> click("button", "Priority:")
+    |> click("[role=menuitemradio]", "All")
+    |> reported(~s(pv-Board: priority "all"))
+    # A move is the server's.
+    |> drag(~s([data-issue="ENG-151"]), to: ~s([data-status="todo"]))
+    |> assert_has(~s([data-status="todo"] [data-issue="ENG-151"]))
     # Leaving the page ends the recorded session, which is then saved.
-    |> click_link("nav a", "Settings")
-    |> assert_path("/settings")
+    |> click_link("nav[aria-label=Engineering] a", "Issues")
+    |> assert_path("/engineering/issues")
 
-    id = saved_recording(VaporDemoWeb.Workspace.ContactsLive, started)
-    index = event(id, ~s(phoenix_vapor:pv-Contacts: search "acme"))
+    id = saved_recording(VaporDemoWeb.Board.BoardLive, started)
+    key = "phoenix_vapor:pv-Board"
 
     conn
-    |> visit("/dev/replay/#{id}?at=#{index}")
+    |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: priority "urgent"))}")
     |> assert_frame(fn page ->
-      page =~ "3 of 12 contacts" and page =~ ~s(value="acme") and not (page =~ ~s(role="dialog"))
+      page =~ ~r/Priority: <span[^>]*>Urgent</ and page =~ ~s(data-issue="ENG-142") and
+        not (page =~ ~s(data-issue="ENG-151"))
     end)
-    |> visit("/dev/replay/#{id}?at=#{event(id, "deleteTarget %{")}")
-    |> assert_frame(&(&1 =~ ~s(role="dialog") and &1 =~ "Delete contact?"))
-  end
-
-  test "the replay of a recorded session on /settings follows the tab, the filter, the dialog and the switches",
-       %{conn: conn, started: started} do
-    VaporDemo.Projects.reset()
-
-    conn
-    |> visit("/settings")
-    |> assert_has(".phx-connected")
-    |> assert_has("[data-v-app]")
-    # Reka's tabs are role=tab, and switch on pointer down.
-    # Changes within a second are reported together; each step waits for its
-    # own report.
-    |> click("[role=tab]", "Members")
-    |> assert_has("p", text: "5 of 5 members")
-    |> reported(~s(tab "members"))
-    |> click("[role=combobox]")
-    |> click("[role=option]", "Admin")
-    |> assert_has("p", text: "2 of 5 members")
-    |> reported(~s(roleFilter "admin"))
-    |> click(~s[li:has-text("Bob Smith") button], "Remove")
-    |> assert_has("[role=dialog]", text: "Bob Smith will lose access")
-    |> reported("removeTarget %{")
-    |> click_button("Cancel")
-    |> reported("removeTarget nil")
-    |> click("[role=tab]", "Notifications")
-    |> reported(~s(tab "notifications"))
-    |> click("#weekly-digest")
-    |> assert_has(~s(#weekly-digest[aria-checked="true"]))
-    |> reported("weeklyDigest true")
-    |> click_link("nav a", "Contacts")
-    |> assert_path("/contacts")
-
-    id = saved_recording(VaporDemoWeb.Workspace.SettingsLive, started)
-    key = "phoenix_vapor:pv-ProjectSettings"
-
-    conn
-    |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: tab "members"))}")
-    |> assert_frame(&(active_tab?(&1, "members") and &1 =~ "5 of 5 members"))
-    |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: roleFilter "admin"))}")
-    |> assert_frame(
-      &(active_tab?(&1, "members") and &1 =~ "2 of 5 members" and
-          &1 =~ ~r/role="combobox"[^>]*>(<span[^>]*>)?Admin</ and not (&1 =~ ~s(role="dialog")))
+    # The move's new issues are an assign recorded after it.
+    |> visit(
+      "/dev/replay/#{id}?at=#{event(id, "assigns activity, issues", event(id, "moveIssue"))}"
     )
-    |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: removeTarget %{))}")
-    |> assert_frame(&(&1 =~ ~s(role="dialog") and &1 =~ "Bob Smith will lose access"))
-    |> visit("/dev/replay/#{id}?at=#{event(id, ~s(#{key}: weeklyDigest true))}")
     |> assert_frame(
-      &(active_tab?(&1, "notifications") and
-          &1 =~ ~r/<button[^>]*id="weekly-digest"[^>]*aria-checked="true"/ and
-          &1 =~ ~r/<button[^>]*id="email-alerts"[^>]*aria-checked="true"/)
+      &(&1 =~ ~r/data-status="todo".*data-issue="ENG-151".*data-status="in_progress"/s)
     )
   end
 
   # Waits for the view's running recording to have the client state report.
-  defp reported(conn, view \\ VaporDemoWeb.Workspace.SettingsLive, label, attempts \\ 50) do
+  defp reported(conn, view \\ VaporDemoWeb.Board.BoardLive, label, attempts \\ 50) do
     labels =
       for %{id: id} <- Trace.find(view: view, live: true),
           event <- Trace.events(id),
@@ -115,13 +72,10 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     end
   end
 
-  # The folded tabs mark the active trigger.
-  defp active_tab?(page, tab),
-    do: page =~ ~r/<button[^>]*id="reka-tabs-[^"]*-trigger-#{tab}"[^>]*aria-selected="true"/
-
-  # The index of the first recorded event whose label has `label`.
-  defp event(id, label) do
-    case Enum.find(Trace.events(id), &(&1.label =~ label)) do
+  # The index of the first recorded event whose label has `label`, after
+  # the event at `after_index`.
+  defp event(id, label, after_index \\ -1) do
+    case Enum.find(Trace.events(id), &(&1.index > after_index and &1.label =~ label)) do
       %{index: index} ->
         index
 

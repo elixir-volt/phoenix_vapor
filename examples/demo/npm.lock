@@ -360,14 +360,6 @@
       "tarball": "https://registry.npmjs.org/entities/-/entities-7.0.1.tgz",
       "version": "7.0.1"
     },
-    "es-toolkit": {
-      "dependencies": {},
-      "has_install_script": false,
-      "integrity": "sha512-XTNEJQh1tY1ZJVcf6ayP/2n4ZPyaHlW2FWs7xvw5ddPuhUVjLD3olQVQS7kf58JbAB48iL0uL/jerTrjtV3lDA==",
-      "optional_dependencies": {},
-      "tarball": "https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.52.0.tgz",
-      "version": "1.52.0"
-    },
     "estree-walker": {
       "dependencies": {},
       "has_install_script": false,

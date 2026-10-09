@@ -145,6 +145,7 @@ end
           <li
             v-for="issue in group.issues"
             :key="issue.id"
+            :data-issue="issue.key"
             class="group flex h-10 items-center gap-3 border-b border-line px-5 hover:bg-panel"
             :class="selected.includes(issue.id) ? 'bg-accent-soft hover:bg-accent-soft' : ''"
           >

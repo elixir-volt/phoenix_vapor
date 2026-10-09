@@ -65,7 +65,10 @@ defmodule VaporDemoWeb.Issues.IssuesLive do
 
   defp issues(nil) do
     me = Tracker.me()
-    Tracker.teams() |> Enum.flat_map(&Tracker.issues(&1.key)) |> Enum.filter(&(&1.assignee_id == me.id))
+
+    Tracker.teams()
+    |> Enum.flat_map(&Tracker.issues(&1.key))
+    |> Enum.filter(&(&1.assignee_id == me.id))
   end
 
   defp issues(team), do: Tracker.issues(team)
