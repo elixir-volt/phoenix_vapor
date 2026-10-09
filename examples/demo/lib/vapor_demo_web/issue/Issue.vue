@@ -167,6 +167,7 @@ end
       <section
         data-render="hybrid"
         data-render-label="hybrid · edits in the browser, saved by the server"
+        data-render-source="lib/vapor_demo_web/issue/Issue.vue"
         class="min-w-0 flex-[999_1_480px]"
       >
         <div class="mx-auto flex max-w-3xl flex-col gap-4 px-6 py-8 md:px-12">
@@ -233,6 +234,7 @@ end
         aria-label="Properties"
         data-render="folded"
         data-render-label="folded · Reka menus"
+        data-render-source="assets/js/ui/PropertyMenu.vue"
         class="flex flex-[1_1_260px] flex-col gap-0.5 border-l border-line px-3 py-5 md:max-w-72"
       >
         <span class="px-2 pb-2 text-xs text-faint">Properties</span>

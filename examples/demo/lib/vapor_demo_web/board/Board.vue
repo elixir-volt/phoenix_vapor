@@ -139,7 +139,8 @@ end
       <div
         data-render="folded"
         data-render-label="folded · Reka menus"
-        data-render-tag="below"
+        data-render-source="assets/js/ui/FilterMenu.vue"
+        data-render-tag="beside"
         class="ml-2 flex flex-wrap gap-1.5 p-1"
       >
         <FilterMenu v-model="assignee" label="Assignee" :options="assigneeOptions" :current="assigneeLabels[assignee]" />
@@ -170,6 +171,7 @@ end
     <section
       data-render="hybrid"
       data-render-label="hybrid · Vue in the browser"
+      data-render-source="lib/vapor_demo_web/board/Board.vue"
       class="min-h-0 flex-1 overflow-x-auto px-5 pb-8 pt-4"
     >
       <div class="grid min-w-[880px] grid-cols-5 gap-3">

@@ -114,7 +114,7 @@ end
         </template>
         <span class="font-medium">{{ heading }}</span>
       </div>
-      <div data-render="folded" data-render-label="folded · Reka menu" data-render-tag="below" class="ml-2 p-1">
+      <div data-render="folded" data-render-label="folded · Reka menu" data-render-source="assets/js/ui/FilterMenu.vue" data-render-tag="beside" class="ml-2 p-1">
         <FilterMenu v-model="sort" label="Sort" :options="sortOptions" :current="sortLabels[sort]" />
       </div>
       <nav v-if="parent" aria-label="View" class="ml-auto flex overflow-hidden rounded-md border border-edge">
@@ -131,6 +131,7 @@ end
     <section
       data-render="hybrid"
       data-render-label="hybrid · Vue in the browser"
+      data-render-source="lib/vapor_demo_web/issues/Issues.vue"
       class="min-h-0 flex-1 pb-20"
     >
       <p v-if="issues.length === 0" class="px-6 py-16 text-center text-faint">Nothing here.</p>

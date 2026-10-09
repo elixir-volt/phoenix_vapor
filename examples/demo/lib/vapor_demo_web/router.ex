@@ -18,6 +18,8 @@ defmodule VaporDemoWeb.Router do
     pipe_through :browser
 
     get "/", Redirect, to: "/engineering/board"
+    # The x-ray's source view: the demo's own files, and nothing else.
+    get "/source/*path", Sources, []
 
     # Every page is recorded for session replay; see /dev/replay.
     live_session :tracker, on_mount: [PhoenixReplay.Recorder, VaporDemoWeb.Shell] do

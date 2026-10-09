@@ -83,6 +83,8 @@ defmodule VaporDemoWeb.Shell do
     <aside
       data-render="server"
       data-render-label="~VUE sigil · server"
+      data-render-source="lib/vapor_demo_web/shell.ex"
+      data-render-tag="middle"
       class="sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-5 border-r border-line px-2.5 py-3.5 max-md:hidden"
     >
       <div class="flex items-center gap-2.5 px-1.5 py-1">

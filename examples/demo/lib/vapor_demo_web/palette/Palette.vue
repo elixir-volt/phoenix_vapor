@@ -106,6 +106,7 @@ end
       <DialogContent
         data-render="folded"
         data-render-label="folded · Reka Dialog, open and closed"
+        data-render-source="lib/vapor_demo_web/palette/Palette.vue"
         class="fixed left-1/2 top-[14vh] z-50 w-[560px] max-w-[calc(100vw-32px)] -translate-x-1/2 overflow-hidden rounded-xl border border-edge bg-panel text-[13px] text-fg shadow-2xl shadow-black/60 outline-none"
         @keydown.down.prevent="move(1)"
         @keydown.up.prevent="move(-1)"

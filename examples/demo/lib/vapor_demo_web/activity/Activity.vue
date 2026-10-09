@@ -12,6 +12,7 @@ defineProps<{
     aria-label="Activity"
     data-render="server"
     data-render-label="server-only .vue"
+    data-render-source="lib/vapor_demo_web/activity/Activity.vue"
     class="sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-3.5 overflow-y-auto border-l border-line px-4 py-4 max-xl:hidden"
   >
     <div class="flex items-center gap-2">

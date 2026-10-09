@@ -46,6 +46,7 @@ function edit() {
     <section
       data-render="reactive"
       data-render-label="reactive · Vue's reactivity on the server"
+      data-render-source="lib/vapor_demo_web/new_issue/NewIssue.vue"
       class="flex-1"
     >
       <form phx-change="edit" phx-submit="create" class="mx-auto flex max-w-2xl flex-col gap-5 px-6 py-10">

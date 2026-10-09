@@ -81,14 +81,14 @@ html {
 @layer base {
   [data-render] { position: relative }
 }
-.xray-on, [data-xray] .xray-off { display: none }
+.xray-on, [data-xray] .xray-off, .xray-legend { display: none }
+[data-xray] .xray-legend { display: flex }
+[data-xray] [data-render] { cursor: help }
 [data-xray] .xray-on { display: inline }
 [data-render="server"] { --xray: #4c9bff }
 [data-render="hybrid"] { --xray: #3dd68c }
 [data-render="folded"] { --xray: #f5a524 }
 [data-render="reactive"] { --xray: #b48cff }
-/* A region too short for a tag inside gets it just below. */
-[data-xray] [data-render-tag="below"]::after { bottom: auto; top: calc(100% + 2px); right: auto; left: 4px }
 
 [data-xray] [data-render]::before {
   content: "";
@@ -115,3 +115,8 @@ html {
   font: 500 11px/1.3 var(--font-mono);
   white-space: nowrap;
 }
+
+/* A region too short for a tag inside gets it beside, and a tall narrow
+   one halfway down, clear of its footer. */
+[data-xray] [data-render-tag="beside"]::after { bottom: auto; top: 50%; right: auto; left: calc(100% + 8px); translate: 0 -50% }
+[data-xray] [data-render-tag="middle"]::after { bottom: auto; top: 50% }
