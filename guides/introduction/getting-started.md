@@ -68,4 +68,4 @@ config :phoenix_vapor, pool: MyApp.JSPool
 
 ## Example app
 
-[`examples/demo`](https://github.com/elixir-volt/phoenix_vapor/tree/master/examples/demo) is a Phoenix app with every mode, including hybrid components built with Reka UI.
+[`examples/demo`](https://github.com/elixir-volt/phoenix_vapor/tree/master/examples/demo) is a small issue tracker built with PhoenixVapor: a `~VUE` shell, server-only `.vue` components, a Reactive-mode form, and hybrid pages with Reka UI menus and dialogs folded at compile time. Its x-ray, the X key, outlines how each part of a page renders.
