@@ -476,7 +476,12 @@ defmodule PhoenixVapor.Renderer do
   defp attribute_name(%{kind: :model, tag: "input"}), do: "value"
   defp attribute_name(%{kind: :model, tag: "option"}), do: "selected"
   defp attribute_name(%{kind: :root_attrs}), do: ""
-  defp attribute_name(_slot), do: nil
+  defp attribute_name(%{kind: :text}), do: nil
+
+  # A block, such as a `v-if` branch or a component, renders elements of its
+  # own, as many as its content has: the browser can't tell where what
+  # follows it ends up.
+  defp attribute_name(_block), do: false
 
   # A folded component's inputs have values its type doesn't allow.
   defp unknown_values(%{inputs: inputs, table: table} = slot, values, assigns) do

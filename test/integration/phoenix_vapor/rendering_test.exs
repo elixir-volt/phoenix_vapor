@@ -982,6 +982,16 @@ defmodule PhoenixVapor.Integration.RenderingTest do
       assert keys |> String.replace("&quot;", "\"") |> Jason.decode!() == ["", nil]
     end
 
+    test "keys a block, which renders elements of its own, false" do
+      html =
+        ~s(<div><span v-if="long">Too long</span><span v-else>Fine</span><span>{{ n }}</span></div>)
+        |> with_metadata(%{long: false, n: 3})
+        |> render_to_html()
+
+      assert [_, keys] = Regex.run(~r/data-vapor-keys="([^"]*)"/, html)
+      assert keys |> String.replace("&quot;", "\"") |> Jason.decode!() == ["", false, nil]
+    end
+
     test "not injected by default" do
       ir = Vize.split_template!("<div>{{ msg }}</div>")
       rendered = PhoenixVapor.Renderer.to_rendered(ir, %{msg: "hello"})

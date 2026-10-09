@@ -214,7 +214,7 @@ function onlyRegisteredSlots(diff: Diff, registry: Registry) {
 function buildRegistry(el: HTMLElement) {
   try {
     const statics = JSON.parse(el.dataset.vaporStatics!) as string[]
-    const keys = JSON.parse(el.dataset.vaporKeys ?? "[]") as (string | null)[]
+    const keys = JSON.parse(el.dataset.vaporKeys ?? "[]") as (string | null | false)[]
     registries.set(el, resolveRegistry(analyzeStatics(statics, keys), el))
   } catch (error) {
     console.warn("[PhoenixVapor] Registry build failed:", error)

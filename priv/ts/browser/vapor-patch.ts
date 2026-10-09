@@ -83,7 +83,10 @@ function textIndex(node: Text): number {
  * `data-vapor-keys`; the slot is the whole attribute, so its marker parses as
  * an attribute name.
  */
-export function analyzeStatics(statics: string[], keys: (string | null)[] = []): SlotDescriptor[] {
+export function analyzeStatics(
+  statics: string[],
+  keys: (string | null | false)[] = []
+): SlotDescriptor[] {
   if (statics.length <= 1) return []
 
   const template = document.createElement("template")
@@ -91,7 +94,7 @@ export function analyzeStatics(statics: string[], keys: (string | null)[] = []):
     .map((part, i) => {
       if (i === statics.length - 1) return part
       // A slot with a key, even "", is in a tag: an attribute, or attributes.
-      return keys[i] == null ? part + marker(i) : `${part} ${marker(i)}`
+      return typeof keys[i] === "string" ? `${part} ${marker(i)}` : part + marker(i)
     })
     .join("")
 
@@ -103,7 +106,14 @@ export function analyzeStatics(statics: string[], keys: (string | null)[] = []):
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT)
 
+  // A block slot (keyed `false`), such as a `v-if` branch, parses here as
+  // its marker's text but renders elements: past it, its parent's children
+  // aren't where they parse, so the slots there are left to LiveView.
+  const shifted: Element[] = []
+
   for (let node: Node | null = root; node; node = walker.nextNode()) {
+    if (shifted.some((parent) => parent.contains(node))) continue
+
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node as Text
       const parentPath = elementPath(text.parentElement!, root)
@@ -112,6 +122,11 @@ export function analyzeStatics(statics: string[], keys: (string | null)[] = []):
       // A text node can mix static text and several slots, such as
       // `Doubled: {{ n }} · {{ label }}`; each slot rewrites the whole node.
       const parts = textParts(text.data)
+      if (parts.some((part) => typeof part === "number" && keys[part] === false)) {
+        shifted.push(text.parentElement!)
+        continue
+      }
+
       for (const part of parts) {
         if (typeof part === "number") {
           slots[part] = { type: "text", parentPath, textIndex: textIndex(text), parts }
