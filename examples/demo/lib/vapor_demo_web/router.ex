@@ -12,6 +12,8 @@ defmodule VaporDemoWeb.Router do
     plug :put_secure_browser_headers
     # Where a visit came from, for the recordings.
     plug PhoenixReplay.Plug
+    # The visitor's theme, in the session, so recordings carry it.
+    plug VaporDemoWeb.Theme
   end
 
   scope "/", VaporDemoWeb do
@@ -22,7 +24,8 @@ defmodule VaporDemoWeb.Router do
     get "/source/*path", Sources, []
 
     # Every page is recorded for session replay; see /dev/replay.
-    live_session :tracker, on_mount: [PhoenixReplay.Recorder, VaporDemoWeb.Shell] do
+    live_session :tracker,
+      on_mount: [PhoenixReplay.Recorder, VaporDemoWeb.Theme, VaporDemoWeb.Shell] do
       live "/:team/board", Board.BoardLive
       live "/:team/issues", Issues.IssuesLive, :team
       live "/my-issues", Issues.IssuesLive, :mine
@@ -37,7 +40,9 @@ defmodule VaporDemoWeb.Router do
     scope "/dev" do
       pipe_through :browser
 
-      phoenix_replay "/replay"
+      # The replay renders the root layout again at each moment, so <html>
+      # takes the theme the session had, and the page its Volt-built assets.
+      phoenix_replay "/replay", frame_layout: {VaporDemoWeb.Layouts, :root}
     end
   end
 end

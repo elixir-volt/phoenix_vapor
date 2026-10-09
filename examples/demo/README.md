@@ -74,6 +74,16 @@ The hybrid pages need nothing more. While a session is recorded, each reports
 the client state its server render reads, and the replay renders with it: the
 board follows its filters, as the menus folded once per value show them.
 
+The theme is the server's, as in PhoenixReplay's example app:
+`VaporDemoWeb.Theme` keeps it in a cookie, the session and a `@theme` assign,
+and the root layout renders it on `<html>`. The dashboard's `frame_layout` is
+that root layout, so the replay renders it again at each moment and shows the
+theme the session had then.
+
+Each LiveView is a recording of its own: going from the board to an issue
+starts another. PhoenixReplay ties a tab's recordings together, and the
+player's Visit tab links the one before and after.
+
 ## Tests
 
 The tests drive a real browser with Playwright, which `package.json`

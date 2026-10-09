@@ -1,7 +1,8 @@
 // The shell's switches, which belong to the page rather than to LiveView:
-// the x-ray, on <html> so it survives navigation, and the theme, kept in
-// localStorage and applied before paint by the root layout. While the x-ray
-// is on, a click on a region shows its source instead of doing what it does.
+// the x-ray, on <html> so it survives navigation; while it's on, a click on a
+// region shows its source instead of doing what it does. The theme is the
+// server's (VaporDemoWeb.Theme); this applies a change at once and keeps it
+// in the cookie for the next page load.
 
 function typing(target: EventTarget | null): boolean {
   return (
@@ -19,18 +20,6 @@ function toggleXray() {
   if (xrayOn()) root.removeAttribute("data-xray")
   else root.setAttribute("data-xray", "")
   if (!xrayOn()) closeSource()
-}
-
-function toggleTheme() {
-  const root = document.documentElement
-  const light = root.dataset.theme !== "light"
-  if (light) root.dataset.theme = "light"
-  else delete root.dataset.theme
-  try {
-    localStorage.setItem("theme", light ? "light" : "dark")
-  } catch {
-    // Private windows may refuse storage; the theme then lasts for the page.
-  }
 }
 
 function sourcePanel() {
@@ -57,6 +46,12 @@ function closeSource() {
 }
 
 export function installShell() {
+  window.addEventListener("phx:theme", (event) => {
+    const { theme } = (event as CustomEvent<{ theme: string }>).detail
+    document.documentElement.dataset.theme = theme
+    document.cookie = `theme=${theme}; path=/; max-age=31536000; samesite=lax`
+  })
+
   // Capturing, so an x-rayed region's own handlers don't run.
   document.addEventListener(
     "click",
@@ -77,7 +72,6 @@ export function installShell() {
   document.addEventListener("click", (event) => {
     const action = (event.target as Element | null)?.closest<HTMLElement>("[data-action]")?.dataset.action
     if (action === "xray") toggleXray()
-    if (action === "theme") toggleTheme()
     if (action === "close-source") closeSource()
     // The palette is a hybrid component of its own; it listens for this.
     if (action === "palette") window.dispatchEvent(new Event("palette:open"))

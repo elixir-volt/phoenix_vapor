@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme={assigns[:theme] || "dark"}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,10 +7,6 @@
     <.live_title default="Tracker" suffix=" · PhoenixVapor demo">
       {assigns[:page_title]}
     </.live_title>
-    <%!-- The theme the visitor picked, before anything paints. --%>
-    <script>
-      try { if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light" } catch {}
-    </script>
     <%!-- Geist, from Google Fonts; the tests, which shouldn't wait on the
          network, use the system's fonts. --%>
     <%= if Application.get_env(:vapor_demo, :web_fonts, true) do %>

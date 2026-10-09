@@ -36,6 +36,9 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     # A move is the server's.
     |> drag(~s([data-issue="ENG-151"]), to: ~s([data-status="todo"]))
     |> assert_has(~s([data-status="todo"] [data-issue="ENG-151"]))
+    # The theme is the server's, an assign, so the recording carries it.
+    |> click_button("Light theme")
+    |> assert_has("html[data-theme=light]")
     # Leaving the page ends the recorded session, which is then saved.
     |> click_link("nav[aria-label=Engineering] a", "Issues")
     |> assert_path("/engineering/issues")
@@ -56,6 +59,9 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     |> assert_frame(
       &(&1 =~ ~r/data-status="todo".*data-issue="ENG-151".*data-status="in_progress"/s)
     )
+    |> assert_frame_theme("dark")
+    |> visit("/dev/replay/#{id}?at=#{event(id, "assigns theme", event(id, "theme=light"))}")
+    |> assert_frame_theme("light")
   end
 
   # Waits for the view's running recording to have the client state report.
@@ -69,6 +75,26 @@ defmodule VaporDemo.E2E.SessionReplayTest do
       Enum.any?(labels, &(&1 =~ label)) -> conn
       attempts > 0 -> Process.sleep(100) && reported(conn, view, label, attempts - 1)
       true -> flunk("no report of #{label} in #{inspect(labels)}")
+    end
+  end
+
+  # The replayed page's <html> takes the theme the session had then.
+  defp assert_frame_theme(conn, theme, attempts \\ 50) do
+    evaluate(
+      conn,
+      ~s|document.querySelector("iframe")?.contentDocument?.documentElement?.dataset.theme ?? ""|,
+      &send(self(), {:theme, &1})
+    )
+
+    receive do
+      {:theme, ^theme} ->
+        conn
+
+      {:theme, _other} when attempts > 0 ->
+        Process.sleep(200) && assert_frame_theme(conn, theme, attempts - 1)
+
+      {:theme, other} ->
+        flunk("The replayed page's theme was #{inspect(other)}, not #{inspect(theme)}")
     end
   end
 

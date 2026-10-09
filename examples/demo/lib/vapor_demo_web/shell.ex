@@ -83,6 +83,7 @@ defmodule VaporDemoWeb.Shell do
 
   @doc "The sidebar: the workspace, search, navigation and the demo's switches."
   attr :shell, :map, required: true
+  attr :theme, :string, required: true
   attr :dev, :boolean, default: false
 
   def sidebar(assigns) do
@@ -156,7 +157,12 @@ defmodule VaporDemoWeb.Shell do
           <kbd class="rounded border border-edge px-1 font-mono text-[11px] text-faint">X</kbd>
         </button>
         <div class="flex items-center gap-1 px-1 text-[11.5px] text-faint">
-          <button type="button" data-action="theme" class="rounded px-1.5 py-1 hover:bg-raised hover:text-fg-2">Theme</button>
+          <button
+            type="button"
+            phx-click="theme"
+            :phx-value-theme="theme === 'dark' ? 'light' : 'dark'"
+            class="rounded px-1.5 py-1 hover:bg-raised hover:text-fg-2"
+          >{{ theme === 'dark' ? 'Light theme' : 'Dark theme' }}</button>
           <button type="button" phx-click="reset_demo" class="rounded px-1.5 py-1 hover:bg-raised hover:text-fg-2">Reset demo</button>
           <a v-if="dev" href="/dev/replay" target="_blank" class="ml-auto rounded px-1.5 py-1 text-link hover:bg-raised">Replays</a>
         </div>

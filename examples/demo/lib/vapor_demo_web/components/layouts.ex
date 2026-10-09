@@ -72,7 +72,7 @@ defmodule VaporDemoWeb.Layouts do
 
     ~H"""
     <div class="flex min-h-screen bg-bg font-sans text-[13px] leading-[1.45] text-fg">
-      <VaporDemoWeb.Shell.sidebar shell={@shell} dev={@dev} />
+      <VaporDemoWeb.Shell.sidebar shell={@shell} theme={@theme} dev={@dev} />
 
       <main class="flex min-w-0 flex-1 flex-col">
         {@inner_content}
