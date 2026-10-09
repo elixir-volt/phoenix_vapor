@@ -330,11 +330,17 @@ defmodule PhoenixVapor.Renderer.Expr do
   @doc """
   A value as one of a literal type's, which a table computed at compile time
   for each value is keyed by: strings, numbers, booleans and nil. An atom is
-  its string, as an assign may hold one for a string, and `undefined` is nil.
+  its string, as an assign may hold one for a string, a whole float is its
+  integer, and `undefined` is nil.
   """
   @spec literal(term()) :: term()
   def literal(value) do
     case Value.to_elixir(value) do
+      # A whole number is one number in JavaScript, `1.0 === 1`.
+      value when is_float(value) ->
+        whole = trunc(value)
+        if whole == value, do: whole, else: value
+
       value when is_atom(value) and not is_boolean(value) and value != nil ->
         Atom.to_string(value)
 

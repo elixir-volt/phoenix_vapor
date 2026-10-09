@@ -32,6 +32,16 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
     use PhoenixVapor, file: Fixtures.path("FoldedPassed.vue"), client_output: nil
   end
 
+  defmodule ComposableLive do
+    use Phoenix.LiveView
+    use PhoenixVapor, file: Fixtures.path("FoldedComposable.vue"), client_output: nil
+  end
+
+  defmodule NumberLive do
+    use Phoenix.LiveView
+    use PhoenixVapor, file: Fixtures.path("FoldedNumber.vue"), client_output: nil
+  end
+
   defp html(rendered), do: rendered |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
 
   # A replayer's render of one moment, with the client state recorded then.
@@ -178,13 +188,36 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
       assert replay(TabsLive, "FoldedTabs", %{name: "Ada"}, %{}) =~ "<p>Hello Ada</p>"
     end
 
-    test "of a value outside the type raises" do
-      error =
-        assert_raise PhoenixVapor.ExpressionError, fn ->
-          replay(TabsLive, "FoldedTabs", %{name: "Ada"}, %{"tab" => "billing"})
-        end
+    test "of a value its type doesn't allow renders the initial values, with a warning" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          html = replay(TabsLive, "FoldedTabs", %{name: "Ada"}, %{"tab" => "billing"})
+          assert html =~ "<p>Hello Ada</p>"
+        end)
 
-      assert Exception.message(error) =~ ~s(`tab` is "billing", which its type doesn't allow)
+      assert log =~ ~s(`tab` is "billing", which its type doesn't allow)
+    end
+
+    test "of a whole float matches the integer it equals" do
+      html = replay(NumberLive, "FoldedNumber", %{}, %{"step" => 50.0})
+      assert html =~ ~s(aria-valuenow="50")
+    end
+  end
+
+  describe "composable state" do
+    test "folds for each value of its type" do
+      assert {[fragments], []} = compile("FoldedComposable")
+      assert variants(fragments) == {["tab"], [["a"], ["b"]]}
+    end
+
+    test "the first render, which doesn't have it, leaves the component to the browser" do
+      html = ComposableLive.render(%{__changed__: nil}) |> html()
+      refute html =~ "role=\"tablist\""
+    end
+
+    test "a replay renders the recorded value" do
+      html = replay(ComposableLive, "FoldedComposable", %{}, %{"tab" => "b"})
+      assert html =~ ~r/<button[^>]*trigger-b"[^>]*aria-selected="true"/
     end
   end
 

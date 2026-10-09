@@ -344,12 +344,37 @@ defmodule PhoenixVapor.Compiler do
     end)
     |> case do
       {:ok, table} ->
-        fragments = %{kind: :fragments, inputs: exprs, table: table, position: slot.position}
+        table =
+          Map.new(table, fn {values, template} ->
+            {Enum.map(values, &Expr.literal/1), template}
+          end)
+
+        fragments = %{
+          kind: :fragments,
+          inputs: exprs,
+          table: table,
+          initial: initial(exprs, table, ctx.known),
+          position: slot.position
+        }
+
         resolve_slot(fragments, ctx, state)
 
       {:error, reason} ->
         unfoldable(slot, package, reason, ctx, state)
     end
+  end
+
+  # The variant for the inputs' values at compile time, which in hybrid mode
+  # are the refs' initial ones, or nil when they read anything else.
+  defp initial(inputs, table, known) do
+    if Enum.all?(inputs, fn {_tag, _source, _node, keys} ->
+         Enum.all?(keys, &is_map_key(known, &1))
+       end) do
+      values = Enum.map(inputs, &(&1 |> Expr.eval(known) |> Expr.literal()))
+      if Map.has_key?(table, values), do: values
+    end
+  rescue
+    _error in PhoenixVapor.ExpressionError -> nil
   end
 
   defp fold_with(slot, known, ctx, state) do
