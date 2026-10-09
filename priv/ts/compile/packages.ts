@@ -18,6 +18,8 @@ export interface FoldNode {
   slots: Record<string, Array<string | FoldNode>>
 }
 
+let renders = 0
+
 const modules = { $modules } as unknown as Record<string, Record<string, Component>>
 
 function build(node: FoldNode): VNode {
@@ -64,6 +66,10 @@ function portal(node: FoldNode, component: Component): boolean {
 export function render(tree: FoldNode): Promise<string> {
   const problems: string[] = []
   const app = createSSRApp({ render: () => build(tree) })
+  // Each render is an app of its own, whose `useId()` would start over at
+  // `v-0`: a page of folded components would repeat ids such as a menu
+  // trigger's. Numbering the renders keeps them unique within a compile.
+  app.config.idPrefix = `pv${++renders}`
   app.config.errorHandler = (error) => {
     problems.push(error instanceof Error ? error.message : String(error))
   }

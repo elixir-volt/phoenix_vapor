@@ -42,6 +42,11 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
     use PhoenixVapor, file: Fixtures.path("FoldedNumber.vue"), client_output: nil
   end
 
+  defmodule TwiceLive do
+    use Phoenix.LiveView
+    use PhoenixVapor, file: Fixtures.path("FoldedTwice.vue"), client_output: nil
+  end
+
   defp html(rendered), do: rendered |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
 
   # A replayer's render of one moment, with the client state recorded then.
@@ -211,6 +216,14 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
       html = replay(NumberLive, "FoldedNumber", %{}, %{"step" => 50.0})
       assert html =~ ~s(aria-valuenow="50")
     end
+  end
+
+  test "package components folded apart don't repeat element ids" do
+    html = TwiceLive.render(%{__changed__: nil}) |> html()
+    ids = Regex.scan(~r/ id="([^"]+)"/, html, capture: :all_but_first) |> List.flatten()
+
+    assert length(ids) > 2
+    assert ids == Enum.uniq(ids)
   end
 
   describe "composable state" do

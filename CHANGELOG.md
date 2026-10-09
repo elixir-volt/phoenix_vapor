@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- Package components folded apart repeated element ids, such as two Reka menus' `reka-dropdown-menu-trigger-v-0`: each fold renders in an app of its own, whose ids started over. Each render now numbers its ids.
 - A ref read only by a folded package component's props, such as `tab` in `<TabsRoot v-model="tab">`, wasn't recorded for a session replay, nor did change tracking count it.
 - A component's `defineModel` binding read nothing on the server: a `<Switch v-model="on">` whose template passes its `checked` model to Reka's `SwitchRoot` left the switch out of the first paint, with a warning, until the browser mounted. A model is now a prop on the server, read by the name it's bound to.
 
