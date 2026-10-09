@@ -17,21 +17,12 @@ defmodule VaporDemoWeb.Router do
   scope "/", VaporDemoWeb do
     pipe_through :browser
 
+    get "/", Redirect, to: "/engineering/board"
+
     # Every page is recorded for session replay; see /dev/replay.
-    live_session :demo, on_mount: [PhoenixReplay.Recorder] do
-      live "/", HomeLive
-
-      # A small workspace, the demo's app.
-      live "/contacts", Workspace.ContactsLive
-      live "/settings", Workspace.SettingsLive
-
-      # One page per way to use PhoenixVapor.
-      live "/modes/sigil", Modes.SigilLive
-      live "/modes/server", Modes.ServerLive
-      live "/modes/reactive", Modes.ReactiveLive
-      live "/modes/hybrid", Modes.HybridLive
-      live "/modes/full", Modes.FullLive
-      live "/modes/compare", Modes.CompareLive
+    live_session :tracker, on_mount: [PhoenixReplay.Recorder, VaporDemoWeb.Shell] do
+      live "/:team/board", Board.BoardLive
+      live "/issue/:key", Issue.IssueLive
     end
   end
 

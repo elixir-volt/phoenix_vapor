@@ -4,9 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="PhoenixVapor demo" suffix=" · PhoenixVapor demo">
+    <.live_title default="Tracker" suffix=" · PhoenixVapor demo">
       {assigns[:page_title]}
     </.live_title>
+    <%!-- The theme the visitor picked, before anything paints. --%>
+    <script>
+      try { if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light" } catch {}
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+    />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="module" src={~p"/assets/js/app.js"}>
     </script>

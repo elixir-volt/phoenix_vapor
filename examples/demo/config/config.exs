@@ -44,13 +44,12 @@ config :volt,
 
 # The hand-written TypeScript and Vue components, for `mix volt.js.check`:
 # the app, its components, and the browser tests' helpers. The hybrid
-# components' browser halves under assets/js/hybrid are generated, and the
-# Reka bundle's entry is plain JavaScript; both are left out. Formatting
-# options are the `volt:` key in .formatter.exs.
+# components' browser halves under assets/js/hybrid are generated, so
+# they're left out. Formatting options are the `volt:` key in .formatter.exs.
 config :volt, :lint,
   root: ".",
   sources: ["assets/js/**/*.{ts,vue}", "lib/**/*.vue", "test/support/**/*.ts"],
-  ignore: ["assets/js/hybrid/**", "assets/js/bundles/**"],
+  ignore: ["assets/js/hybrid/**"],
   # Installed by `mix npm.install` from package.json.
   tsgolint: "node_modules/.bin/tsgolint",
   plugins: ["typescript", "vue"],

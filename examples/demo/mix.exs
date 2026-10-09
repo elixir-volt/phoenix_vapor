@@ -77,7 +77,6 @@ defmodule VaporDemo.MixProject do
       setup: [
         "deps.get",
         "npm.install",
-        "phoenix_vapor.bundle --entry assets/js/bundles/reka-dialog.js",
         "assets.build"
       ],
       "assets.build": ["compile", "volt.build --tailwind"],
@@ -85,7 +84,6 @@ defmodule VaporDemo.MixProject do
       # What CI runs, after installing Playwright's browser.
       ci: [
         "npm.install --frozen",
-        "phoenix_vapor.bundle --entry assets/js/bundles/reka-dialog.js",
         "assets.build",
         "lint",
         "test"

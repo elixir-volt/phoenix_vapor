@@ -5,47 +5,19 @@ defmodule VaporDemoWeb.Layouts do
 
   embed_templates "layouts/*"
 
-  @workspace [{"Contacts", "/contacts"}, {"Settings", "/settings"}]
-
-  @modes [
-    {"~VUE sigil", "/modes/sigil"},
-    {"Server-only .vue", "/modes/server"},
-    {"Reactive", "/modes/reactive"},
-    {"Hybrid", "/modes/hybrid"},
-    {"Full runtime", "/modes/full"},
-    {"HEEx vs Vue", "/modes/compare"}
-  ]
-
-  @doc "The app shell: navigation, the page, and flash messages."
+  @doc "The app shell: the sidebar, the page, and flash messages."
   def app(assigns) do
-    assigns = assign(assigns, workspace: @workspace, modes: @modes)
+    assigns = assign(assigns, dev: Application.get_env(:vapor_demo, :dev_routes, false))
 
     ~H"""
-    <div class="min-h-screen bg-zinc-50 text-zinc-900">
-      <header class="border-b border-zinc-200 bg-white">
-        <nav class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-sm">
-          <.link navigate="/" class="font-semibold">PhoenixVapor demo</.link>
-          <span class="flex gap-4">
-            <.link
-              :for={{label, path} <- @workspace}
-              navigate={path}
-              class="text-zinc-600 hover:text-zinc-900"
-            >
-              {label}
-            </.link>
-          </span>
-          <span class="flex flex-wrap gap-3 text-zinc-500">
-            <span class="text-zinc-400">Modes:</span>
-            <.link :for={{label, path} <- @modes} navigate={path} class="hover:text-zinc-900">
-              {label}
-            </.link>
-          </span>
-        </nav>
-      </header>
+    <div class="flex min-h-screen bg-bg font-sans text-[13px] leading-[1.45] text-fg">
+      <VaporDemoWeb.Shell.sidebar shell={@shell} dev={@dev} />
 
-      <main class="mx-auto max-w-5xl px-4 py-8">
+      <main class="flex min-w-0 flex-1 flex-col">
         {@inner_content}
       </main>
+
+      <VaporDemoWeb.Activity.rail :if={assigns[:activity]} entries={@activity} />
 
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />

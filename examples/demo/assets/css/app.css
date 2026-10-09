@@ -10,5 +10,108 @@
 @custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
 @custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
 
+/* The palette, dark by default; `data-theme="light"` on <html> swaps it. */
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0b;
+  --panel: #111113;
+  --raised: #17171a;
+  --hover: #1c1c21;
+  --line: #1c1c20;
+  --edge: #26262b;
+  --fg: #ededef;
+  --fg-2: #c9c9cf;
+  --muted: #8a8a93;
+  --faint: #6b6b74;
+  --accent: #6e7bff;
+  --accent-fg: #0a0a14;
+  --accent-soft: #1b1d33;
+  --link: #a5adff;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --panel: #fbfbfc;
+  --raised: #f3f3f5;
+  --hover: #ececef;
+  --line: #ececef;
+  --edge: #dedee3;
+  --fg: #18181b;
+  --fg-2: #3f3f46;
+  --muted: #63636b;
+  --faint: #8a8a93;
+  --accent: #5763e8;
+  --accent-fg: #ffffff;
+  --accent-soft: #eceeff;
+  --link: #4450d6;
+}
+
+@theme inline {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-edge: var(--edge);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-link: var(--link);
+}
+
+html {
+  background: var(--bg);
+  color: var(--fg);
+}
+
 /* LiveView's wrapper divs take no part in layout. */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
+/* Nor do the hybrid components' wrappers, so their pages fill the shell. */
+[data-pv] { display: contents }
+
+/* X-ray: while <html> has `data-xray`, each region marked `data-render`
+   is outlined in its mode's colour and labelled with `data-render-label`. */
+@layer base {
+  [data-render] { position: relative }
+}
+.xray-on, [data-xray] .xray-off { display: none }
+[data-xray] .xray-on { display: inline }
+[data-render="server"] { --xray: #4c9bff }
+[data-render="hybrid"] { --xray: #3dd68c }
+[data-render="folded"] { --xray: #f5a524 }
+[data-render="reactive"] { --xray: #b48cff }
+/* A region too short for a tag inside gets it just below. */
+[data-xray] [data-render-tag="below"]::after { bottom: auto; top: calc(100% + 2px); right: auto; left: 4px }
+
+[data-xray] [data-render]::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  z-index: 30;
+  pointer-events: none;
+  border: 1.5px solid var(--xray);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--xray) 6%, transparent);
+}
+
+[data-xray] [data-render]::after {
+  content: attr(data-render-label);
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  z-index: 31;
+  pointer-events: none;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--xray);
+  color: #0a0a0b;
+  font: 500 11px/1.3 var(--font-mono);
+  white-space: nowrap;
+}
