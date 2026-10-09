@@ -7,6 +7,9 @@
 - A package component whose props read state, such as a Reka `TabsRoot` with `v-model="tab"` or a `DialogRoot` with `:open="target !== null"`, folds once for each combination of the values TypeScript gives their expressions, up to 64, and rendering picks the markup for the values they have. A session replay now shows the tab, dialog or switch as it was. A type that isn't a set of literal values, such as `string`, keeps the fold with the initial values, with a warning that names the expression and its type; type the ref as its values, such as `ref<"general" | "members">("general")`, to fold it for each. A value outside the type, such as one a replay recorded before the type changed, renders the initial values' markup with a logged warning; state only the browser has, such as `useLocalStorage`'s, leaves the component to the browser on the first render, and a replay renders the recorded value.
 - A component of your own that passes a prop or model to a package component, such as a `<Select v-model="role">` around Reka's `SelectRoot`, folds it once for each value of the expression its parent passes.
 
+- Optional chaining, `a?.b` and `a?.[key]`, evaluates in Elixir, with JavaScript's short-circuit, rather than in QuickBEAM on every render. An optional call, `f?.()`, still runs in QuickBEAM.
+- Teleported content folds in place: an open Reka dialog inside `DialogPortal`, whose portal teleports only once mounted, renders in the folded markup, so a replay shows it, rather than being left out.
+
 ### Fixed
 
 - A ref read only by a folded package component's props, such as `tab` in `<TabsRoot v-model="tab">`, wasn't recorded for a session replay, nor did change tracking count it.

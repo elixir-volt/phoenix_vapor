@@ -267,7 +267,18 @@ defmodule PhoenixVapor.Compiler.Packages do
     end)
   end
 
-  defp strip_fragments(html), do: String.replace(html, ["<!--[-->", "<!--]-->"], "")
+  # Vue's markers for hydration: fragments, and where teleported content
+  # started and was bound for, which now follows the rest of the markup.
+  @hydration_markers [
+    "<!--[-->",
+    "<!--]-->",
+    "<!--teleport start-->",
+    "<!--teleport end-->",
+    "<!--teleport start anchor-->",
+    "<!--teleport anchor-->"
+  ]
+
+  defp strip_fragments(html), do: String.replace(html, @hydration_markers, "")
 
   defp marker(holes), do: "\u2063H#{length(holes)}\u2063"
 
@@ -346,7 +357,7 @@ defmodule PhoenixVapor.Compiler.Packages do
     end
   end
 
-  # Vue's fragment markers are for hydration; the browser mounts fresh.
+  # The browser mounts fresh, so the markup needs no hydration markers.
   defp template(html, holes, file),
     do: html |> strip_fragments() |> split(List.to_tuple(holes), file)
 

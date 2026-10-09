@@ -158,6 +158,7 @@ defmodule PhoenixVapor.Integration.Hybrid.FoldingTest do
 
       assert open =~ ~s(role="dialog")
       assert open =~ "Remove Ann?"
+      refute open =~ "teleport"
     end
 
     test "follows the recorded switch" do

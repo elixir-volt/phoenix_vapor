@@ -19,13 +19,20 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     %{started: DateTime.utc_now()}
   end
 
-  test "the replay of a recorded session shows the typed search", %{conn: conn, started: started} do
+  test "the replay of a recorded session shows the typed search and the delete dialog",
+       %{conn: conn, started: started} do
     conn
     |> visit("/contacts")
     |> assert_has(".phx-connected")
     |> assert_has("[data-v-app]")
     |> type(~s(input[aria-label="Search contacts"]), "acme")
     |> assert_has("p", text: "3 of 12 contacts")
+    |> reported(VaporDemoWeb.Workspace.ContactsLive, ~s(search "acme"))
+    # The dialog is in a DialogPortal, which folds inline.
+    |> click(~s(button[aria-label="Delete Dave Wilson"]))
+    |> assert_has("[role=dialog]", text: "Delete contact?")
+    |> reported(VaporDemoWeb.Workspace.ContactsLive, "deleteTarget %{")
+    |> click_button("Cancel")
     # Leaving the page ends the recorded session, which is then saved.
     |> click_link("nav a", "Settings")
     |> assert_path("/settings")
@@ -35,7 +42,11 @@ defmodule VaporDemo.E2E.SessionReplayTest do
 
     conn
     |> visit("/dev/replay/#{id}?at=#{index}")
-    |> assert_frame(fn page -> page =~ "3 of 12 contacts" and page =~ ~s(value="acme") end)
+    |> assert_frame(fn page ->
+      page =~ "3 of 12 contacts" and page =~ ~s(value="acme") and not (page =~ ~s(role="dialog"))
+    end)
+    |> visit("/dev/replay/#{id}?at=#{event(id, "deleteTarget %{")}")
+    |> assert_frame(&(&1 =~ ~s(role="dialog") and &1 =~ "Delete contact?"))
   end
 
   test "the replay of a recorded session on /settings follows the tab, the filter and the switches",
@@ -80,16 +91,16 @@ defmodule VaporDemo.E2E.SessionReplayTest do
     )
   end
 
-  # Waits for the running Settings recording to have the client state report.
-  defp reported(conn, label, attempts \\ 50) do
+  # Waits for the view's running recording to have the client state report.
+  defp reported(conn, view \\ VaporDemoWeb.Workspace.SettingsLive, label, attempts \\ 50) do
     labels =
-      for %{id: id} <- Trace.find(view: VaporDemoWeb.Workspace.SettingsLive, live: true),
+      for %{id: id} <- Trace.find(view: view, live: true),
           event <- Trace.events(id),
           do: event.label
 
     cond do
       Enum.any?(labels, &(&1 =~ label)) -> conn
-      attempts > 0 -> Process.sleep(100) && reported(conn, label, attempts - 1)
+      attempts > 0 -> Process.sleep(100) && reported(conn, view, label, attempts - 1)
       true -> flunk("no report of #{label} in #{inspect(labels)}")
     end
   end

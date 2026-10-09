@@ -30,7 +30,29 @@ function build(node: FoldNode): VNode {
       parts.map((part) => (typeof part === "string" ? createStaticVNode(part, 0) : build(part)))
   }
 
-  return h(component, node.props, slots)
+  return h(
+    component,
+    portal(node, component) ? { forceMount: true, ...node.props } : node.props,
+    slots
+  )
+}
+
+/**
+ * Whether a component is a portal that waits for the browser, such as Reka's
+ * `DialogPortal`, which teleports only once mounted, and so never on the
+ * server, unless forced: one named `...Portal` that declares `forceMount`.
+ * Forced here, the content renders when the component around it is open.
+ */
+function portal(node: FoldNode, component: Component): boolean {
+  const props = (component as { props?: unknown }).props
+  return (
+    node.name.endsWith("Portal") &&
+    typeof props === "object" &&
+    props !== null &&
+    "forceMount" in props &&
+    !("forceMount" in node.props) &&
+    !("force-mount" in node.props)
+  )
 }
 
 /**
@@ -49,10 +71,15 @@ export function render(tree: FoldNode): Promise<string> {
     problems.push(message)
   }
 
-  return renderToString(app).then((html) => {
+  // What a component teleports, such as a dialog's content inside
+  // `DialogPortal`, goes to the context rather than the HTML; it follows the
+  // rest, in place of `<body>` or wherever it was bound for.
+  const context: { teleports?: Record<string, string> } = {}
+
+  return renderToString(app, context).then((html) => {
     const [problem] = problems
     if (problem !== undefined) throw new Error(problem)
-    return html
+    return html + Object.values(context.teleports ?? {}).join("")
   })
 }
 

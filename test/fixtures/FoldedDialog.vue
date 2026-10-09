@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue"
-import { DialogRoot, DialogContent, DialogTitle } from "reka-ui"
+import { DialogRoot, DialogPortal, DialogContent, DialogTitle } from "reka-ui"
 
 type Contact = { id: number; name: string }
 
@@ -16,6 +16,8 @@ const target = ref<Contact | null>(null)
     </li>
   </ul>
   <DialogRoot :open="target !== null" @update:open="open => { if (!open) target = null }">
-    <DialogContent><DialogTitle>Remove {{ target ? target.name : "" }}?</DialogTitle></DialogContent>
+    <DialogPortal>
+      <DialogContent><DialogTitle>Remove {{ target ? target.name : "" }}?</DialogTitle></DialogContent>
+    </DialogPortal>
   </DialogRoot>
 </template>
