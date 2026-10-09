@@ -32,6 +32,8 @@ export function installShell() {
     const action = (event.target as Element | null)?.closest<HTMLElement>("[data-action]")?.dataset.action
     if (action === "xray") toggleXray()
     if (action === "theme") toggleTheme()
+    // The palette is a hybrid component of its own; it listens for this.
+    if (action === "palette") window.dispatchEvent(new Event("palette:open"))
   })
 
   document.addEventListener("keydown", (event) => {

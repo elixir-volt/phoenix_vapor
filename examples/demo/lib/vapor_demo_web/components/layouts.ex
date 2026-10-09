@@ -19,6 +19,8 @@ defmodule VaporDemoWeb.Layouts do
 
       <VaporDemoWeb.Activity.rail :if={assigns[:activity]} entries={@activity} />
 
+      {live_render(@socket, VaporDemoWeb.Palette.PaletteLive, id: "palette", sticky: true)}
+
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
       <.flash
