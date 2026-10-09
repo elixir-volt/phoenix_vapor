@@ -50,28 +50,54 @@ function textParts(data: string): TextPart[] {
   return parts
 }
 
+// A block slot (keyed `false`), such as a `v-if` branch or a component,
+// parses as its marker's text but renders as many nodes as its content has.
+// Each parent's block markers, in order, by the parent.
+type Blocks = Map<Element, Node[]>
+
+// A node's index among `siblings`, counted from the start when no block
+// precedes it, and from the end, as a negative index, when none follows: a
+// block shifts what follows it, but not how many follow. Between two blocks,
+// null: its place depends on what they render.
+function siblingIndex(node: Node, siblings: Node[], markers: Node[] | undefined): number | null {
+  const index = siblings.indexOf(node)
+  if (!markers) return index
+
+  const follows = (a: Node, b: Node) =>
+    (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  const afterBlock = markers.some((marker) => follows(marker, node))
+  const beforeBlock = markers.some((marker) => follows(node, marker))
+
+  if (!afterBlock) return index
+  if (!beforeBlock) return index - siblings.length
+  return null
+}
+
 // Paths count element children only.
-export function elementPath(el: Element, root: Element): number[] | null {
+export function elementPath(
+  el: Element,
+  root: Element,
+  blocks: Blocks = new Map()
+): number[] | null {
   const path: number[] = []
   let current: Element = el
 
   while (current !== root) {
     const parent = current.parentElement
     if (!parent) return null
-    path.unshift(Array.prototype.indexOf.call(parent.children, current))
+    const index = siblingIndex(current, Array.from(parent.children), blocks.get(parent))
+    if (index === null) return null
+    path.unshift(index)
     current = parent
   }
 
   return path
 }
 
-function textIndex(node: Text): number {
-  let index = 0
-  for (const child of Array.from(node.parentNode!.childNodes)) {
-    if (child === node) return index
-    if (child.nodeType === Node.TEXT_NODE) index++
-  }
-  return -1
+function textIndex(node: Text, blocks: Blocks): number | null {
+  const parent = node.parentElement!
+  const texts = Array.from(parent.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE)
+  return siblingIndex(node, texts, blocks.get(parent))
 }
 
 /**
@@ -104,37 +130,42 @@ export function analyzeStatics(
   }))
   if (!root) return slots
 
+  const isBlock = (part: TextPart) => typeof part === "number" && keys[part] === false
+
+  // First where the blocks are, as paths around them depend on it.
+  const blocks: Blocks = new Map()
+  const texts = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  for (let node = texts.nextNode(); node; node = texts.nextNode()) {
+    if (textParts((node as Text).data).some(isBlock)) {
+      const parent = node.parentElement!
+      blocks.set(parent, [...(blocks.get(parent) ?? []), node])
+    }
+  }
+
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT)
 
-  // A block slot (keyed `false`), such as a `v-if` branch, parses here as
-  // its marker's text but renders elements: past it, its parent's children
-  // aren't where they parse, so the slots there are left to LiveView.
-  const shifted: Element[] = []
-
   for (let node: Node | null = root; node; node = walker.nextNode()) {
-    if (shifted.some((parent) => parent.contains(node))) continue
-
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node as Text
-      const parentPath = elementPath(text.parentElement!, root)
-      if (!parentPath) continue
+      const parentPath = elementPath(text.parentElement!, root, blocks)
+      const index = textIndex(text, blocks)
+      if (!parentPath || index === null) continue
 
       // A text node can mix static text and several slots, such as
       // `Doubled: {{ n }} · {{ label }}`; each slot rewrites the whole node.
+      // One holding a block is the block's: left to LiveView.
       const parts = textParts(text.data)
-      if (parts.some((part) => typeof part === "number" && keys[part] === false)) {
-        shifted.push(text.parentElement!)
-        continue
-      }
+      if (parts.some(isBlock)) continue
 
       for (const part of parts) {
         if (typeof part === "number") {
-          slots[part] = { type: "text", parentPath, textIndex: textIndex(text), parts }
+          slots[part] = { type: "text", parentPath, textIndex: index, parts }
         }
       }
     } else {
       const el = node as Element
-      const nodePath = elementPath(el, root)!
+      const nodePath = elementPath(el, root, blocks)
+      if (!nodePath) continue
 
       for (const attr of Array.from(el.attributes)) {
         for (const i of markerIndices(attr.name)) {
@@ -273,22 +304,21 @@ function setBoolean(el: HTMLInputElement, key: "checked" | "disabled", value: bo
   return true
 }
 
+// A negative index counts from the end, as `siblingIndex` gives it.
+function at<T>(items: ArrayLike<T>, index: number): T | undefined {
+  return items[index < 0 ? items.length + index : index]
+}
+
 export function walkPath(rootEl: Element, path: number[]): Element | null {
   let node: Element | undefined = rootEl
   for (const index of path) {
-    node = node.children[index]
+    node = at(node.children, index)
     if (!node) return null
   }
   return node
 }
 
 function getTextNodeAt(parent: Element, index: number): Text | null {
-  let textIdx = 0
-  for (const child of Array.from(parent.childNodes)) {
-    if (child.nodeType === Node.TEXT_NODE) {
-      if (textIdx === index) return child as Text
-      textIdx++
-    }
-  }
-  return null
+  const texts = Array.from(parent.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE)
+  return (at(texts, index) as Text | undefined) ?? null
 }
