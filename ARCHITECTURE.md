@@ -107,7 +107,7 @@ PhoenixReplay (0.6) renders a recorded view from its recorded assigns alone; the
 
 ### Package Components per Value
 
-`Compiler.Packages.fold/6` renders a package component and the package components inside it with Vue's server renderer (`compile/packages.ts`, which appends what the render teleported and forces `forceMount` on `...Portal` components that declare it, as Reka's teleport only once mounted), into a `:fragment` slot whose template holds the SFC's own content as holes; the slot keeps the folded props' expressions as `:reads`, which change tracking, `Renderer.assign_keys/1`, `Renderer.reads/1` and so the recorded set count, though rendering doesn't evaluate them. `Packages.inputs/4` lists the expressions among them that read anything but the compile's `:constants`; `PropTypes.expression_values/4` types them with TypeScript's checker, appending them to the script in a function whose parameters are the script's bindings as `ShallowUnwrapRef` unwraps them, and the props. When each is a set of literals and there are at most 64 combinations (`Macros.combinations/2`), the compiler folds once per combination, with the values given to `fold/6` in `known`, into a `:fragments` slot, `%{inputs: [expr], table: %{[value] => template}}`; rendering evaluates the inputs, normalized by `Expr.literal/1`, and renders the template they key; an input reading absent state (`Expr.absent?/2`) renders nothing, and values outside the table render the `:initial` variant, the one for the values at compile time, with a logged warning. Otherwise it folds once with the initial values and reports why, at `:unrendered`. A child `.vue` component gets the parent's expressions for the props it's passed from state (`:passed`), and an input that reads such a prop or model whole takes the parent expression's values.
+`Compiler.Packages.fold/6` renders a package component and the package components inside it with Vue's server renderer (`compile/packages.ts`, which appends what the render teleported and forces `forceMount` on `...Portal` components that declare it, as Reka's teleport only once mounted), into a `:fragment` slot whose template holds the SFC's own content as holes; the slot keeps the folded props' expressions as `:reads`, which change tracking, `Renderer.assign_keys/1`, `Renderer.reads/1` and so the recorded set count, though rendering doesn't evaluate them. `Packages.inputs/4` lists the expressions among them that read anything but the compile's `:constants`; `PropTypes.expression_values/3` types them with TypeScript's checker, appending them to the script in a function whose parameters are the script's bindings as `ShallowUnwrapRef` unwraps them, and the props. When each is a set of literals and there are at most 64 combinations (`Macros.combinations/2`), the compiler folds once per combination, with the values given to `fold/6` in `known`, into a `:fragments` slot, `%{inputs: [expr], table: %{[value] => template}}`; rendering evaluates the inputs, normalized by `Expr.literal/1`, and renders the template they key; an input reading absent state (`Expr.absent?/2`) renders nothing, and values outside the table render the `:initial` variant, the one for the values at compile time, with a logged warning. Otherwise it folds once with the initial values and reports why, at `:unrendered`. A child `.vue` component gets the parent's expressions for the props it's passed from state (`:passed`), and an input that reads such a prop or model whole takes the parent expression's values.
 
 ### Custom Elixir Code
 
@@ -155,7 +155,7 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 - `PhoenixVapor.Compiler.SFC` — `.vue` file paths, the `<template>` block, `<script lang="elixir">`
 - `PhoenixVapor.Compiler.ScriptSetup` — what `<script setup>` declares
 - `PhoenixVapor.Compiler.Macros` — `with { type: "macro" }` calls run at compile time
-- `PhoenixVapor.Compiler.PropTypes` — prop and expression types from TypeScript's checker, for macro calls and package components
+- `PhoenixVapor.Compiler.PropTypes` — prop and expression types from TypeScript's checker, for macro calls and package components, in one QuickBEAM runtime per TypeScript install that compiles in the VM share; it re-reads a file once its mtime changes
 - `PhoenixVapor.Compiler.Packages` — package components rendered with Vue's server renderer at compile time
 
 ### Renderer
@@ -179,7 +179,7 @@ Full Vue semantics: `provide`/`inject`, component composition, ARIA attributes. 
 ### JavaScript
 - `PhoenixVapor.JS` — QuickBEAM runtimes and contexts, `priv/ts` templates, and bundling with Volt
 - `PhoenixVapor.JS.EntryPlugin` — Volt plugin serving a generated entry module
-- `PhoenixVapor.JS.Session` — the one QuickBEAM runtime a compile uses
+- `PhoenixVapor.JS.Session` — the QuickBEAM runtime a compile uses for macros and package components
 - `PhoenixVapor.JS.FreeNames` — the names a JavaScript expression reads
 - `Mix.Tasks.PhoenixVapor.Bundle` — bundles a Vue component library for the full runtime
 

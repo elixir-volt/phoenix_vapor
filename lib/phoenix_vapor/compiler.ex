@@ -115,7 +115,7 @@ defmodule PhoenixVapor.Compiler do
     # only while compiling: the caller's session, or one opened here.
     {compiled, state} =
       case opts[:session] do
-        nil -> Session.with_session(PropTypes.handlers(), compile)
+        nil -> Session.with_session(compile)
         session -> compile.(session)
       end
 
@@ -297,7 +297,7 @@ defmodule PhoenixVapor.Compiler do
     with :ok <- Session.once(state.js, {:packages, ctx.file}, load) do
       inputs = Packages.inputs(slot, packages, ctx.fixed, state.fold)
 
-      case combinations(inputs, slot, ctx, state) do
+      case combinations(inputs, slot, ctx) do
         :none ->
           fold_once(slot, package, ctx, state, nil)
 
@@ -386,14 +386,14 @@ defmodule PhoenixVapor.Compiler do
 
   # The combinations of the values the inputs' types allow, from TypeScript,
   # or why the component folds once.
-  defp combinations([], _slot, _ctx, _state), do: :none
+  defp combinations([], _slot, _ctx), do: :none
 
-  defp combinations(inputs, slot, ctx, state) do
+  defp combinations(inputs, slot, ctx) do
     sources = Enum.map(inputs, &elem(&1.expr, 1))
 
     with {:ok, types} <-
-           PropTypes.expression_values(state.js, ctx.file, ctx.setup.source, sources),
-         {:ok, types} <- passed_types(inputs, types, ctx, state) do
+           PropTypes.expression_values(ctx.file, ctx.setup.source, sources),
+         {:ok, types} <- passed_types(inputs, types, ctx) do
       typed = Enum.zip(inputs, types)
       domains = Map.new(Enum.with_index(types), fn {type, index} -> {index, type["values"]} end)
 
@@ -425,14 +425,14 @@ defmodule PhoenixVapor.Compiler do
 
   # An input that reads a prop or model the parent passes from its state,
   # whole, takes the values the parent's expression can, when they're a set.
-  defp passed_types(_inputs, types, %{passed: nil}, _state), do: {:ok, types}
+  defp passed_types(_inputs, types, %{passed: nil}), do: {:ok, types}
 
-  defp passed_types(inputs, types, %{passed: passed} = ctx, state) do
+  defp passed_types(inputs, types, %{passed: passed} = ctx) do
     sources = Enum.map(inputs, &passed_source(&1.expr, ctx.setup, passed.props))
     parent = Enum.reject(sources, &is_nil/1)
 
     with {:ok, parent_types} <-
-           PropTypes.expression_values(state.js, passed.file, passed.script, parent) do
+           PropTypes.expression_values(passed.file, passed.script, parent) do
       by_source = Map.new(Enum.zip(parent, parent_types))
 
       {:ok,

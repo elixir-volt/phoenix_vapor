@@ -10,6 +10,10 @@
 - Optional chaining, `a?.b` and `a?.[key]`, evaluates in Elixir, with JavaScript's short-circuit, rather than in QuickBEAM on every render. An optional call, `f?.()`, still runs in QuickBEAM.
 - Teleported content folds in place: an open Reka dialog inside `DialogPortal`, whose portal teleports only once mounted, renders in the folded markup, so a replay shows it, rather than being left out.
 
+### Changed
+
+- TypeScript, which types macro props and package component inputs, loads once per VM and install rather than once per compiled component, which took over a second each; a file it read is read again once it changes.
+
 ### Fixed
 
 - A ref read only by a folded package component's props, such as `tab` in `<TabsRoot v-model="tab">`, wasn't recorded for a session replay, nor did change tracking count it.

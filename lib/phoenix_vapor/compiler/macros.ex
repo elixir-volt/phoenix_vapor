@@ -177,7 +177,7 @@ defmodule PhoenixVapor.Compiler.Macros do
       |> Enum.map(&prop_name/1)
       |> Enum.uniq()
 
-    with {:ok, domains} <- PropTypes.literal_values(env.session, env.file, env.script, props),
+    with {:ok, domains} <- PropTypes.literal_values(env.file, env.script, props),
          {:ok, combinations} <- props |> combinations(domains) |> combinations_reason() do
       Enum.reduce_while(combinations, {:ok, %{}}, fn values, {:ok, table} ->
         case evaluate(runtime, source, with_props(env, props, values)) do

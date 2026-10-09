@@ -8,11 +8,12 @@ defmodule PhoenixVapor.Compiler.PropTypes do
   # value at compile time.
   #
   # TypeScript comes from the project's `node_modules`, as `vue-tsc` and
-  # editors use it, and runs in the compile's `PhoenixVapor.JS.Session`. It reads the
-  # project's files through `handlers/0`.
+  # editors use it, and runs in a QuickBEAM runtime of its own, one per
+  # TypeScript install, which compiles in the same VM share: loading it takes
+  # over a second, a check a few milliseconds. It reads the project's files
+  # through `handlers/0`, and keeps those it parsed until they change.
 
   alias NPM.Resolution.PackageResolver
-  alias PhoenixVapor.JS.Session
 
   @doc "The QuickBEAM handlers TypeScript reads files through."
   @spec handlers() :: %{String.t() => ([term()] -> term())}
@@ -25,6 +26,12 @@ defmodule PhoenixVapor.Compiler.PropTypes do
         end
       end,
       "file?" => fn [path] -> File.regular?(path) end,
+      "mtime" => fn [path] ->
+        case File.stat(path, time: :posix) do
+          {:ok, %{mtime: mtime}} -> mtime
+          {:error, _reason} -> nil
+        end
+      end,
       "dir?" => fn [path] -> File.dir?(path) end
     }
   end
@@ -34,10 +41,10 @@ defmodule PhoenixVapor.Compiler.PropTypes do
   declares them, with nil for a prop whose type isn't a finite set of literals.
   `undefined` and `null` are both nil.
   """
-  @spec literal_values(Session.t(), Path.t(), String.t(), [String.t()]) ::
+  @spec literal_values(Path.t(), String.t(), [String.t()]) ::
           {:ok, %{String.t() => [term()] | nil}} | {:error, String.t()}
-  def literal_values(session, file, script, props),
-    do: call(session, file, "__pv_literal_values", [script, props])
+  def literal_values(file, script, props),
+    do: call(file, "__pv_literal_values", [script, props])
 
   @doc """
   The values each of `expressions`, template expressions of the component
@@ -47,20 +54,68 @@ defmodule PhoenixVapor.Compiler.PropTypes do
   script's bindings as the template does, refs and models unwrapped, and the
   props `defineProps<T>()` declares.
   """
-  @spec expression_values(Session.t(), Path.t(), String.t(), [String.t()]) ::
+  @spec expression_values(Path.t(), String.t(), [String.t()]) ::
           {:ok, [%{String.t() => term()}]} | {:error, String.t()}
-  def expression_values(session, file, script, expressions),
-    do: call(session, file, "__pv_expression_values", [script, expressions])
+  def expression_values(file, script, expressions),
+    do: call(file, "__pv_expression_values", [script, expressions])
 
-  defp call(session, file, function, [script, names]) do
+  defp call(file, function, [script, names]) do
     with {:ok, main} <- typescript(file),
-         :ok <- Session.once(session, {:typescript, main}, &load(&1, main, file)) do
+         {:ok, runtime} <- runtime(main, file) do
       args = [file <> ".ts", script, names, Path.dirname(main)]
 
-      case QuickBEAM.call(Session.runtime(session), function, args) do
+      case QuickBEAM.call(runtime, function, args) do
         {:ok, values} -> {:ok, values}
         {:error, error} -> {:error, PhoenixVapor.JS.error_message(error)}
       end
+    end
+  end
+
+  # The runtime for a TypeScript install, started with it loaded the first
+  # time a compile asks, under a lock, so compiles in parallel start one. A
+  # process of its own holds it, as the compile that started it ends.
+  defp runtime(main, file) do
+    key = {__MODULE__, main}
+
+    case :persistent_term.get(key, nil) do
+      pid when is_pid(pid) ->
+        if Process.alive?(pid), do: {:ok, pid}, else: start(key, main, file)
+
+      nil ->
+        start(key, main, file)
+    end
+  end
+
+  defp start(key, main, file) do
+    :global.trans({key, self()}, fn ->
+      case :persistent_term.get(key, nil) do
+        pid when is_pid(pid) and node(pid) == node() ->
+          if Process.alive?(pid), do: {:ok, pid}, else: start_runtime(key, main, file)
+
+        _none ->
+          start_runtime(key, main, file)
+      end
+    end)
+  end
+
+  defp start_runtime(key, main, file) do
+    caller = self()
+    ref = make_ref()
+
+    spawn(fn ->
+      {:ok, runtime} = QuickBEAM.start(handlers: handlers())
+      send(caller, {ref, runtime, load(runtime, main, file)})
+      Process.sleep(:infinity)
+    end)
+
+    receive do
+      {^ref, runtime, :ok} ->
+        :persistent_term.put(key, runtime)
+        {:ok, runtime}
+
+      {^ref, runtime, {:error, reason}} ->
+        QuickBEAM.stop(runtime)
+        {:error, reason}
     end
   end
 

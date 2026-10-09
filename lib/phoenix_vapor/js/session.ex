@@ -1,10 +1,10 @@
 defmodule PhoenixVapor.JS.Session do
   @moduledoc false
 
-  # The QuickBEAM runtime one compile uses for macros, package components and
-  # prop types: started when first needed, with each bundle loaded into it
-  # once, and stopped by whoever opened the session, in an `after`, so a
-  # compile error doesn't leak it. Its globals are namespaced `__pv_*`, so
+  # The QuickBEAM runtime one compile uses for macros and package components:
+  # started when first needed, with each bundle loaded into it once, and
+  # stopped by whoever opened the session, in an `after`, so a compile error
+  # doesn't leak it. Its globals are namespaced `__pv_*`, so
   # the bundles share it.
 
   @enforce_keys [:agent]

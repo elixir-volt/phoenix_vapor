@@ -22,8 +22,8 @@ const options: typescript.CompilerOptions = {
   types: []
 }
 
-// Parsed files, kept across components while one template compiles.
-const files = new Map<string, typescript.SourceFile | undefined>()
+// Parsed files, kept across compiles until they change.
+const files = new Map<string, { mtime: unknown; file: typescript.SourceFile | undefined }>()
 
 function read(path: string): string | undefined {
   const text = Beam.callSync("read", path)
@@ -37,14 +37,15 @@ function host(entry: string, source: string, libDir: string): typescript.Compile
     readFile: (path) => (path === entry ? source : read(path)),
     getSourceFile(path, language) {
       if (path === entry) return typescript.createSourceFile(path, source, language)
-      if (!files.has(path)) {
-        const text = read(path)
-        files.set(
-          path,
-          text === undefined ? undefined : typescript.createSourceFile(path, text, language)
-        )
-      }
-      return files.get(path)
+      const mtime = Beam.callSync("mtime", path)
+      const cached = files.get(path)
+      if (cached && cached.mtime === mtime) return cached.file
+
+      const text = read(path)
+      const file =
+        text === undefined ? undefined : typescript.createSourceFile(path, text, language)
+      files.set(path, { mtime, file })
+      return file
     },
     getDefaultLibFileName: (options) => `${libDir}/${typescript.getDefaultLibFileName(options)}`,
     writeFile: () => {},
